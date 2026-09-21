@@ -22,7 +22,7 @@ class CommittedFixturesTest {
 
         FixtureManifest.FixtureMetadata f1 = manifest.fixture("F1");
         assertEquals(180_000L, f1.durationMs());
-        assertEquals(13_956_164L, f1.actualBytes());
+        assertEquals(13_956_166L, f1.actualBytes());
         assertEquals(18L, f1.resources().stream()
                 .filter(resource -> "video-segment".equals(resource.role()))
                 .count());
