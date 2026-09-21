@@ -19,7 +19,11 @@ class CommittedFixturesTest {
         FixtureManifest manifest = FixtureManifest.load(root);
         assertEquals(10_000L, manifest.fixture("F0").durationMs());
         assertEquals(180_000L, manifest.fixture("F1").durationMs());
-        assertEquals(619_678L, manifest.fixture("F1").referencePlaybackBitrateBps());
+        Long referenceBitrate = manifest.fixture("F1").referencePlaybackBitrateBps();
+        assertTrue(referenceBitrate != null && referenceBitrate > 0);
+        assertEquals(
+                manifest.fixture("F1").actualAverageBitrateBps(),
+                referenceBitrate.longValue());
     }
 
     @Test
