@@ -14,7 +14,7 @@ final class Json {
         for (int index = 0; index < value.length(); index++) {
             char c = value.charAt(index);
             switch (c) {
-                case '"' -> builder.append("\\"");
+                case '"' -> builder.append("\\\"");
                 case '\\' -> builder.append("\\\\");
                 case '\b' -> builder.append("\\b");
                 case '\f' -> builder.append("\\f");
