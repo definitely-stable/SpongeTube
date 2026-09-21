@@ -29,5 +29,8 @@ class MiniJsonParserTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> MiniJsonParser.parse("{\"a\":1,\"a\":2}"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MiniJsonParser.parse("{\"a\":null,\"a\":2}"));
     }
 }
