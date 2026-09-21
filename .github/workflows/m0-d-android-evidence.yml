@@ -1,0 +1,254 @@
+name: M0-D Android Evidence
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m0-d-android-evidence.yml"
+      - "app/**"
+      - "benchmark/**"
+      - "tools/media-lab/**"
+      - "scripts/measurement/**"
+      - "gradle/libs.versions.toml"
+      - "gradle/verification-metadata.xml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m0-d-android-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    if: github.head_ref == 'test/7-measurement-harness'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Build benchmark target and Media Lab
+        shell: bash
+        run: |
+          ./gradlew --configuration-cache             :app:assembleBenchmark             :benchmark:assembleBenchmark             :tools:media-lab:installDist
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          AVDMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
+          IMAGE="system-images;android-36;google_apis;x86_64"
+
+          test -x "$SDKMANAGER"
+          test -x "$AVDMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          if [[ ! -x "$SDK_ROOT/platform-tools/adb" ]]; then
+            "$SDKMANAGER" "platform-tools"
+          fi
+          if [[ ! -d "$SDK_ROOT/system-images/android-36/google_apis/x86_64" ]]; then
+            "$SDKMANAGER" "$IMAGE"
+          fi
+
+          export PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/android-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/emulator" >> "$GITHUB_PATH"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+
+          echo "no" | "$AVDMANAGER" create avd             --force             --name m0d-api36             --package "$IMAGE"             --device "pixel_5"             --path "$ANDROID_AVD_HOME/m0d-api36.avd"
+
+          "$SDK_ROOT/emulator/emulator" -list-avds
+          test -f "$ANDROID_AVD_HOME/m0d-api36.ini"
+
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 666 /dev/kvm
+          fi
+
+          mkdir -p build/m0-d/{android,server,perfetto,run}
+
+          adb start-server
+          "$SDK_ROOT/emulator/emulator"             -avd m0d-api36             -no-window             -no-audio             -no-boot-anim             -no-snapshot             -wipe-data             -accel on             -gpu swiftshader_indirect             > build/m0-d/emulator.log 2>&1 &
+          EMULATOR_PID=$!
+          echo "$EMULATOR_PID" > build/m0-d/emulator.pid
+
+          for attempt in {1..90}; do
+            if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+              cat build/m0-d/emulator.log
+              exit 1
+            fi
+            if adb devices | grep -Eq '^emulator-[0-9]+[[:space:]]+device$'; then
+              break
+            fi
+            sleep 1
+          done
+
+          timeout 180 bash -c '
+            until [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" == "1" ]]; do
+              sleep 2
+            done
+          '
+
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+
+          adb shell getprop ro.build.version.sdk | tr -d '\r' > build/m0-d/device-api.txt
+          adb shell getprop ro.build.fingerprint | tr -d '\r' > build/m0-d/device-fingerprint.txt
+          adb shell getprop ro.product.model | tr -d '\r' > build/m0-d/device-model.txt
+          adb shell getprop ro.product.cpu.abi | tr -d '\r' > build/m0-d/device-abi.txt
+
+      - name: Start canonical N0 Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          echo "$LAB_BIN" > build/m0-d/media-lab-bin.txt
+
+          SESSION_ID="m0d-macro-0-1"
+          "$LAB_BIN" serve             --fixture-root="$PWD/test-fixtures/media"             --trace="$PWD/build/m0-d/server/requests.jsonl"             --session-id="$SESSION_ID"             --profile=N0             --data-port=18081             --control-port=18082             > build/m0-d/server/media-lab.out             2> build/m0-d/server/media-lab.err &
+          echo $! > build/m0-d/media-lab.pid
+
+          for attempt in {1..30}; do
+            if curl --fail --silent               http://127.0.0.1:18082/__lab/config               > build/m0-d/server/scenario.json; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat build/m0-d/server/media-lab.out || true
+              cat build/m0-d/server/media-lab.err || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          jq -e '.scenarioId == "N0"' build/m0-d/server/scenario.json
+          jq -e '.scenarioHash | length == 64' build/m0-d/server/scenario.json
+
+          adb reverse tcp:18080 tcp:18081
+          adb reverse --list
+
+      - name: Run one Macrobenchmark correctness capture
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./gradlew :benchmark:connectedBenchmarkAndroidTest             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR
+
+          adb logcat -d -v threadtime > build/m0-d/android/logcat.txt
+
+      - name: Pull Android playback evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE="io.github.definitelystable.spongetube"
+          SESSION_ID="m0d-macro-0-1"
+          DEVICE_DIR="/sdcard/Android/data/$PACKAGE/files/m0-measurement/$SESSION_ID"
+
+          adb shell ls -la "$DEVICE_DIR"
+          adb pull "$DEVICE_DIR/." build/m0-d/android/
+
+          test -s build/m0-d/android/playback-events.jsonl
+          test -s build/m0-d/android/playback-summary.json
+
+          jq -e '.schemaVersion == 1' build/m0-d/android/playback-summary.json
+          jq -e '.sessionId == "m0d-macro-0-1"' build/m0-d/android/playback-summary.json
+          jq -e '.status == "COMPLETE"' build/m0-d/android/playback-summary.json
+          jq -e '.ttffNs >= 0' build/m0-d/android/playback-summary.json
+
+      - name: Stop Media Lab and summarize host trace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PID="$(cat build/m0-d/media-lab.pid)"
+          kill "$PID"
+          for attempt in {1..20}; do
+            if ! kill -0 "$PID" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+
+          LAB_BIN="$(cat build/m0-d/media-lab-bin.txt)"
+          "$LAB_BIN" summarize             --trace="$PWD/build/m0-d/server/requests.jsonl"             --output="$PWD/build/m0-d/server/network-summary.json"
+
+          jq -e '.schemaVersion == 1' build/m0-d/server/network-summary.json
+          jq -e '.requestTraceSchemaVersion == 2' build/m0-d/server/network-summary.json
+          jq -e '.sessionId == "m0d-macro-0-1"' build/m0-d/server/network-summary.json
+          jq -e '.requestCount > 0' build/m0-d/server/network-summary.json
+
+      - name: Collect raw Perfetto output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TRACE_FILE="$(find benchmark/build             -type f             \( -name '*.perfetto-trace' -o -name '*.pftrace' -o -name '*.trace' \)             | head -1)"
+
+          if [[ -z "$TRACE_FILE" ]]; then
+            echo "No Macrobenchmark Perfetto trace found."
+            find benchmark/build -type f -maxdepth 8 -print | sort
+            exit 1
+          fi
+
+          cp "$TRACE_FILE" build/m0-d/perfetto/trace.pftrace
+          sha256sum build/m0-d/perfetto/trace.pftrace             > build/m0-d/perfetto/trace.sha256
+
+          find benchmark/build/outputs -type f -print             > build/m0-d/perfetto/benchmark-output-files.txt || true
+
+      - name: Compose run manifest and result
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          RUN_ID="m0d-macro-0"
+          SESSION_ID="m0d-macro-0-1"
+          SCENARIO_HASH="$(jq -r '.scenarioHash' build/m0-d/server/scenario.json)"
+          MPD_SHA="$(awk '$2 == "F1/manifest.mpd" { print $1 }'             test-fixtures/media/checksums.sha256)"
+
+          API="$(cat build/m0-d/device-api.txt)"
+          FINGERPRINT="$(cat build/m0-d/device-fingerprint.txt)"
+          MODEL="$(cat build/m0-d/device-model.txt)"
+          ABI="$(cat build/m0-d/device-abi.txt)"
+
+          python3 scripts/measurement/artifacts.py manifest             --output=build/m0-d/run/manifest.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --git-commit="$HEAD_SHA"             --fixture-id=F1             --fixture-manifest=test-fixtures/media/manifest.json             --fixture-resource-sha256="$MPD_SHA"             --scenario-id=N0             --scenario-hash="$SCENARIO_HASH"             --mode=DIRECT             --cache-state=NONE             --requested-transport=RECOMMENDED_PLATFORM             --effective-transport=HTTP_ENGINE             --build-type=benchmark             --debuggable=false             --profileable=true             --minify=false             --compilation-mode=None             --startup-mode=COLD             --device-api="$API"             --device-fingerprint="$FINGERPRINT"             --device-model="$MODEL"             --device-abi="$ABI"             --media3-version=1.11.1             --benchmark-version=1.5.0             --order-seed=0
+
+          python3 scripts/measurement/artifacts.py result-from-files             --output=build/m0-d/run/result.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --scenario-hash="$SCENARIO_HASH"             --playback-summary=build/m0-d/android/playback-summary.json             --network-summary=build/m0-d/server/network-summary.json             --limitation="API 36 emulator correctness capture; not representative performance evidence"
+
+          jq . build/m0-d/run/manifest.json
+          jq . build/m0-d/run/result.json
+
+      - name: Upload M0-D evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m0-d-android-evidence
+          path: |
+            build/m0-d/
+            benchmark/build/outputs/
+          if-no-files-found: error
+          retention-days: 14
