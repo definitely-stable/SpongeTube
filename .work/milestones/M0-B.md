@@ -407,6 +407,41 @@ bodyBytesWritten means writes completed by the handler, not exact remote-NIC wir
 
 JSON escaping is unit-tested. Appends are serialized/thread-safe and each complete record is flushed as one line.
 
+### 14.1 Session event trace
+
+B2 adds a small session-event stream beside per-request JSONL records. It records scenario-level transitions that cannot be reconstructed reliably from completed request rows alone:
+
+- SESSION_STARTED
+- N1_RATE_RESOLVED
+- FIRST_MEDIA_PROGRESS
+- NO_PROGRESS_WINDOW_SCHEDULED
+- NO_PROGRESS_WINDOW_ENTERED
+- NO_PROGRESS_WINDOW_EXITED
+- SESSION_COMPLETED
+
+Each event carries schemaVersion, sessionId, scenarioId/scenarioHash once available, a host-monotonic timestamp and event-specific fields.
+
+### 14.2 Resolved scenario identity
+
+A profile label such as N1 is not sufficient benchmark identity. B2 resolves immutable inputs into a canonical ResolvedScenario containing at least:
+
+- schemaVersion
+- scenarioId
+- profileId
+- firstBodyDelayMs
+- aggregateRateRatio where applicable
+- resolved aggregateRateBps
+- writeQuantumBytes
+- noProgressStartAfterMs
+- noProgressDurationMs
+- random seed when a future stochastic layer is used
+
+`scenarioHash = SHA-256(canonical resolved scenario bytes)`.
+
+The fixture identity remains separately hashed. A run is comparable only when the relevant scenario/fixture identities match, or the report explicitly treats the difference as the variable under test.
+
+The B2 scenario hash is returned in config/startup evidence and later in `X-Sponge-Lab-Scenario`.
+
 ## 15. Fixture strategy
 
 All committed fixtures are synthetic/project-generated.
@@ -496,6 +531,18 @@ Per resource:
 checksums.sha256 independently lists canonical payload checksums.
 
 The runtime server does not need to add a full JSON library merely to serve these files.
+
+### Fixture validation levels
+
+B3 treats a frozen fixture as more than a byte blob:
+
+1. byte identity — committed SHA-256;
+2. structural metadata — ffprobe (and another container-level inspector only if a concrete ambiguity remains);
+3. DASH/CMAF conformance — DASH-IF Conformance on fixture-generation/change workflows.
+
+Normal PR CI verifies hashes/manifest consistency and does not rerun heavyweight conformance when fixture bytes are unchanged. A PR that changes F1 media or its MPD must attach conformance evidence.
+
+F2/F3 diagnostic packaging variants are deliberately deferred until a real ambiguity appears (for example, segmented-vs-range-addressable behavior). They are not added to the initial 40 MiB corpus merely for breadth.
 
 ## 18. Catalog safety
 
