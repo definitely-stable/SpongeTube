@@ -225,6 +225,12 @@ jobs:
           cp "$TRACE_FILE" build/m0-d/perfetto/trace.pftrace
           sha256sum build/m0-d/perfetto/trace.pftrace             > build/m0-d/perfetto/trace.sha256
 
+          python3 scripts/measurement/perfetto_summary.py             --trace=build/m0-d/perfetto/trace.pftrace             --output=build/m0-d/perfetto/summary.json             --status=PARTIAL             --limitation="Raw Perfetto retained; stable numeric TraceProcessor extraction is not populated by this correctness smoke"
+
+          jq -e '.schemaVersion == 1' build/m0-d/perfetto/summary.json
+          jq -e '.status == "PARTIAL"' build/m0-d/perfetto/summary.json
+          jq -e '.rawTraceSha256 | length == 64' build/m0-d/perfetto/summary.json
+
           find benchmark/build/outputs -type f -print             > build/m0-d/perfetto/benchmark-output-files.txt || true
 
       - name: Compose run manifest and result
