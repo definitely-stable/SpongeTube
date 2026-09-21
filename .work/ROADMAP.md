@@ -13,7 +13,7 @@ Canonical milestone specification: `.work/milestones/M0.md`.
 
 M0 is split into focused, reviewable deliveries:
 
-- **M0-A — Build & Repository Foundation**: pinned Android/Gradle toolchain, small module graph, configuration cache, dependency verification.
+- **M0-A — Build & Repository Foundation**: pinned Android/Gradle toolchain and minimal `:app` only; later modules appear when their M0 work item actually needs them.
 - **M0-B — Deterministic Media Lab**: synthetic VOD fixtures, Range/DASH serving, deterministic N0/N1/N4 behavior and request traces.
 - **M0-C — Media3 Baselines**: Direct Media3 and standard CacheDataSource/SimpleCache reference paths.
 - **M0-D — Measurement & Impairment**: structured playback/network metrics, result schema v1, Perfetto/Macrobenchmark integration.
@@ -65,7 +65,7 @@ Build:
 - DescriptorRefresher contract;
 - RequestBudget/retry policy;
 - VPN route policy;
-- Cronet and OkHttp transport candidates;
+- transport evaluation driven by current baseline (HttpEngine/DefaultHttpDataSource) plus additional candidates such as OkHttp or Cronet only where a measured need exists;
 - network impairment suite N0-N11.
 
 Exit:
