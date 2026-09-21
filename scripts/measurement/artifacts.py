@@ -208,7 +208,7 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
             "duplicateRangeBytes": args.duplicate_range_bytes,
             "httpErrorCount": args.http_error_count,
         },
-        "labAccuracy": None,
+        "labAccuracy": getattr(args, "lab_accuracy", None),
         "limitations": limitations,
     }
 
@@ -223,6 +223,11 @@ def read_json_object(path: pathlib.Path) -> dict[str, Any]:
 def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
     playback = read_json_object(pathlib.Path(args.playback_summary))
     network = read_json_object(pathlib.Path(args.network_summary))
+    calibration = (
+        read_json_object(pathlib.Path(args.lab_calibration))
+        if args.lab_calibration is not None
+        else None
+    )
 
     if playback.get("schemaVersion") != 1:
         raise ValueError("unsupported playback summary schemaVersion")
@@ -245,6 +250,34 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(
             f"scenarioHash mismatch: {scenario_hash!r}"
         )
+
+    lab_accuracy = None
+    if calibration is not None:
+        if calibration.get("schemaVersion") != 1:
+            raise ValueError("unsupported lab calibration schemaVersion")
+        calibration_scenario_hash = calibration.get("scenarioHash")
+        if calibration_scenario_hash != args.scenario_hash:
+            raise ValueError(
+                "lab calibration scenarioHash mismatch: "
+                f"{calibration_scenario_hash!r}"
+            )
+        lab_accuracy = {
+            "observedRateBps": calibration.get("observedRateBps"),
+            "rateErrorPct": calibration.get("rateErrorPct"),
+            "observedFirstBodyDelayMs": calibration.get(
+                "observedFirstBodyDelayMs"
+            ),
+            "firstBodyDelayErrorMs": calibration.get(
+                "firstBodyDelayErrorMs"
+            ),
+            "observedNoProgressDurationMs": calibration.get(
+                "observedNoProgressDurationMs"
+            ),
+            "noProgressDurationErrorMs": calibration.get(
+                "noProgressDurationErrorMs"
+            ),
+            "maxSchedulerSlipMs": calibration.get("maxSchedulerSlipMs"),
+        }
 
     seek_samples = playback.get("seekToFrame", [])
     if not isinstance(seek_samples, list):
@@ -277,6 +310,7 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         unique_range_bytes=network.get("uniqueRangeBytes"),
         duplicate_range_bytes=network.get("duplicateRangeBytes"),
         http_error_count=network.get("httpErrorCount"),
+        lab_accuracy=lab_accuracy,
         limitation=limitations,
     )
     return build_result(namespace)
@@ -326,6 +360,7 @@ def result_from_files_parser(subparsers: Any) -> None:
     parser.add_argument("--scenario-hash", required=True)
     parser.add_argument("--playback-summary", required=True)
     parser.add_argument("--network-summary", required=True)
+    parser.add_argument("--lab-calibration")
     parser.add_argument(
         "--limitation",
         action="append",
