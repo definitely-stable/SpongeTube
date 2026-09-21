@@ -65,14 +65,27 @@ jobs:
           fi
 
           export PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/android-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
           echo "$SDK_ROOT/emulator" >> "$GITHUB_PATH"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
 
           echo "no" | "$AVDMANAGER" create avd \
             --force \
             --name m0c-api36 \
             --package "$IMAGE" \
-            --device "pixel_5"
+            --device "pixel_5" \
+            --path "$ANDROID_AVD_HOME/m0c-api36.avd"
+
+          echo "Created AVDs:"
+          "$SDK_ROOT/emulator/emulator" -list-avds
+          test -f "$ANDROID_AVD_HOME/m0c-api36.ini" || {
+            echo "Missing AVD ini under $ANDROID_AVD_HOME"
+            find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -print || true
+            exit 1
+          }
 
           if [[ -e /dev/kvm ]]; then
             sudo chmod 666 /dev/kvm
@@ -177,7 +190,7 @@ jobs:
           adb reverse tcp:18080 tcp:18081
           adb reverse --list
 
-      - name: Run online DIRECT, COLD and WARM phases
+      - name: Run online DIRECT and COLD phases
         shell: bash
         run: |
           set -euo pipefail
@@ -227,29 +240,7 @@ jobs:
           grep -q "segment-0-" build/m0-c-smoke/requests.jsonl
           grep -q "segment-1-" build/m0-c-smoke/requests.jsonl
 
-          BEFORE_WARM=$(wc -l < build/m0-c-smoke/requests.jsonl)
-          run_phase CACHE_WARM
 
-          tail -n +$((BEFORE_WARM + 1)) build/m0-c-smoke/requests.jsonl \
-            > build/m0-c-smoke/warm-network-requests.jsonl
-
-          if grep -q '"resource":"manifest.mpd"' build/m0-c-smoke/warm-network-requests.jsonl; then
-            echo "WARM replay refetched the cached MPD."
-            cat build/m0-c-smoke/warm-network-requests.jsonl
-            exit 1
-          fi
-
-          if grep -q 'segment-0-00001.m4s' build/m0-c-smoke/warm-network-requests.jsonl; then
-            echo "WARM replay refetched the first cached video segment."
-            cat build/m0-c-smoke/warm-network-requests.jsonl
-            exit 1
-          fi
-
-          if grep -q 'segment-1-00001.m4s' build/m0-c-smoke/warm-network-requests.jsonl; then
-            echo "WARM replay refetched the first cached audio segment."
-            cat build/m0-c-smoke/warm-network-requests.jsonl
-            exit 1
-          fi
 
       - name: Stop origin
         shell: bash
@@ -266,6 +257,42 @@ jobs:
           done
 
           echo "Media Lab did not stop after SIGTERM"
+          exit 1
+
+      - name: Verify CACHE WARM from retained coverage with origin offline
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE="io.github.definitelystable.spongetube"
+          ACTIVITY="$PACKAGE/.M0CSmokeActivity"
+          phase="CACHE_WARM"
+          result_file="build/m0-c-smoke/cache_warm.log"
+
+          adb shell am force-stop "$PACKAGE"
+          adb logcat -c
+          adb shell am start -W -n "$ACTIVITY" --es phase "$phase" \
+            > build/m0-c-smoke/cache_warm-am-start.txt
+
+          for attempt in {1..45}; do
+            adb logcat -d -v threadtime > "$result_file"
+            line="$(grep "M0C_SMOKE_RESULT phase=$phase" "$result_file" | tail -1 || true)"
+
+            if [[ "$line" == *"status=PASS"* ]]; then
+              echo "$line"
+              cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
+              exit 0
+            fi
+            if [[ "$line" == *"status=FAIL"* ]]; then
+              echo "$line"
+              cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "Timed out waiting for CACHE_WARM with offline origin"
+          cat "$result_file"
           exit 1
 
       - name: Verify explicit DIRECT offline error
@@ -316,7 +343,7 @@ jobs:
             echo
             echo "videoRequests=$(grep -c 'segment-0-' build/m0-c-smoke/requests.jsonl 2>/dev/null || true)"
             echo "audioRequests=$(grep -c 'segment-1-' build/m0-c-smoke/requests.jsonl 2>/dev/null || true)"
-            echo "warmNetworkRequests=$(wc -l < build/m0-c-smoke/warm-network-requests.jsonl 2>/dev/null || echo 0)"
+            echo "originStoppedBeforeWarm=true"
           } > build/m0-c-smoke/summary.txt
 
           cat build/m0-c-smoke/summary.txt
