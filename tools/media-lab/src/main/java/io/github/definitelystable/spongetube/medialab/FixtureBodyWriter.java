@@ -46,19 +46,24 @@ final class FixtureBodyWriter {
                 throw new IOException("Unexpected EOF while serving " + trace.resourceId);
             }
 
-            try {
-                if (firstChunk) {
+            if (firstChunk) {
+                try {
                     firstBodyDelay.await();
-                    firstChunk = false;
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("First-body delay interrupted", interrupted);
                 }
+                firstChunk = false;
+            }
 
-                long noProgressWaitNs = noProgressGate.awaitOpen();
-                trace.addNoProgressWaitNanos(noProgressWaitNs);
+            long noProgressWaitNs = noProgressGate.awaitOpen();
+            trace.addNoProgressWaitNanos(noProgressWaitNs);
 
+            try {
                 bandwidthGovernor.reserve(read);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                throw new NoProgressCancelledException("Fixture body wait interrupted", interrupted);
+                throw new IOException("Bandwidth reservation interrupted", interrupted);
             }
 
             long writeAt = clock.nowNanos();
