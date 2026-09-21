@@ -79,7 +79,11 @@ class PlaybackMetricReducerTest {
         assertEquals(250L, metrics.stallTotalNs)
         assertEquals(2_260L, metrics.progressIntentNs)
         assertEquals(3_000L, metrics.sessionWallNs)
-        assertEquals(250.0 / 2_260.0, metrics.rebufferRatio, 0.000001)
+        assertEquals(
+            250.0 / 2_260.0,
+            checkNotNull(metrics.rebufferRatio),
+            0.000001,
+        )
         assertEquals(
             listOf(SeekToFrameSample(operationId = 7, durationNs = 240L)),
             metrics.seekToFrame,
@@ -184,7 +188,11 @@ class PlaybackMetricReducerTest {
         assertEquals(1, metrics.stallCount)
         assertEquals(120L, metrics.stallTotalNs)
         assertEquals(280L, metrics.progressIntentNs)
-        assertEquals(120.0 / 280.0, metrics.rebufferRatio, 0.000001)
+        assertEquals(
+            120.0 / 280.0,
+            checkNotNull(metrics.rebufferRatio),
+            0.000001,
+        )
     }
 
     @Test
