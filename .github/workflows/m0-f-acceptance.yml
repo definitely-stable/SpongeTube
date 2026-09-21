@@ -180,6 +180,21 @@ jobs:
               fi
             }
 
+            case_exit() {
+              local status=$?
+              if [[ "$status" -ne 0 ]]; then
+                {
+                  echo "profile=$profile"
+                  echo "baseline=$baseline"
+                  echo "runId=$run_id"
+                  echo "sessionId=$session_id"
+                  echo "exitStatus=$status"
+                } > "$root/case-failure.txt"
+              fi
+              cleanup_lab
+            }
+            trap case_exit EXIT
+
             for attempt in {1..30}; do
               if curl --fail --silent \
                 http://127.0.0.1:18082/__lab/config \
@@ -240,6 +255,7 @@ jobs:
             adb pull "$device_root/." "$root/android/"
 
             cleanup_lab
+            trap - EXIT
 
             test -s "$root/server/requests.events.jsonl"
             test -s "$root/server/requests.calibration.jsonl"
