@@ -218,6 +218,10 @@ Valid but unsatisfiable range:
 - 416 Range Not Satisfiable
 - Content-Range: bytes */completeLength
 
+Examples include a first byte position at or beyond a non-empty representation length and suffix length zero.
+
+An integer range whose last position is lower than its first position (for example `bytes=20-10`) is **invalid syntax**, not valid-but-unsatisfiable. M0-B deterministically ignores it and returns the normal 200 representation.
+
 Malformed or multiple-range syntax is not implemented as multipart. The lab deterministically ignores unsupported/malformed Range and returns the normal 200 representation. It must not misuse 416 merely because multipart support is absent.
 
 HEAD returns full-representation headers and no body.
