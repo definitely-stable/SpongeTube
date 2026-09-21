@@ -1,5 +1,8 @@
 package io.github.definitelystable.spongetube.medialab;
 
+import java.util.ArrayList;
+import java.util.List;
+
 final class SessionCalibration {
 
     private long mediaBytesWritten;
@@ -9,12 +12,14 @@ final class SessionCalibration {
 
     private long firstBodyDelaySampleCount;
     private long firstBodyDelayTotalMs;
+    private final List<Long> firstBodyDelaySamplesMs = new ArrayList<>();
     private Long firstBodyDelayMinMs;
     private Long firstBodyDelayMaxMs;
 
     private Long noProgressEnteredAtNs;
     private Long noProgressExitedAtNs;
     private long maxSchedulerSlipNs;
+    private final List<Long> schedulerSlipSamplesMs = new ArrayList<>();
 
     synchronized void observeMediaWrite(long atNanos, int bytes) {
         if (firstMediaWriteAtNs == null) {
@@ -28,6 +33,7 @@ final class SessionCalibration {
     synchronized void observeFirstBodyDelay(long delayMs) {
         firstBodyDelaySampleCount++;
         firstBodyDelayTotalMs += delayMs;
+        firstBodyDelaySamplesMs.add(delayMs);
         firstBodyDelayMinMs = firstBodyDelayMinMs == null
                 ? delayMs
                 : Math.min(firstBodyDelayMinMs, delayMs);
@@ -49,7 +55,9 @@ final class SessionCalibration {
     }
 
     synchronized void observeSchedulerSlip(long slipNs) {
-        maxSchedulerSlipNs = Math.max(maxSchedulerSlipNs, Math.max(0L, slipNs));
+        long normalized = Math.max(0L, slipNs);
+        maxSchedulerSlipNs = Math.max(maxSchedulerSlipNs, normalized);
+        schedulerSlipSamplesMs.add(nanosToMillisCeil(normalized));
     }
 
     synchronized String toJson(ResolvedScenario scenario) {
@@ -74,6 +82,7 @@ final class SessionCalibration {
                 + Json.quote("firstBodyDelaySampleCount") + ":" + firstBodyDelaySampleCount + ","
                 + Json.quote("firstBodyDelayMinMs") + ":" + nullable(firstBodyDelayMinMs) + ","
                 + Json.quote("firstBodyDelayMaxMs") + ":" + nullable(firstBodyDelayMaxMs) + ","
+                + Json.quote("firstBodyDelaySamplesMs") + ":" + longArray(firstBodyDelaySamplesMs) + ","
                 + Json.quote("configuredNoProgressDurationMs") + ":"
                 + nullable(scenario.noProgressDurationMs()) + ","
                 + Json.quote("observedNoProgressDurationMs") + ":"
@@ -82,6 +91,7 @@ final class SessionCalibration {
                 + nullable(difference(observedNoProgressDurationMs, scenario.noProgressDurationMs())) + ","
                 + Json.quote("maxSchedulerSlipMs") + ":"
                 + nanosToMillisCeil(maxSchedulerSlipNs) + ","
+                + Json.quote("schedulerSlipSamplesMs") + ":" + longArray(schedulerSlipSamplesMs) + ","
                 + Json.quote("mediaBytesWritten") + ":" + mediaBytesWritten + ","
                 + Json.quote("postGateDrainMeasurement") + ":"
                 + Json.quote("client-side real-socket evidence only")
@@ -131,6 +141,17 @@ final class SessionCalibration {
 
     private static String nullableDecimal(Double value) {
         return value == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", value);
+    }
+
+    private static String longArray(List<Long> values) {
+        StringBuilder json = new StringBuilder("[");
+        for (int index = 0; index < values.size(); index++) {
+            if (index > 0) {
+                json.append(',');
+            }
+            json.append(values.get(index));
+        }
+        return json.append(']').toString();
     }
 
     private static long nanosToMillisCeil(long nanos) {
