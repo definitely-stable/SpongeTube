@@ -143,8 +143,8 @@ jobs:
             sleep 1
           done
 
-          jq -e '.scenarioId == "N0"' build/m0-d/server/scenario.json
-          jq -e '.scenarioHash | length == 64' build/m0-d/server/scenario.json
+          jq -e '.scenario.scenarioId == "N0"' build/m0-d/server/scenario.json
+          jq -e '.scenario.scenarioHash | length == 64' build/m0-d/server/scenario.json
 
           adb reverse tcp:18080 tcp:18081
           adb reverse --list
@@ -244,7 +244,7 @@ jobs:
 
           RUN_ID="m0d-macro-0"
           SESSION_ID="m0d-macro-0-1"
-          SCENARIO_HASH="$(jq -r '.scenarioHash' build/m0-d/server/scenario.json)"
+          SCENARIO_HASH="$(jq -r '.scenario.scenarioHash' build/m0-d/server/scenario.json)"
           MPD_SHA="$(awk '$2 == "F1/manifest.mpd" { print $1 }'             test-fixtures/media/checksums.sha256)"
 
           API="$(cat build/m0-d/device-api.txt)"
