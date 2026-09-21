@@ -14,11 +14,11 @@ Canonical milestone specification: `.work/milestones/M0.md`.
 M0 is split into focused, reviewable deliveries:
 
 - **M0-A — Build & Repository Foundation**: pinned Android/Gradle toolchain and minimal `:app` only; later modules appear when their M0 work item actually needs them.
-- **M0-B — Deterministic Media Lab**: synthetic VOD fixtures, Range/DASH serving, deterministic N0/N1/N4 behavior and request traces.
+- **M0-B — Deterministic Media Lab**: separate data/control listeners, synthetic VOD fixtures, Range/DASH serving, deterministic N0/N1/N4 delivery, resolved scenario identity, request/session traces and fixture conformance evidence.
 - **M0-C — Media3 Baselines**: Direct Media3 and standard CacheDataSource/SimpleCache reference paths.
-- **M0-D — Measurement & Impairment**: structured playback/network metrics, result schema v1, Perfetto/Macrobenchmark integration.
-- **M0-E — CI, Testing & Supply Chain**: stable `verify`/`android-smoke` checks, SHA-pinned Actions, emulator correctness automation and artifacts.
-- **M0-F — Acceptance Evidence**: A/B baseline matrix on N0/N1/N4 plus at least one physical-device evidence run.
+- **M0-D — Measurement Harness**: structured playback/network metrics, cross-domain request correlation, run-manifest/result schema, Macrobenchmark and versioned Perfetto summary extraction.
+- **M0-E — CI, Testing & Supply Chain**: stable `verify`/`android-smoke` checks, SHA-pinned Actions, emulator correctness automation and reproducible artifacts.
+- **M0-F — Acceptance Evidence**: calibrated N0/N1/N4 A/B matrix, fixed-seed interleaved run order, raw observations plus uncertainty, and at least one physical-device evidence run.
 
 M0 explicitly does **not** implement Sponge FetchBroker, PlayableCoverage, Smart Buffer policy, a custom persistent store, YouTube extraction, Room/KSP/DI, Shorts, Live, TV or iOS.
 
@@ -27,7 +27,8 @@ Exit:
 - clean clone builds on the pinned API 36 toolchain;
 - deterministic F0/F1 media fixtures have provenance and SHA-256;
 - Direct and Standard Cache Media3 baselines play the same controlled content;
-- N0/N1/N4 are reproducible and emit machine-readable results;
+- N0/N1/N4 are reproducible, scenario-hashed and calibrated before comparison;
+- every benchmark run has a versioned manifest tying build, fixture, scenario, playback mode, cache state and device/runtime state together;
 - CI has stable required checks and reproducible artifacts;
 - emulator evidence is used for correctness, not representative performance;
 - at least one physical-device baseline exists before numeric performance claims are marked Validated.
@@ -56,7 +57,7 @@ Exit:
 
 ## M2 — Network Resilience
 
-Goal: treat bad connectivity as the normal environment.
+Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
 Build:
 
@@ -64,16 +65,27 @@ Build:
 - FailureClassifier;
 - DescriptorRefresher contract;
 - RequestBudget/retry policy;
-- VPN route policy;
-- transport evaluation driven by current baseline (HttpEngine/DefaultHttpDataSource) plus additional candidates such as OkHttp or Cronet only where a measured need exists;
-- network impairment suite N0-N11.
+- VPN/default-route policy;
+- transport evaluation driven by the M0 baseline;
+- layered fault harness rather than one universal emulator:
+  - delivery faults stay in Sponge Media Lab;
+  - transport faults use a separate TCP-stream injector/proxy where justified;
+  - packet/network faults use a scoped emulator such as `tc/netem` or an evidence-backed alternative;
+  - provider faults (403/429/expiry) remain deterministic HTTP semantics;
+  - Android VPN/default-route tests traverse Android's actual selected network rather than `adb reverse`;
+- explicit seed persisted for every stochastic network scenario;
+- network impairment suite N2/N3/N5–N11.
+
+Do not apply netem globally to host loopback when that would also distort ADB/control traffic. Fault injection must be scoped to the media path.
 
 Exit:
 
 - route changes do not invalidate persisted media;
-- VPN disappearance follows defined privacy policy;
+- VPN disappearance follows the defined privacy policy;
 - 403/429/expiry simulations have deterministic recovery;
-- transport choice is backed by benchmark evidence, not preference.
+- transport/network faults can be attributed to their owning layer;
+- stochastic scenarios are reproducible from their persisted seed;
+- transport choice is backed by playback/device evidence, not synthetic throughput preference.
 
 ## M3 — YouTube Adapter Feasibility
 
