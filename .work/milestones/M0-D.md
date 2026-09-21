@@ -247,20 +247,20 @@ Large Perfetto traces remain CI artifacts with short retention. Concise accepted
 
 ## 7. Exit criteria
 
-- [ ] schema-v1 Android event model exists;
-- [ ] Android timestamps use one monotonic clock;
-- [ ] TTFF reducer has tests;
-- [ ] REBUFFER-only stall reducer has tests;
-- [ ] seek-to-frame reducer has tests;
-- [ ] malformed/incomplete event sequences have explicit result semantics;
-- [ ] host network summary excludes control rows;
-- [ ] duplicate range union has overlap/nesting/disjoint tests;
-- [ ] actual written bytes, not planned bytes, define served coverage;
-- [ ] `:benchmark` exists;
-- [ ] app benchmark variant is non-debuggable/profileable;
-- [ ] Benchmark 1.5.0 and Tracing 2.0.2 are pinned;
-- [ ] run-manifest schema binds baseline/scenario/fixture/build/device identity;
-- [ ] host/device correlation never subtracts separate monotonic clocks;
-- [ ] raw Perfetto artifact contract is defined;
-- [ ] emulator evidence is labeled correctness-only;
-- [ ] no M1/Sponge behavior leaks into M0-D.
+- [x] schema-v1 Android event model exists;
+- [x] Android timestamps use one monotonic clock;
+- [x] TTFF reducer has tests;
+- [x] REBUFFER-only stall reducer has tests;
+- [x] seek-to-frame reducer has tests;
+- [x] malformed/incomplete event sequences have explicit result semantics;
+- [x] host network summary excludes control rows;
+- [x] duplicate range union has overlap/nesting/disjoint tests;
+- [x] actual written bytes, not planned bytes, define served coverage;
+- [x] `:benchmark` exists;
+- [x] app benchmark variant is non-debuggable/profileable;
+- [x] Benchmark 1.5.0 and Tracing 2.0.2 are pinned;
+- [x] run-manifest schema binds baseline/scenario/fixture/build/device identity;
+- [x] host/device correlation never subtracts separate monotonic clocks;
+- [x] raw Perfetto artifact contract is defined;
+- [x] emulator evidence is labeled correctness-only;
+- [x] no M1/Sponge behavior leaks into M0-D.
