@@ -81,6 +81,8 @@ class JsonLineTraceWriterTest {
                 1,
                 2L,
                 3,
+                1L,
+                2,
                 null,
                 0,
                 TraceOutcome.SUCCESS);
