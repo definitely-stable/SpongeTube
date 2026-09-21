@@ -22,6 +22,7 @@ class ArtifactContractTest(unittest.TestCase):
 
             args = argparse.Namespace(
                 run_id="run-1",
+                session_id="session-1",
                 created_at_utc="2026-09-21T12:00:00Z",
                 git_commit="a" * 40,
                 fixture_id="F1",
@@ -70,6 +71,7 @@ class ArtifactContractTest(unittest.TestCase):
 
             args = argparse.Namespace(
                 run_id="run-1",
+                session_id="session-1",
                 created_at_utc="2026-09-21T12:00:00Z",
                 git_commit="a" * 40,
                 fixture_id="F1",
@@ -98,6 +100,113 @@ class ArtifactContractTest(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 artifacts.build_manifest(args)
+
+    def test_result_from_files_requires_shared_session_and_scenario(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            playback = root / "playback-summary.json"
+            network = root / "network-summary.json"
+
+            playback.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "session-1",
+                        "status": "COMPLETE",
+                        "ttffNs": 100,
+                        "stallCount": 0,
+                        "stallTotalNs": 0,
+                        "seekToFrame": [
+                            {"operationId": 1, "durationNs": 50}
+                        ],
+                        "playbackErrorCodes": [],
+                        "issues": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            network.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "session-1",
+                        "scenarioId": "N0",
+                        "scenarioHash": "c" * 64,
+                        "requestCount": 4,
+                        "networkBytes": 1000,
+                        "uniqueRangeBytes": 900,
+                        "duplicateRangeBytes": 100,
+                        "httpErrorCount": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            args = argparse.Namespace(
+                run_id="run-1",
+                session_id="session-1",
+                scenario_hash="c" * 64,
+                playback_summary=str(playback),
+                network_summary=str(network),
+                limitation=[],
+            )
+
+            result = artifacts.build_result_from_files(args)
+
+            self.assertEqual("COMPLETE", result["status"])
+            self.assertEqual([50], result["playback"]["seekToFrameNs"])
+            self.assertEqual(100, result["network"]["duplicateRangeBytes"])
+
+    def test_result_from_files_rejects_session_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            playback = root / "playback-summary.json"
+            network = root / "network-summary.json"
+
+            playback.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "android-session",
+                        "status": "COMPLETE",
+                        "ttffNs": 100,
+                        "stallCount": 0,
+                        "stallTotalNs": 0,
+                        "seekToFrame": [],
+                        "playbackErrorCodes": [],
+                        "issues": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            network.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "host-session",
+                        "scenarioId": "N0",
+                        "scenarioHash": "c" * 64,
+                        "requestCount": 0,
+                        "networkBytes": 0,
+                        "uniqueRangeBytes": 0,
+                        "duplicateRangeBytes": 0,
+                        "httpErrorCount": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            args = argparse.Namespace(
+                run_id="run-1",
+                session_id="android-session",
+                scenario_hash="c" * 64,
+                playback_summary=str(playback),
+                network_summary=str(network),
+                limitation=[],
+            )
+
+            with self.assertRaises(ValueError):
+                artifacts.build_result_from_files(args)
 
     def test_result_enforces_duplicate_byte_identity(self):
         args = argparse.Namespace(
