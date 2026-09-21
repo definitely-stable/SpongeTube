@@ -19,3 +19,5 @@ dependencyResolutionManagement {
 rootProject.name = "SpongeTube"
 include(":app")
 include(":tools:media-lab")
+
+include(":playback:baseline")
