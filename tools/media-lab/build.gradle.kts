@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.PathSensitivity
+
 plugins {
     application
     java
@@ -24,12 +26,19 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("--add-modules", "jdk.httpserver"))
 }
 
+val canonicalFixtureRoot = rootProject.layout.projectDirectory.dir("test-fixtures/media")
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     jvmArgs("--add-modules=jdk.httpserver")
+
+    inputs.dir(canonicalFixtureRoot)
+        .withPropertyName("canonicalMediaFixtures")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     systemProperty(
         "spongetube.fixtureRoot",
-        rootProject.layout.projectDirectory.dir("test-fixtures/media").asFile.absolutePath,
+        canonicalFixtureRoot.asFile.absolutePath,
     )
 }
 
