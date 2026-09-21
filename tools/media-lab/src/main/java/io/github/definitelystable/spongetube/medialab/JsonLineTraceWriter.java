@@ -21,9 +21,8 @@ final class JsonLineTraceWriter implements Closeable {
         writer = Files.newBufferedWriter(
                 path,
                 StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.APPEND);
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE);
     }
 
     synchronized void append(RequestTrace trace) throws IOException {
