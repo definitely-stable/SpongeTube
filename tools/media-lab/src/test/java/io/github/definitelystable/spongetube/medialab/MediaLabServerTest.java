@@ -150,7 +150,7 @@ class MediaLabServerTest {
         }
 
         List<String> traceLines = Files.readAllLines(tracePath);
-        assertEquals(11, traceLines.size());
+        assertEquals(12, traceLines.size());
         assertTrue(traceLines.stream().allMatch(line -> line.startsWith("{") && line.endsWith("}")));
         assertTrue(traceLines.stream().anyMatch(line ->
                 line.contains("\"status\":206")
