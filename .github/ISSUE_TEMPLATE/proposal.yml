@@ -1,0 +1,48 @@
+name: Engineering proposal
+description: Propose a scoped product, architecture, performance or repository change
+title: "proposal: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete problem or hypothesis should be addressed?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope
+      description: What should change, and what is explicitly out of scope?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Existing evidence
+      description: Measurements, references, failure cases or prior experiments supporting the proposal.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Product / UX
+        - Sponge Core
+        - Network / transport
+        - YouTube adapter
+        - Playback / Media3
+        - Storage / offline
+        - Verification / benchmarks
+        - Build / CI / repository
+        - Documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Scope checks
+      options:
+        - label: I checked the current .work product and architecture constraints.
+          required: true
+        - label: I am not treating an unmeasured performance assumption as a fact.
+          required: true
