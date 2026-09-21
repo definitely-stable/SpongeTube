@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.media3.common.ForwardingSimpleBasePlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.Closeable
 import java.io.File
@@ -16,11 +17,13 @@ class PlaybackMeasurementSession private constructor(
     val player: Player,
     val artifactFile: File,
     val summaryFile: File,
+    val crossCheckFile: File?,
     private val recorder: PlaybackEventRecorder,
     private val sink: JsonlPlaybackEventFileSink,
     private val capturedEvents: MutableList<PlaybackEvent>,
     private val listener: Player.Listener,
     private val state: MeasurementPlayerState,
+    private val playbackStatsListener: PlaybackStatsListener?,
 ) : Closeable {
 
     private val closed = AtomicBoolean(false)
@@ -45,6 +48,16 @@ class PlaybackMeasurementSession private constructor(
             sessionId = sessionId,
             metrics = metrics,
         )
+        val statsListener = playbackStatsListener
+        val statsFile = crossCheckFile
+        if (statsListener != null && statsFile != null) {
+            PlaybackStatsCrossCheckWriter.write(
+                file = statsFile,
+                sessionId = sessionId,
+                listener = statsListener,
+                customMetrics = metrics,
+            )
+        }
     }
 
     companion object {
@@ -53,6 +66,7 @@ class PlaybackMeasurementSession private constructor(
             delegate: Player,
             runId: String,
             generation: Long,
+            playbackStatsListener: PlaybackStatsListener? = null,
         ): PlaybackMeasurementSession {
             require(runId.matches(Regex("[A-Za-z0-9._-]+"))) {
                 "runId contains unsupported file-name characters"
@@ -65,6 +79,9 @@ class PlaybackMeasurementSession private constructor(
             val artifactDirectory = File(root, sessionId)
             val artifactFile = File(artifactDirectory, "playback-events.jsonl")
             val summaryFile = File(artifactDirectory, "playback-summary.json")
+            val crossCheckFile = playbackStatsListener?.let {
+                File(artifactDirectory, "playback-stats-cross-check.json")
+            }
             val sink = JsonlPlaybackEventFileSink.createNew(artifactFile)
             val capturedEvents = mutableListOf<PlaybackEvent>()
             val recorder = PlaybackEventRecorder(
@@ -94,11 +111,13 @@ class PlaybackMeasurementSession private constructor(
                 player = measuredPlayer,
                 artifactFile = artifactFile,
                 summaryFile = summaryFile,
+                crossCheckFile = crossCheckFile,
                 recorder = recorder,
                 sink = sink,
                 capturedEvents = capturedEvents,
                 listener = listener,
                 state = measurementState,
+                playbackStatsListener = playbackStatsListener,
             )
         }
     }
