@@ -39,7 +39,7 @@
         "mp4a.40.2"
       ],
       "container": "DASH/fMP4",
-      "actualBytes": 13956164,
+      "actualBytes": 13956166,
       "mediaPayloadBytes": 13954053,
       "actualAverageBitrateBps": 620180,
       "referencePlaybackBitrateBps": 620180,
@@ -49,8 +49,8 @@
         {
           "relativePath": "F1/manifest.mpd",
           "role": "dash-manifest",
-          "sizeBytes": 2111,
-          "sha256": "84f49692882cfb45e419df80d6a5bb16ce2a34e712dcbcd8c9a456a99d978d1a",
+          "sizeBytes": 2113,
+          "sha256": "e0e05820165ae7c93c81ee8a71a4a3c1412bf6262416dcb1709c769caee07a56",
           "contentType": "application/dash+xml"
         },
         {
