@@ -6,7 +6,7 @@
 	profiles="urn:mpeg:dash:profile:isoff-live:2011"
 	type="static"
 	mediaPresentationDuration="PT3M0.0S"
-	maxSegmentDuration="PT10.0S"
+	maxSegmentDuration="PT10.006S"
 	minBufferTime="PT20.0S">
 	<ProgramInformation>
 	</ProgramInformation>
