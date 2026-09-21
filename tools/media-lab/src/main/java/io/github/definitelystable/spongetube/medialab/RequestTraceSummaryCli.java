@@ -19,17 +19,36 @@ final class RequestTraceSummaryCli {
         Map<String, String> options = CliOptionParser.parse(
                 args,
                 1,
-                Set.of("trace", "output"));
+                Set.of(
+                        "trace",
+                        "output",
+                        "expected-session-id",
+                        "expected-scenario-id",
+                        "expected-scenario-hash"));
 
         Path tracePath = Path.of(CliOptionParser.required(options, "trace"));
         Path outputPath = Path.of(CliOptionParser.required(options, "output"));
 
-        summarize(tracePath, outputPath);
+        summarize(
+                tracePath,
+                outputPath,
+                options.get("expected-session-id"),
+                options.get("expected-scenario-id"),
+                options.get("expected-scenario-hash"));
     }
 
     static void summarize(
             Path tracePath,
             Path outputPath) throws IOException {
+        summarize(tracePath, outputPath, null, null, null);
+    }
+
+    static void summarize(
+            Path tracePath,
+            Path outputPath,
+            String expectedSessionId,
+            String expectedScenarioId,
+            String expectedScenarioHash) throws IOException {
         List<RequestTrace> traces = readTrace(tracePath);
         MediaNetworkSummary summary = RequestTraceSummary.summarize(traces);
 
@@ -49,9 +68,18 @@ final class RequestTraceSummaryCli {
             scenarioHashes.add(trace.scenarioHash());
         }
 
-        String sessionId = single("sessionId", sessionIds);
-        String scenarioId = single("scenarioId", scenarioIds);
-        String scenarioHash = single("scenarioHash", scenarioHashes);
+        String sessionId = resolveIdentity(
+                "sessionId",
+                sessionIds,
+                expectedSessionId);
+        String scenarioId = resolveIdentity(
+                "scenarioId",
+                scenarioIds,
+                expectedScenarioId);
+        String scenarioHash = resolveIdentity(
+                "scenarioHash",
+                scenarioHashes,
+                expectedScenarioHash);
 
         Path parent = outputPath.toAbsolutePath().getParent();
         if (parent != null) {
@@ -158,17 +186,50 @@ final class RequestTraceSummaryCli {
                 TraceOutcome.valueOf(string(row, "outcome")));
     }
 
-    private static String single(
+    private static String resolveIdentity(
             String name,
-            Set<String> values) {
-        if (values.size() != 1) {
+            Set<String> values,
+            String expected) {
+        if (values.size() > 1) {
             throw new IllegalArgumentException(
-                    "Expected exactly one "
+                    "Expected at most one "
                             + name
                             + " in data-plane fixture trace, got "
                             + values);
         }
-        return values.iterator().next();
+
+        if (values.isEmpty()) {
+            if (expected == null || expected.isBlank()) {
+                throw new IllegalArgumentException(
+                        "No data-plane fixture rows contain "
+                                + name
+                                + "; provide --expected-"
+                                + cliIdentityName(name));
+            }
+            return expected;
+        }
+
+        String observed = values.iterator().next();
+        if (expected != null && !expected.equals(observed)) {
+            throw new IllegalArgumentException(
+                    "Observed "
+                            + name
+                            + "="
+                            + observed
+                            + " does not match expected "
+                            + expected);
+        }
+        return observed;
+    }
+
+    private static String cliIdentityName(String name) {
+        return switch (name) {
+            case "sessionId" -> "session-id";
+            case "scenarioId" -> "scenario-id";
+            case "scenarioHash" -> "scenario-hash";
+            default -> throw new IllegalArgumentException(
+                    "Unknown identity field: " + name);
+        };
     }
 
     private static String string(
