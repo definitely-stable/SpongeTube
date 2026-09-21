@@ -27,6 +27,10 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     jvmArgs("--add-modules=jdk.httpserver")
+    systemProperty(
+        "spongetube.fixtureRoot",
+        rootProject.layout.projectDirectory.dir("test-fixtures/media").asFile.absolutePath,
+    )
 }
 
 tasks.withType<JavaExec>().configureEach {
