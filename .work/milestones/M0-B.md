@@ -131,7 +131,7 @@ tools:media-lab is a host JVM application:
 - Gradle application plugin;
 - JDK jdk.httpserver;
 - no third-party runtime dependency;
-- JUnit 6.1.2 for tests;
+- JUnit 6.1.3 for tests;
 - JDK HttpClient for server integration tests.
 
 It has no Android or Media3 dependency.
@@ -708,4 +708,4 @@ M0-B/#5 is complete only when:
 - FFmpeg filters: https://ffmpeg.org/ffmpeg-filters.html
 - FFmpeg formats/DASH: https://ffmpeg.org/ffmpeg-formats.html
 - FFmpeg releases: https://ffmpeg.org/download.html
-- JUnit 6.1.2 release notes: https://docs.junit.org/6.1.2/release-notes.html
+- JUnit 6.1.3 release notes: https://docs.junit.org/6.1.3/release-notes.html
