@@ -1,0 +1,260 @@
+name: Android Smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/android-smoke.yml"
+      - "app/**"
+      - "benchmark/**"
+      - "playback/**"
+      - "tools/media-lab/**"
+      - "scripts/ci/**"
+      - "scripts/measurement/**"
+      - "test-fixtures/media/**"
+      - "gradle/libs.versions.toml"
+      - "gradle/verification-metadata.xml"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/android-smoke.yml"
+      - "app/**"
+      - "benchmark/**"
+      - "playback/**"
+      - "tools/media-lab/**"
+      - "scripts/ci/**"
+      - "scripts/measurement/**"
+      - "test-fixtures/media/**"
+      - "gradle/libs.versions.toml"
+      - "gradle/verification-metadata.xml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-smoke:
+    name: android-smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
+      - name: Build smoke target and Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict --configuration-cache \
+            :app:assembleBenchmark \
+            :benchmark:assembleBenchmark \
+            :tools:media-lab:installDist
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh \
+            36 \
+            m0e-api36 \
+            build/android-smoke/device
+
+      - name: Run N0 and N1 smoke scenarios
+        shell: bash
+        env:
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p build/android-smoke
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          F1_BITRATE="$(jq -r '.fixtures[] | select(.fixtureId == "F1") | .referencePlaybackBitrateBps' test-fixtures/media/manifest.json)"
+          test "$F1_BITRATE" -gt 0
+          MPD_SHA="$(awk '$2 == "F1/manifest.mpd" { print $1 }' test-fixtures/media/checksums.sha256)"
+          test "${#MPD_SHA}" -eq 64
+
+          run_profile() {
+            local profile="$1"
+            local lower
+            lower="$(printf '%s' "$profile" | tr '[:upper:]' '[:lower:]')"
+            local run_id="android-smoke-$lower"
+            local session_id="$run_id-1"
+            local root="build/android-smoke/$profile"
+            local trace="$PWD/$root/server/requests.jsonl"
+
+            rm -rf "$root"
+            mkdir -p "$root"/{server,android,run}
+
+            local args=(
+              serve
+              "--fixture-root=$PWD/test-fixtures/media"
+              "--trace=$trace"
+              "--session-id=$session_id"
+              "--profile=$profile"
+              "--data-port=18081"
+              "--control-port=18082"
+            )
+            if [[ "$profile" == "N1" ]]; then
+              args+=("--reference-playback-bitrate-bps=$F1_BITRATE")
+            fi
+
+            "$LAB_BIN" "${args[@]}" \
+              > "$root/server/media-lab.out" \
+              2> "$root/server/media-lab.err" &
+            local lab_pid=$!
+
+            cleanup_lab() {
+              if kill -0 "$lab_pid" 2>/dev/null; then
+                kill "$lab_pid" || true
+                for _ in {1..40}; do
+                  kill -0 "$lab_pid" 2>/dev/null || break
+                  sleep 0.25
+                done
+              fi
+            }
+            trap cleanup_lab RETURN
+
+            for attempt in {1..30}; do
+              if curl --fail --silent \
+                http://127.0.0.1:18082/__lab/config \
+                > "$root/server/scenario.json"; then
+                break
+              fi
+              if [[ "$attempt" -eq 30 ]]; then
+                cat "$root/server/media-lab.out" || true
+                cat "$root/server/media-lab.err" || true
+                return 1
+              fi
+              sleep 1
+            done
+
+            jq -e --arg profile "$profile" '.profileId == $profile' \
+              "$root/server/scenario.json"
+            local scenario_hash
+            scenario_hash="$(jq -r '.scenario.scenarioHash' "$root/server/scenario.json")"
+            test "${#scenario_hash}" -eq 64
+
+            adb reverse tcp:18080 tcp:18081
+            adb logcat -c
+
+            ./gradlew :benchmark:connectedBenchmarkAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.benchmark.M0AndroidSmokeTest \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.runId="$run_id"
+
+            adb logcat -d -v threadtime > "$root/android/logcat.txt"
+
+            local source_dir
+            source_dir="$(find benchmark/build/outputs/connected_android_test_additional_output \
+              -type d -path "*/android-smoke/$session_id" -print -quit)"
+            test -n "$source_dir"
+            cp -R "$source_dir/." "$root/android/"
+
+            jq -e '.schemaVersion == 1 and .status == "COMPLETE"' \
+              "$root/android/playback-summary.json"
+            jq -e '.playbackErrorCodes | length == 0' \
+              "$root/android/playback-summary.json"
+            jq -e --arg session "$session_id" '.sessionId == $session' \
+              "$root/android/playback-summary.json"
+
+            cleanup_lab
+            trap - RETURN
+
+            test -s "$root/server/requests.events.jsonl"
+            test -s "$root/server/requests.calibration.jsonl"
+            mv "$root/server/requests.events.jsonl" "$root/server/events.jsonl"
+            mv "$root/server/requests.calibration.jsonl" "$root/server/calibration.json"
+
+            "$LAB_BIN" summarize \
+              --trace="$root/server/requests.jsonl" \
+              --output="$root/server/network-summary.json"
+
+            jq -e --arg session "$session_id" \
+              '.schemaVersion == 1 and .sessionId == $session and .requestCount > 0' \
+              "$root/server/network-summary.json"
+
+            local api fingerprint model abi
+            api="$(cat build/android-smoke/device/device-api.txt)"
+            fingerprint="$(cat build/android-smoke/device/device-fingerprint.txt)"
+            model="$(cat build/android-smoke/device/device-model.txt)"
+            abi="$(cat build/android-smoke/device/device-abi.txt)"
+
+            python3 scripts/measurement/artifacts.py manifest \
+              --output="$root/run/manifest.json" \
+              --run-id="$run_id" \
+              --session-id="$session_id" \
+              --git-commit="$GIT_SHA" \
+              --fixture-id=F1 \
+              --fixture-manifest=test-fixtures/media/manifest.json \
+              --fixture-resource-sha256="$MPD_SHA" \
+              --scenario-id="$profile" \
+              --scenario-hash="$scenario_hash" \
+              --mode=DIRECT \
+              --cache-state=NONE \
+              --requested-transport=RECOMMENDED_PLATFORM \
+              --effective-transport=HTTP_ENGINE \
+              --build-type=benchmark \
+              --debuggable=false \
+              --profileable=true \
+              --minify=false \
+              --compilation-mode=INSTALLED_DEFAULT \
+              --startup-mode=COLD \
+              --device-api="$api" \
+              --device-fingerprint="$fingerprint" \
+              --device-model="$model" \
+              --device-abi="$abi" \
+              --media3-version=1.11.1 \
+              --benchmark-version=1.5.0 \
+              --order-seed=0
+
+            python3 scripts/measurement/artifacts.py result-from-files \
+              --output="$root/run/result.json" \
+              --run-id="$run_id" \
+              --session-id="$session_id" \
+              --scenario-hash="$scenario_hash" \
+              --playback-summary="$root/android/playback-summary.json" \
+              --network-summary="$root/server/network-summary.json" \
+              --run-manifest="$root/run/manifest.json" \
+              --lab-calibration="$root/server/calibration.json" \
+              --limitation="API 36 emulator correctness smoke; timing/resource observations are non-representative"
+
+            jq -e '.manifestSha256 | length == 64' "$root/run/result.json"
+            jq -e '.playback.playbackErrorCodes | length == 0' "$root/run/result.json"
+          }
+
+          run_profile N0
+          run_profile N1
+
+      - name: Upload Android smoke evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-smoke-evidence
+          path: |
+            build/android-smoke/
+            benchmark/build/outputs/androidTest-results/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: |
+          adb emu kill || true
