@@ -148,6 +148,7 @@ class ArtifactContractTest(unittest.TestCase):
                 scenario_hash="c" * 64,
                 playback_summary=str(playback),
                 network_summary=str(network),
+                lab_calibration=None,
                 limitation=[],
             )
 
@@ -202,6 +203,143 @@ class ArtifactContractTest(unittest.TestCase):
                 scenario_hash="c" * 64,
                 playback_summary=str(playback),
                 network_summary=str(network),
+                lab_calibration=None,
+                limitation=[],
+            )
+
+            with self.assertRaises(ValueError):
+                artifacts.build_result_from_files(args)
+
+    def test_result_from_files_includes_matching_lab_calibration(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            playback = root / "playback-summary.json"
+            network = root / "network-summary.json"
+            calibration = root / "calibration.json"
+
+            playback.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "session-1",
+                        "status": "COMPLETE",
+                        "ttffNs": 100,
+                        "stallCount": 0,
+                        "stallTotalNs": 0,
+                        "seekToFrame": [],
+                        "playbackErrorCodes": [],
+                        "issues": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            network.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "session-1",
+                        "scenarioId": "N1",
+                        "scenarioHash": "c" * 64,
+                        "requestCount": 4,
+                        "networkBytes": 1000,
+                        "uniqueRangeBytes": 900,
+                        "duplicateRangeBytes": 100,
+                        "httpErrorCount": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            calibration.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "scenarioId": "N1",
+                        "scenarioHash": "c" * 64,
+                        "observedRateBps": 310090,
+                        "rateErrorPct": 0.5,
+                        "observedFirstBodyDelayMs": 121,
+                        "firstBodyDelayErrorMs": 1,
+                        "observedNoProgressDurationMs": None,
+                        "noProgressDurationErrorMs": None,
+                        "maxSchedulerSlipMs": 2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            args = argparse.Namespace(
+                run_id="run-1",
+                session_id="session-1",
+                scenario_hash="c" * 64,
+                playback_summary=str(playback),
+                network_summary=str(network),
+                lab_calibration=str(calibration),
+                limitation=[],
+            )
+
+            result = artifacts.build_result_from_files(args)
+
+            self.assertEqual(310090, result["labAccuracy"]["observedRateBps"])
+            self.assertEqual(1, result["labAccuracy"]["firstBodyDelayErrorMs"])
+            self.assertEqual(2, result["labAccuracy"]["maxSchedulerSlipMs"])
+
+    def test_result_from_files_rejects_calibration_scenario_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            playback = root / "playback-summary.json"
+            network = root / "network-summary.json"
+            calibration = root / "calibration.json"
+
+            playback.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "session-1",
+                        "status": "COMPLETE",
+                        "ttffNs": 100,
+                        "stallCount": 0,
+                        "stallTotalNs": 0,
+                        "seekToFrame": [],
+                        "playbackErrorCodes": [],
+                        "issues": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            network.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sessionId": "session-1",
+                        "scenarioId": "N0",
+                        "scenarioHash": "c" * 64,
+                        "requestCount": 0,
+                        "networkBytes": 0,
+                        "uniqueRangeBytes": 0,
+                        "duplicateRangeBytes": 0,
+                        "httpErrorCount": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            calibration.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "scenarioId": "N0",
+                        "scenarioHash": "d" * 64,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            args = argparse.Namespace(
+                run_id="run-1",
+                session_id="session-1",
+                scenario_hash="c" * 64,
+                playback_summary=str(playback),
+                network_summary=str(network),
+                lab_calibration=str(calibration),
                 limitation=[],
             )
 
