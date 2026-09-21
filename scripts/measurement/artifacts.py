@@ -206,6 +206,37 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
             "PARTIAL/INVALID results require at least one limitation"
         )
 
+    cache = None
+    cache_at_preparation = getattr(
+        args,
+        "cache_bytes_at_preparation",
+        None,
+    )
+    cache_at_end = getattr(args, "cache_bytes_at_end", None)
+    cache_delta = getattr(args, "cache_delta_bytes", None)
+    cache_values = [
+        cache_at_preparation,
+        cache_at_end,
+        cache_delta,
+    ]
+    if any(value is not None for value in cache_values):
+        if not all(value is not None for value in cache_values):
+            raise ValueError(
+                "cache observations require preparation/end/delta together"
+            )
+        if cache_at_preparation < 0 or cache_at_end < 0:
+            raise ValueError("cache byte observations must be >= 0")
+        if cache_at_end - cache_at_preparation != cache_delta:
+            raise ValueError(
+                "cacheDeltaBytes must equal "
+                "cacheBytesAtEnd - cacheBytesAtPreparation"
+            )
+        cache = {
+            "cacheBytesAtPreparation": cache_at_preparation,
+            "cacheBytesAtEnd": cache_at_end,
+            "cacheDeltaBytes": cache_delta,
+        }
+
     result = {
         "schemaVersion": 1,
         "runId": args.run_id,
@@ -231,6 +262,7 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
             "duplicateRangeBytes": args.duplicate_range_bytes,
             "httpErrorCount": args.http_error_count,
         },
+        "cache": cache,
         "labAccuracy": getattr(args, "lab_accuracy", None),
         "limitations": limitations,
     }
@@ -263,6 +295,11 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         if args.lab_calibration is not None
         else None
     )
+    cache_observations = (
+        read_json_object(pathlib.Path(args.baseline_observations))
+        if getattr(args, "baseline_observations", None) is not None
+        else None
+    )
 
     if playback.get("schemaVersion") != 1:
         raise ValueError("unsupported playback summary schemaVersion")
@@ -270,6 +307,13 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("unsupported network summary schemaVersion")
     if run_manifest.get("schemaVersion") != 1:
         raise ValueError("unsupported run manifest schemaVersion")
+    if (
+        cache_observations is not None
+        and cache_observations.get("schemaVersion") != 1
+    ):
+        raise ValueError(
+            "unsupported baseline observations schemaVersion"
+        )
     if run_manifest.get("runId") != args.run_id:
         raise ValueError("run manifest runId mismatch")
     if run_manifest.get("sessionId") != args.session_id:
@@ -283,6 +327,11 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
 
     playback_session = playback.get("sessionId")
     network_session = network.get("sessionId")
+    if (
+        cache_observations is not None
+        and cache_observations.get("sessionId") != args.session_id
+    ):
+        raise ValueError("baseline observations sessionId mismatch")
     if playback_session != args.session_id:
         raise ValueError(
             f"playback sessionId mismatch: {playback_session!r}"
@@ -363,6 +412,21 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         unique_range_bytes=network.get("uniqueRangeBytes"),
         duplicate_range_bytes=network.get("duplicateRangeBytes"),
         http_error_count=network.get("httpErrorCount"),
+        cache_bytes_at_preparation=(
+            cache_observations.get("cacheBytesAtPreparation")
+            if cache_observations is not None
+            else None
+        ),
+        cache_bytes_at_end=(
+            cache_observations.get("cacheBytesAtEnd")
+            if cache_observations is not None
+            else None
+        ),
+        cache_delta_bytes=(
+            cache_observations.get("cacheDeltaBytes")
+            if cache_observations is not None
+            else None
+        ),
         lab_accuracy=lab_accuracy,
         limitation=limitations,
     )
@@ -415,6 +479,7 @@ def result_from_files_parser(subparsers: Any) -> None:
     parser.add_argument("--network-summary", required=True)
     parser.add_argument("--run-manifest", required=True)
     parser.add_argument("--lab-calibration")
+    parser.add_argument("--baseline-observations")
     parser.add_argument(
         "--limitation",
         action="append",
@@ -452,6 +517,9 @@ def result_parser(subparsers: Any) -> None:
     parser.add_argument("--unique-range-bytes", required=True, type=int)
     parser.add_argument("--duplicate-range-bytes", required=True, type=int)
     parser.add_argument("--http-error-count", required=True, type=int)
+    parser.add_argument("--cache-bytes-at-preparation", type=int)
+    parser.add_argument("--cache-bytes-at-end", type=int)
+    parser.add_argument("--cache-delta-bytes", type=int)
     parser.add_argument(
         "--limitation",
         action="append",
