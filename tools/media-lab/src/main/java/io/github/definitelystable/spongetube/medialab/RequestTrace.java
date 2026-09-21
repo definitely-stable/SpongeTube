@@ -18,6 +18,8 @@ record RequestTrace(
         long acceptedAtMonotonicNs,
         Long firstBodyWriteAtMonotonicNs,
         long completedAtMonotonicNs,
+        Long serverFirstBodyWriteDelayMs,
+        long handlerDurationMs,
         Long configuredRateBps,
         long noProgressWaitMs,
         TraceOutcome outcome) {
@@ -42,6 +44,8 @@ record RequestTrace(
         field(json, "acceptedAtMonotonicNs", acceptedAtMonotonicNs).append(',');
         nullableField(json, "firstBodyWriteAtMonotonicNs", firstBodyWriteAtMonotonicNs).append(',');
         field(json, "completedAtMonotonicNs", completedAtMonotonicNs).append(',');
+        nullableField(json, "serverFirstBodyWriteDelayMs", serverFirstBodyWriteDelayMs).append(',');
+        field(json, "handlerDurationMs", handlerDurationMs).append(',');
         nullableField(json, "configuredRateBps", configuredRateBps).append(',');
         field(json, "noProgressWaitMs", noProgressWaitMs).append(',');
         field(json, "outcome", outcome.name());
