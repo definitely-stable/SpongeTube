@@ -158,7 +158,7 @@ final class MediaLabServer implements AutoCloseable {
 
         if ("/__lab/health".equals(rawPath)) {
             if (!"GET".equals(method)) {
-                sendMethodNotAllowed(exchange, trace);
+                sendMethodNotAllowed(exchange, trace, "GET");
                 return;
             }
             sendJson(exchange, trace, 200,
@@ -169,7 +169,7 @@ final class MediaLabServer implements AutoCloseable {
 
         if ("/__lab/config".equals(rawPath)) {
             if (!"GET".equals(method)) {
-                sendMethodNotAllowed(exchange, trace);
+                sendMethodNotAllowed(exchange, trace, "GET");
                 return;
             }
             sendJson(exchange, trace, 200, configJson());
