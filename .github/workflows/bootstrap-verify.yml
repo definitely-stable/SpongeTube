@@ -73,6 +73,11 @@ jobs:
         run: |
           test -s gradle/verification-metadata.xml
 
+      - name: Verify measurement artifact contracts
+        shell: bash
+        run: |
+          python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py' -v
+
       - name: Verify build and configuration cache
         shell: bash
         run: |
