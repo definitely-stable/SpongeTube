@@ -19,6 +19,15 @@ android {
         compose = true
     }
 
+    buildTypes {
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -39,6 +48,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    add("benchmarkImplementation", libs.androidx.profileinstaller)
+    add("benchmarkImplementation", libs.androidx.tracing)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
