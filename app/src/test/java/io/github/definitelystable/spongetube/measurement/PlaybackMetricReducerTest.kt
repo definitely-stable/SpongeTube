@@ -77,6 +77,9 @@ class PlaybackMetricReducerTest {
         assertEquals(400L, metrics.ttffNs)
         assertEquals(1, metrics.stallCount)
         assertEquals(250L, metrics.stallTotalNs)
+        assertEquals(2_260L, metrics.progressIntentNs)
+        assertEquals(3_000L, metrics.sessionWallNs)
+        assertEquals(250.0 / 2_260.0, metrics.rebufferRatio, 0.000001)
         assertEquals(
             listOf(SeekToFrameSample(operationId = 7, durationNs = 240L)),
             metrics.seekToFrame,
@@ -180,6 +183,36 @@ class PlaybackMetricReducerTest {
         assertEquals(MetricDerivationStatus.COMPLETE, metrics.status)
         assertEquals(1, metrics.stallCount)
         assertEquals(120L, metrics.stallTotalNs)
+        assertEquals(280L, metrics.progressIntentNs)
+        assertEquals(120.0 / 280.0, metrics.rebufferRatio, 0.000001)
+    }
+
+    @Test
+    fun unclosedRebufferIsPartialInsteadOfSilentlyCompleted() {
+        val metrics = PlaybackMetricReducer.reduce(
+            listOf(
+                event(1, 0, PlaybackEventType.SESSION_STARTED),
+                event(2, 10, PlaybackEventType.PLAY_REQUESTED),
+                event(3, 20, PlaybackEventType.FIRST_FRAME),
+                event(
+                    4,
+                    100,
+                    PlaybackEventType.BUFFERING_STARTED,
+                    bufferingReason = BufferingReason.REBUFFER,
+                ),
+                event(5, 200, PlaybackEventType.SESSION_ENDED),
+            ),
+        )
+
+        assertEquals(MetricDerivationStatus.PARTIAL, metrics.status)
+        assertEquals(0, metrics.stallCount)
+        assertEquals(0L, metrics.stallTotalNs)
+        assertEquals(180L, metrics.progressIntentNs)
+        assertTrue(
+            metrics.issues.any {
+                it.code == MetricIssueCode.UNCLOSED_REBUFFER
+            },
+        )
     }
 
     @Test
