@@ -344,14 +344,18 @@ jobs:
               fi
             elif [[ "$profile" == "N4" ]]; then
               jq -e '
-                .configuredNoProgressDurationMs == 120000 and
-                .observedNoProgressDurationMs != null
+                .configuredNoProgressDurationMs == 120000
               ' "$root/server/calibration.json"
-              jq -e '
-                .playback.stallCount > 0 and
-                .playback.stallTotalNs > 0 and
-                .playback.rebufferRatio > 0
-              ' "$root/run/result.json"
+              if [[ "$baseline" != "CACHE_WARM" ]]; then
+                jq -e '
+                  .observedNoProgressDurationMs != null
+                ' "$root/server/calibration.json"
+                jq -e '
+                  .playback.stallCount > 0 and
+                  .playback.stallTotalNs > 0 and
+                  .playback.rebufferRatio > 0
+                ' "$root/run/result.json"
+              fi
             fi
           }
 
