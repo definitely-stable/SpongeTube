@@ -7,6 +7,7 @@
   "required": [
     "schemaVersion",
     "runId",
+    "manifestSha256",
     "sessionId",
     "scenarioHash",
     "status",
@@ -17,6 +18,10 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string", "minLength": 1 },
+    "manifestSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "sessionId": { "type": "string", "minLength": 1 },
     "scenarioHash": {
       "type": "string",
@@ -32,6 +37,9 @@
         "ttffNs",
         "stallCount",
         "stallTotalNs",
+        "progressIntentNs",
+        "sessionWallNs",
+        "rebufferRatio",
         "seekToFrameNs",
         "playbackErrorCodes"
       ],
@@ -39,6 +47,13 @@
         "ttffNs": { "type": ["integer", "null"], "minimum": 0 },
         "stallCount": { "type": "integer", "minimum": 0 },
         "stallTotalNs": { "type": "integer", "minimum": 0 },
+        "progressIntentNs": { "type": ["integer", "null"], "minimum": 0 },
+        "sessionWallNs": { "type": ["integer", "null"], "minimum": 0 },
+        "rebufferRatio": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
         "seekToFrameNs": {
           "type": "array",
           "items": { "type": "integer", "minimum": 0 }
