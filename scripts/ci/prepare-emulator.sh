@@ -4,6 +4,14 @@ set -euo pipefail
 API_LEVEL="${1:?api level required}"
 AVD_NAME="${2:?avd name required}"
 OUTPUT_DIR="${3:?output directory required}"
+BOOT_TIMEOUT_SECONDS="${4:-}"
+if [[ -z "$BOOT_TIMEOUT_SECONDS" ]]; then
+  if (( API_LEVEL <= 23 )); then
+    BOOT_TIMEOUT_SECONDS=420
+  else
+    BOOT_TIMEOUT_SECONDS=240
+  fi
+fi
 
 SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 if [[ -z "$SDK_ROOT" ]]; then
@@ -65,8 +73,9 @@ fi
   -no-audio \
   -no-boot-anim \
   -no-snapshot \
-  -wipe-data \
   -accel on \
+  -cores 2 \
+  -memory 2048 \
   -gpu swiftshader_indirect \
   > "$OUTPUT_DIR/emulator.log" 2>&1 &
 EMULATOR_PID=$!
@@ -83,11 +92,18 @@ for attempt in {1..90}; do
   sleep 1
 done
 
-timeout 180 bash -c '
+if ! timeout "$BOOT_TIMEOUT_SECONDS" bash -c '
   until [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" == "1" ]]; do
     sleep 2
   done
-'
+'; then
+  echo "::error::emulator API $API_LEVEL did not complete boot within ${BOOT_TIMEOUT_SECONDS}s"
+  "$ADB" devices -l || true
+  "$ADB" shell getprop > "$OUTPUT_DIR/getprop-timeout.txt" 2>&1 || true
+  "$ADB" logcat -d -v threadtime > "$OUTPUT_DIR/logcat-timeout.txt" 2>&1 || true
+  tail -n 200 "$OUTPUT_DIR/emulator.log" || true
+  exit 124
+fi
 
 "$ADB" shell settings put global window_animation_scale 0
 "$ADB" shell settings put global transition_animation_scale 0
