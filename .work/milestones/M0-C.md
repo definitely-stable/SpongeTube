@@ -1,6 +1,6 @@
 # M0-C — Media3 Baseline Playback Modes
 
-Status: **Implementation plan**
+Status: **Implemented**
 Issue: #6
 Depends on: #4, #5
 
@@ -228,7 +228,20 @@ A temporary M0-C evidence workflow may use an API 36 emulator to prove the real 
 7. STANDARD_CACHE WARM replays a previously retained interval;
 8. unreachable uncached data surfaces an explicit playback error rather than a crash.
 
-The temporary smoke workflow is removed before merge. M0-E later owns the permanent `android-smoke` check.
+The temporary smoke workflow was removed before merge. M0-E owns the permanent `android-smoke` check.
+
+### Accepted correctness evidence
+
+`.work/evidence/2026-09-21-m0-c-media3-baselines.md`
+
+The accepted API 36 smoke proved:
+- DIRECT/RECOMMENDED_PLATFORM -> HTTP_ENGINE;
+- play/pause/resume and forward/back seek;
+- separate video/audio DASH requests;
+- STANDARD_CACHE COLD retained bytes;
+- process recreation followed by STANDARD_CACHE WARM playback with the origin stopped;
+- explicit DIRECT/DEFAULT_HTTP offline PlaybackException;
+- emulator correctness only, with no performance claim.
 
 ## 12. Evidence
 
@@ -271,18 +284,18 @@ M0-C does not add:
 
 M0-C is complete when:
 
-- [ ] `:playback:baseline` exists and builds;
-- [ ] DIRECT and STANDARD_CACHE use the same explicit DASH source seam;
-- [ ] RECOMMENDED_PLATFORM resolves to HttpEngine where supported and DefaultHttpDataSource otherwise;
-- [ ] DEFAULT_HTTP is independently selectable;
-- [ ] DIRECT has no persistent playback cache;
-- [ ] STANDARD_CACHE uses one process-owned SimpleCache directory;
-- [ ] COLD clears prior retained coverage;
-- [ ] WARM preserves defined retained coverage;
-- [ ] no custom ExoPlayer buffer tuning exists;
-- [ ] play/pause/resume and forward/back seek are exercised;
-- [ ] separate A/V F1 playback is exercised;
-- [ ] explicit offline/network error behavior is exercised;
-- [ ] dependency verification/configuration cache remain green;
-- [ ] Android smoke evidence is committed;
-- [ ] no Sponge/M1 behavior leaks into the baseline.
+- [x] `:playback:baseline` exists and builds;
+- [x] DIRECT and STANDARD_CACHE use the same explicit DASH source seam;
+- [x] RECOMMENDED_PLATFORM resolves to HttpEngine where supported and DefaultHttpDataSource otherwise;
+- [x] DEFAULT_HTTP is independently selectable;
+- [x] DIRECT has no persistent playback cache;
+- [x] STANDARD_CACHE uses one process-owned SimpleCache directory;
+- [x] COLD clears prior retained coverage;
+- [x] WARM preserves defined retained coverage;
+- [x] no custom ExoPlayer buffer tuning exists;
+- [x] play/pause/resume and forward/back seek are exercised;
+- [x] separate A/V F1 playback is exercised;
+- [x] explicit offline/network error behavior is exercised;
+- [x] dependency verification/configuration cache remain green;
+- [x] Android smoke evidence is committed;
+- [x] no Sponge/M1 behavior leaks into the baseline.
