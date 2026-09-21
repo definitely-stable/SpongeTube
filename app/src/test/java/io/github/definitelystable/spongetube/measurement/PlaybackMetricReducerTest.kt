@@ -224,6 +224,25 @@ class PlaybackMetricReducerTest {
     }
 
     @Test
+    fun playbackFailureIsRecordedSeparatelyFromEvidenceValidity() {
+        val metrics = PlaybackMetricReducer.reduce(
+            listOf(
+                event(1, 0, PlaybackEventType.SESSION_STARTED),
+                event(2, 10, PlaybackEventType.PLAY_REQUESTED),
+                event(3, 20, PlaybackEventType.FIRST_FRAME),
+                event(4, 100, PlaybackEventType.PLAYBACK_ERROR),
+                event(5, 110, PlaybackEventType.SESSION_ENDED),
+            ),
+        )
+
+        assertEquals(MetricDerivationStatus.COMPLETE, metrics.status)
+        assertEquals(listOf("TEST"), metrics.playbackErrorCodes)
+        assertEquals(80L, metrics.progressIntentNs)
+        assertEquals(110L, metrics.sessionWallNs)
+        assertEquals(0L, metrics.stallTotalNs)
+    }
+
+    @Test
     fun incompleteSeekAndMissingSessionEndArePartialNotFabricated() {
         val metrics = PlaybackMetricReducer.reduce(
             listOf(
