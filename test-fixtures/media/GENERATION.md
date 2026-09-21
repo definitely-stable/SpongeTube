@@ -5,9 +5,9 @@ The committed payload bytes are the canonical test corpus. Normal CI verifies th
 ## Corpus
 
 - **F0** — 10 s progressive MP4, H.264 Main + AAC-LC, fast-start; 1,054,544 bytes; 843,635 bit/s measured container average.
-- **F1** — 180 s static DASH/fMP4, exactly one H.264 Main 640×360 video representation and one AAC-LC 48 kHz stereo audio representation; 13,956,164 bytes including MPD; 620,180 bit/s reference playback bitrate.
+- **F1** — 180 s static DASH/fMP4, exactly one H.264 Main 640×360 video representation and one AAC-LC 48 kHz stereo audio representation; 13,956,166 bytes including MPD; 620,180 bit/s reference playback bitrate.
 
-F1 has 18 exactly 10 s video media segments. AAC frame alignment produces 18 near-10 s audio segments plus one final 53.3 ms tail segment; the MPD SegmentTimeline still covers exactly 180 s. This is part of the frozen B3 packaging shape.
+F1 has 18 exactly 10 s video media segments. AAC frame alignment produces 18 near-10 s audio segments plus one final 53.3 ms tail segment; the MPD SegmentTimeline still covers exactly 180 s. The normalized MPD declares `maxSegmentDuration=PT10.006S`, computed from the actual timelines rather than FFmpeg's requested 10 s target. This is part of the frozen B3 packaging shape.
 
 F1 deliberately uses explicit segmented fMP4 rather than single-file/range-addressable DASH. M0-B needs a stable baseline independent of Media3 behavior; Range semantics are already isolated by the HTTP-origin contract and F0. A later diagnostic fixture may add a range-heavy DASH packaging shape if M0-C exposes a concrete question.
 
