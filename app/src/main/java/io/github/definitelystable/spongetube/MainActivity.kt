@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var activeSession: BaselinePlaybackSession? = null
     private var activeMeasurement: PlaybackMeasurementSession? = null
     private lateinit var activityRunId: String
+    private var autoPlayForMeasurement: Boolean = false
     private var labState by mutableStateOf(BaselineLabState())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +66,10 @@ class MainActivity : ComponentActivity() {
         activityRunId = intent.getStringExtra(EXTRA_RUN_ID)
             ?.takeIf { it.matches(RUN_ID_PATTERN) }
             ?: UUID.randomUUID().toString()
+        autoPlayForMeasurement = intent.getBooleanExtra(
+            EXTRA_AUTO_PLAY,
+            false,
+        )
 
         setContent {
             BaselineLabShell(
@@ -139,6 +144,9 @@ class MainActivity : ComponentActivity() {
                                 error = null,
                             )
 
+                            if (autoPlayForMeasurement) {
+                                measurement.player.play()
+                            }
                             measurement.recordPrepareStarted()
                             measurement.player.prepare()
                         } catch (throwable: Throwable) {
@@ -250,6 +258,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val F1_URI = "http://localhost:18080/fixtures/F1/manifest.mpd"
         const val EXTRA_RUN_ID = "spongetube.runId"
+        const val EXTRA_AUTO_PLAY = "spongetube.autoPlay"
         val RUN_ID_PATTERN = Regex("[A-Za-z0-9._-]+")
 
         fun playbackStateName(state: Int): String = when (state) {
