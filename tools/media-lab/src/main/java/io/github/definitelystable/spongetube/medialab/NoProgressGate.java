@@ -33,7 +33,7 @@ final class NoProgressGate {
         this.calibration = calibration;
     }
 
-    long awaitOpen() throws InterruptedException, IOException {
+    long awaitOpen() throws IOException {
         if (startAfterNs == null) {
             return 0;
         }
@@ -55,7 +55,13 @@ final class NoProgressGate {
         calibration.observeNoProgressEntered(now);
 
         long waitStarted = now;
-        sleeper.sleepUntil(windowEnd);
+        try {
+            sleeper.sleepUntil(windowEnd);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new NoProgressCancelledException(
+                    "No-progress wait interrupted", interrupted);
+        }
         long wakeAt = clock.nowNanos();
 
         calibration.observeSchedulerSlip(Math.max(0L, wakeAt - windowEnd));
