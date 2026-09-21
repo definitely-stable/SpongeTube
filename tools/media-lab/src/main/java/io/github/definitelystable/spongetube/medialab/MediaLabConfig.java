@@ -10,8 +10,10 @@ record MediaLabConfig(
         Path tracePath,
         String sessionId,
         MediaLabProfile profile,
-        int port,
-        int workers) {
+        int dataPort,
+        int dataWorkers,
+        int controlPort,
+        int controlWorkers) {
 
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
@@ -30,17 +32,32 @@ record MediaLabConfig(
         if (!SESSION_ID.matcher(sessionId).matches()) {
             throw new IllegalArgumentException("sessionId must match " + SESSION_ID.pattern());
         }
-        if (port < 0 || port > 65535) {
-            throw new IllegalArgumentException("port must be between 0 and 65535");
-        }
-        if (workers < 1 || workers > 128) {
-            throw new IllegalArgumentException("workers must be between 1 and 128");
+
+        validatePort(dataPort, "data-port");
+        validatePort(controlPort, "control-port");
+        validateWorkers(dataWorkers, "data-workers");
+        validateWorkers(controlWorkers, "control-workers");
+
+        if (dataPort != 0 && dataPort == controlPort) {
+            throw new IllegalArgumentException("data-port and control-port must differ");
         }
 
         // B1 intentionally exposes only the control profile. B2 owns impairment behavior.
         if (profile != MediaLabProfile.N0) {
             throw new IllegalArgumentException(
                     "Profile " + profile + " is reserved for M0-B2; B1 supports N0 only");
+        }
+    }
+
+    private static void validatePort(int value, String name) {
+        if (value < 0 || value > 65535) {
+            throw new IllegalArgumentException(name + " must be between 0 and 65535");
+        }
+    }
+
+    private static void validateWorkers(int value, String name) {
+        if (value < 1 || value > 128) {
+            throw new IllegalArgumentException(name + " must be between 1 and 128");
         }
     }
 }
