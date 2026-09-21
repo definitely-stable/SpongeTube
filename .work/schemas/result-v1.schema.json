@@ -82,6 +82,20 @@
         "httpErrorCount": { "type": "integer", "minimum": 0 }
       }
     },
+    "cache": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "cacheBytesAtPreparation",
+        "cacheBytesAtEnd",
+        "cacheDeltaBytes"
+      ],
+      "properties": {
+        "cacheBytesAtPreparation": { "type": "integer", "minimum": 0 },
+        "cacheBytesAtEnd": { "type": "integer", "minimum": 0 },
+        "cacheDeltaBytes": { "type": "integer" }
+      }
+    },
     "labAccuracy": {
       "type": ["object", "null"],
       "additionalProperties": false,
