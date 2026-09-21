@@ -248,7 +248,10 @@ jobs:
 
             "$LAB_BIN" summarize \
               --trace="$root/server/requests.jsonl" \
-              --output="$root/server/network-summary.json"
+              --output="$root/server/network-summary.json" \
+              --expected-session-id="$session_id" \
+              --expected-scenario-id="$profile" \
+              --expected-scenario-hash="$scenario_hash"
 
             jq -e --arg session "$session_id" '
               .schemaVersion == 1 and
