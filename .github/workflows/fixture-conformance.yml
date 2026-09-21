@@ -88,7 +88,7 @@ jobs:
           php "$RUNNER_TEMP/composer.phar" --version
           java -version
           echo "dashifCommit=$(git rev-parse HEAD)"
-          echo "gpacPackage=$(dpkg-query -W -f='\${Version}' gpac)"
+          echo "gpacPackage=$(dpkg-query -W -f='${Version}' gpac)"
 
       - name: Serve canonical F1
         shell: bash
