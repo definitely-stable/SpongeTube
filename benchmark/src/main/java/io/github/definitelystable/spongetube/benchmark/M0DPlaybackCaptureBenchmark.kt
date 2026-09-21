@@ -51,8 +51,9 @@ class M0DPlaybackCaptureBenchmark {
     ) {
         val runId = "m0d-macro-${iteration ?: 0}"
         val sessionId = "$runId-1"
+        val targetPackage = BenchmarkToolchainContract.TARGET_PACKAGE
         val sourceDir =
-            "/sdcard/Android/data/$TARGET_PACKAGE/files/m0-measurement/$sessionId"
+            "/sdcard/Android/data/$targetPackage/files/m0-measurement/$sessionId"
         val stagingDir = "$STAGING_ROOT/$sessionId"
 
         device.executeShellCommand("rm -rf '$stagingDir'")
@@ -119,7 +120,6 @@ class M0DPlaybackCaptureBenchmark {
 
     private companion object {
         const val PREPARE_TRACE = "SpongeTube:M0:prepare"
-        const val TARGET_PACKAGE = "io.github.definitelystable.spongetube"
         const val STAGING_ROOT = "/sdcard/spongetube-m0"
     }
 }
