@@ -171,7 +171,10 @@ final class MiniJsonParser {
 
         String value = input.substring(start, index);
         try {
-            return decimal ? Double.parseDouble(value) : Long.parseLong(value);
+            if (decimal) {
+                return Double.parseDouble(value);
+            }
+            return Long.parseLong(value);
         } catch (NumberFormatException exception) {
             throw error("Invalid JSON number: " + value);
         }
