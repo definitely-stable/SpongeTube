@@ -39,6 +39,7 @@ import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackI
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackSession
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackSpec
 import io.github.definitelystable.spongetube.measurement.BaselineObservationArtifactWriter
+import io.github.definitelystable.spongetube.measurement.MeasurementSessionControl
 import io.github.definitelystable.spongetube.measurement.PlaybackMeasurementSession
 import io.github.definitelystable.spongetube.playback.baseline.BaselineTransport
 import java.util.UUID
@@ -136,6 +137,32 @@ class MainActivity : ComponentActivity() {
 
                             activeSession = session
                             activeMeasurement = measurement
+                            MeasurementSessionControl.register(
+                                sessionId = measurement.sessionId,
+                            ) {
+                                val currentMeasurement = activeMeasurement
+                                val currentSession = activeSession
+                                if (
+                                    currentMeasurement?.sessionId !=
+                                        measurement.sessionId ||
+                                    currentSession == null ||
+                                    currentMeasurement.player.playbackState ==
+                                        Player.STATE_BUFFERING
+                                ) {
+                                    false
+                                } else {
+                                    currentMeasurement.player.pause()
+                                    closeActivePlayback()
+                                    labState = labState.copy(
+                                        phase = "Measurement complete",
+                                        player = null,
+                                        isPlaying = false,
+                                        cacheBytes =
+                                            BaselinePlayback.standardCacheBytes(),
+                                    )
+                                    true
+                                }
+                            }
                             attachPlayerListener(
                                 player = measurement.player,
                                 session = session,
@@ -255,14 +282,18 @@ class MainActivity : ComponentActivity() {
 
         if (measurement != null && session != null) {
             BaselineObservationArtifactWriter.write(
-                file = measurement.artifactFile.parentFile
-                    .resolve("baseline-observations.json"),
+                file = checkNotNull(
+                    measurement.artifactFile.parentFile,
+                ).resolve("baseline-observations.json"),
                 sessionId = measurement.sessionId,
                 cacheBytesAtPreparation = session.cacheBytesAtPreparation,
                 cacheBytesAtEnd = session.cacheBytesNow(),
             )
         }
 
+        measurement?.let {
+            MeasurementSessionControl.clear(it.sessionId)
+        }
         measurement?.close()
         activeMeasurement = null
         session?.close()
