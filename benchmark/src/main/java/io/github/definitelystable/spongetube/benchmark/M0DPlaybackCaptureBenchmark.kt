@@ -90,7 +90,7 @@ class M0DPlaybackCaptureBenchmark {
 
         var sourceListing = ""
         var sourceReady = false
-        repeat(EVIDENCE_FINALIZE_ATTEMPTS) {
+        for (attempt in 1..EVIDENCE_FINALIZE_ATTEMPTS) {
             sourceListing = device.executeShellCommand(
                 "ls -1 '$sourceDir' 2>&1",
             )
@@ -99,9 +99,11 @@ class M0DPlaybackCaptureBenchmark {
                 sourceListing.contains("playback-summary.json") &&
                 sourceListing.contains("playback-stats-cross-check.json")
             if (sourceReady) {
-                return@repeat
+                break
             }
-            Thread.sleep(EVIDENCE_FINALIZE_POLL_MS)
+            if (attempt < EVIDENCE_FINALIZE_ATTEMPTS) {
+                Thread.sleep(EVIDENCE_FINALIZE_POLL_MS)
+            }
         }
         assertTrue(
             "Target evidence was not finalized before benchmark teardown: $sourceListing",
