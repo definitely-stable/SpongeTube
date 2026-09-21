@@ -140,10 +140,16 @@ final class MediaLabServer implements AutoCloseable {
             if (controlExecutor != null) {
                 controlExecutor.shutdownNow();
             }
+            boolean requestTraceCreated = requestTraceWriter != null;
+            boolean eventTraceCreated = eventTraceWriter != null;
             closeQuietly(requestTraceWriter);
             closeQuietly(eventTraceWriter);
-            deleteQuietly(config.tracePath());
-            deleteQuietly(config.sessionTracePath());
+            if (requestTraceCreated) {
+                deleteQuietly(config.tracePath());
+            }
+            if (eventTraceCreated) {
+                deleteQuietly(config.sessionTracePath());
+            }
             throw exception;
         }
     }
