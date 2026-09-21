@@ -108,6 +108,53 @@ class RequestTraceSummaryTest {
     }
 
     @Test
+    void headNeverContributesMediaBodyBytesOrCoverage() {
+        RequestTrace head = trace(
+                1,
+                "data",
+                "/fixtures/F1/video.m4s",
+                "F1",
+                "video",
+                "HEAD",
+                200,
+                0L,
+                100L,
+                100);
+
+        MediaNetworkSummary summary = RequestTraceSummary.summarize(List.of(head));
+
+        assertEquals(1, summary.requestCount());
+        assertEquals(0, summary.networkBytes());
+        assertEquals(0, summary.uniqueRangeBytes());
+        assertEquals(0, summary.duplicateRangeBytes());
+        assertEquals(0, summary.httpErrorCount());
+    }
+
+    @Test
+    void unsatisfiableRangeIsAnHttpErrorWithoutCoverage() {
+        RequestTrace unsatisfiable = trace(
+                1,
+                "data",
+                "/fixtures/F1/video.m4s",
+                "F1",
+                "video",
+                "GET",
+                416,
+                null,
+                null,
+                0);
+
+        MediaNetworkSummary summary = RequestTraceSummary.summarize(
+                List.of(unsatisfiable));
+
+        assertEquals(1, summary.requestCount());
+        assertEquals(0, summary.networkBytes());
+        assertEquals(0, summary.uniqueRangeBytes());
+        assertEquals(0, summary.duplicateRangeBytes());
+        assertEquals(1, summary.httpErrorCount());
+    }
+
+    @Test
     void rejectsTraceWhereWrittenBytesExceedResolvedCoverage() {
         RequestTrace invalid = trace(
                 1,
@@ -135,6 +182,30 @@ class RequestTraceSummaryTest {
             Long start,
             Long endExclusive,
             long bodyBytesWritten) {
+        return trace(
+                requestId,
+                plane,
+                path,
+                fixtureId,
+                resourceId,
+                "GET",
+                status,
+                start,
+                endExclusive,
+                bodyBytesWritten);
+    }
+
+    private static RequestTrace trace(
+            long requestId,
+            String plane,
+            String path,
+            String fixtureId,
+            String resourceId,
+            String method,
+            int status,
+            Long start,
+            Long endExclusive,
+            long bodyBytesWritten) {
         return new RequestTrace(
                 2,
                 "session-1",
@@ -145,7 +216,7 @@ class RequestTraceSummaryTest {
                 "N0",
                 "N0",
                 "scenario-hash",
-                "GET",
+                method,
                 path,
                 null,
                 start,
