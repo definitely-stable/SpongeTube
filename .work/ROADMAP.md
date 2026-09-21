@@ -5,26 +5,32 @@ Date: **2026-09-21**
 
 The roadmap is ordered to prove the risky assumptions before building a large YouTube UI.
 
-## M0 — Architecture & Evidence Bootstrap
+## M0 — Reproducible Android & Media Evidence Bootstrap
 
-Goal: make the repository capable of rejecting bad ideas with evidence.
+Goal: create the smallest Android/media laboratory capable of falsifying later SpongeTube architecture and performance claims.
 
-Deliverables:
+Canonical milestone specification: `.work/milestones/M0.md`.
 
-- `.work` authority and product contract;
-- architecture v0.1;
-- benchmark/verification specification;
-- Android project bootstrap;
-- deterministic media fixtures;
-- benchmark result schema;
-- CI skeleton;
-- initial ADR mechanism.
+M0 is split into focused, reviewable deliveries:
+
+- **M0-A — Build & Repository Foundation**: pinned Android/Gradle toolchain, small module graph, configuration cache, dependency verification.
+- **M0-B — Deterministic Media Lab**: synthetic VOD fixtures, Range/DASH serving, deterministic N0/N1/N4 behavior and request traces.
+- **M0-C — Media3 Baselines**: Direct Media3 and standard CacheDataSource/SimpleCache reference paths.
+- **M0-D — Measurement & Impairment**: structured playback/network metrics, result schema v1, Perfetto/Macrobenchmark integration.
+- **M0-E — CI, Testing & Supply Chain**: stable `verify`/`android-smoke` checks, SHA-pinned Actions, emulator correctness automation and artifacts.
+- **M0-F — Acceptance Evidence**: A/B baseline matrix on N0/N1/N4 plus at least one physical-device evidence run.
+
+M0 explicitly does **not** implement Sponge FetchBroker, PlayableCoverage, Smart Buffer policy, a custom persistent store, YouTube extraction, Room/KSP/DI, Shorts, Live, TV or iOS.
 
 Exit:
 
-- project builds on target API 36;
-- benchmark harness can run at least N0/N1/N4;
-- results are reproducible and machine-readable.
+- clean clone builds on the pinned API 36 toolchain;
+- deterministic F0/F1 media fixtures have provenance and SHA-256;
+- Direct and Standard Cache Media3 baselines play the same controlled content;
+- N0/N1/N4 are reproducible and emit machine-readable results;
+- CI has stable required checks and reproducible artifacts;
+- emulator evidence is used for correctness, not representative performance;
+- at least one physical-device baseline exists before numeric performance claims are marked Validated.
 
 ## M1 — Persistent Playback Core
 

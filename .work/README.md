@@ -12,6 +12,7 @@ This directory is the canonical project workspace.
 
 Supporting records:
 
+- `.work/milestones/` — detailed milestone specifications that refine ROADMAP without overriding PRODUCT/ARCHITECTURE.
 - `.work/adr/` — durable architecture decision records.
 - `.work/evidence/` — reproducible evidence summaries.
 
@@ -63,4 +64,4 @@ No direct normal-development pushes to `main`.
 
 ## Repository state
 
-At architecture/governance v0.1 the repository contains no production implementation. The next code milestone is M0: deterministic Android engine/benchmark bootstrap.
+At architecture/governance v0.1 the repository contains no production implementation. The next code milestone is M0: Reproducible Android & Media Evidence Bootstrap, specified in `.work/milestones/M0.md`.
