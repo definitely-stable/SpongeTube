@@ -15,7 +15,7 @@ record RequestTrace(
         int status,
         long plannedResponseBytes,
         long bodyBytesWritten,
-        long acceptedAtMonotonicNs,
+        long handlerStartedAtMonotonicNs,
         Long firstBodyWriteAtMonotonicNs,
         long completedAtMonotonicNs,
         Long serverFirstBodyWriteDelayMs,
@@ -41,7 +41,7 @@ record RequestTrace(
         field(json, "status", status).append(',');
         field(json, "plannedResponseBytes", plannedResponseBytes).append(',');
         field(json, "bodyBytesWritten", bodyBytesWritten).append(',');
-        field(json, "acceptedAtMonotonicNs", acceptedAtMonotonicNs).append(',');
+        field(json, "handlerStartedAtMonotonicNs", handlerStartedAtMonotonicNs).append(',');
         nullableField(json, "firstBodyWriteAtMonotonicNs", firstBodyWriteAtMonotonicNs).append(',');
         field(json, "completedAtMonotonicNs", completedAtMonotonicNs).append(',');
         nullableField(json, "serverFirstBodyWriteDelayMs", serverFirstBodyWriteDelayMs).append(',');
