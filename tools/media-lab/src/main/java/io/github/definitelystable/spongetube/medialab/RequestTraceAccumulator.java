@@ -5,6 +5,7 @@ final class RequestTraceAccumulator {
     private final MediaLabConfig config;
     private final ResolvedScenario scenario;
     private final long requestId;
+    private final String plane;
     private final long handlerStartedAtMonotonicNs;
     private final String method;
     private final String path;
@@ -25,6 +26,7 @@ final class RequestTraceAccumulator {
             MediaLabConfig config,
             ResolvedScenario scenario,
             long requestId,
+            String plane,
             long handlerStartedAtMonotonicNs,
             String method,
             String path,
@@ -32,6 +34,7 @@ final class RequestTraceAccumulator {
         this.config = config;
         this.scenario = scenario;
         this.requestId = requestId;
+        this.plane = plane;
         this.handlerStartedAtMonotonicNs = handlerStartedAtMonotonicNs;
         this.method = method;
         this.path = path;
@@ -56,9 +59,10 @@ final class RequestTraceAccumulator {
                 Math.max(0L, (completedAtMonotonicNs - handlerStartedAtMonotonicNs) / 1_000_000L);
 
         return new RequestTrace(
-                1,
+                2,
                 config.sessionId(),
                 requestId,
+                plane,
                 fixtureId,
                 resourceId,
                 config.profile().name(),
