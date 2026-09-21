@@ -23,8 +23,10 @@ final class MediaLabServer implements AutoCloseable {
     private final MediaLabConfig config;
     private final FixtureCatalog catalog;
     private final JsonLineTraceWriter traceWriter;
-    private final HttpServer server;
-    private final ExecutorService executor;
+    private final HttpServer dataServer;
+    private final HttpServer controlServer;
+    private final ExecutorService dataExecutor;
+    private final ExecutorService controlExecutor;
     private final AtomicLong requestIds = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -32,52 +34,67 @@ final class MediaLabServer implements AutoCloseable {
             MediaLabConfig config,
             FixtureCatalog catalog,
             JsonLineTraceWriter traceWriter,
-            HttpServer server,
-            ExecutorService executor) {
+            HttpServer dataServer,
+            HttpServer controlServer,
+            ExecutorService dataExecutor,
+            ExecutorService controlExecutor) {
         this.config = config;
         this.catalog = catalog;
         this.traceWriter = traceWriter;
-        this.server = server;
-        this.executor = executor;
+        this.dataServer = dataServer;
+        this.controlServer = controlServer;
+        this.dataExecutor = dataExecutor;
+        this.controlExecutor = controlExecutor;
     }
 
     static MediaLabServer create(MediaLabConfig config) throws IOException {
         FixtureCatalog catalog = FixtureCatalog.load(config.fixtureRoot());
 
-        HttpServer server = null;
-        ExecutorService executor = null;
+        HttpServer dataServer = null;
+        HttpServer controlServer = null;
+        ExecutorService dataExecutor = null;
+        ExecutorService controlExecutor = null;
         JsonLineTraceWriter traceWriter = null;
         try {
             InetAddress loopback = InetAddress.getByName("127.0.0.1");
-            server = HttpServer.create(new InetSocketAddress(loopback, config.port()), 0);
-            AtomicLong workerIds = new AtomicLong();
-            executor = Executors.newFixedThreadPool(
-                    config.workers(),
-                    runnable -> {
-                        Thread thread = new Thread(
-                                runnable,
-                                "media-lab-http-" + workerIds.incrementAndGet());
-                        thread.setDaemon(false);
-                        return thread;
-                    });
+
+            // Bind both listeners before creating the trace. A partial bind failure must not
+            // leave an empty trace that could be mistaken for a valid scenario session.
+            dataServer = HttpServer.create(new InetSocketAddress(loopback, config.dataPort()), 0);
+            controlServer = HttpServer.create(new InetSocketAddress(loopback, config.controlPort()), 0);
+
+            dataExecutor = newFixedThreadPool(config.dataWorkers(), "media-lab-data-");
+            controlExecutor = newFixedThreadPool(config.controlWorkers(), "media-lab-control-");
             traceWriter = new JsonLineTraceWriter(config.tracePath());
 
             MediaLabServer mediaLab = new MediaLabServer(
                     config,
                     catalog,
                     traceWriter,
-                    server,
-                    executor);
+                    dataServer,
+                    controlServer,
+                    dataExecutor,
+                    controlExecutor);
 
-            server.createContext("/", mediaLab::handle);
-            server.setExecutor(executor);
+            dataServer.createContext("/", mediaLab::handleData);
+            dataServer.setExecutor(dataExecutor);
+
+            controlServer.createContext("/", mediaLab::handleControl);
+            controlServer.setExecutor(controlExecutor);
+
             return mediaLab;
         } catch (IOException | RuntimeException exception) {
-            if (server != null) {
-                server.stop(0);
+            if (dataServer != null) {
+                dataServer.stop(0);
             }
-            if (executor != null) {
-                executor.shutdownNow();
+            if (controlServer != null) {
+                controlServer.stop(0);
+            }
+            if (dataExecutor != null) {
+                dataExecutor.shutdownNow();
+            }
+            if (controlExecutor != null) {
+                controlExecutor.shutdownNow();
             }
             if (traceWriter != null) {
                 traceWriter.close();
@@ -87,53 +104,83 @@ final class MediaLabServer implements AutoCloseable {
     }
 
     void start() {
-        server.start();
+        controlServer.start();
+        try {
+            dataServer.start();
+        } catch (RuntimeException exception) {
+            controlServer.stop(0);
+            throw exception;
+        }
     }
 
-    int port() {
-        return server.getAddress().getPort();
+    int dataPort() {
+        return dataServer.getAddress().getPort();
+    }
+
+    int controlPort() {
+        return controlServer.getAddress().getPort();
     }
 
     String readyJson() {
         return "{"
-                + Json.quote("schemaVersion") + ":1,"
+                + Json.quote("schemaVersion") + ":2,"
                 + Json.quote("event") + ":" + Json.quote("MEDIA_LAB_READY") + ","
                 + Json.quote("host") + ":" + Json.quote("127.0.0.1") + ","
-                + Json.quote("port") + ":" + port() + ","
+                + Json.quote("dataPort") + ":" + dataPort() + ","
+                + Json.quote("controlPort") + ":" + controlPort() + ","
                 + Json.quote("sessionId") + ":" + Json.quote(config.sessionId()) + ","
                 + Json.quote("profileId") + ":" + Json.quote(config.profile().name()) + ","
-                + Json.quote("workers") + ":" + config.workers() + ","
+                + Json.quote("dataWorkers") + ":" + config.dataWorkers() + ","
+                + Json.quote("controlWorkers") + ":" + config.controlWorkers() + ","
                 + Json.quote("catalogResources") + ":" + catalog.size()
                 + "}";
     }
 
     String configJson() {
         return "{"
-                + Json.quote("schemaVersion") + ":1,"
+                + Json.quote("schemaVersion") + ":2,"
                 + Json.quote("sessionId") + ":" + Json.quote(config.sessionId()) + ","
                 + Json.quote("profileId") + ":" + Json.quote(config.profile().name()) + ","
                 + Json.quote("host") + ":" + Json.quote("127.0.0.1") + ","
-                + Json.quote("port") + ":" + port() + ","
-                + Json.quote("workers") + ":" + config.workers() + ","
+                + Json.quote("dataPort") + ":" + dataPort() + ","
+                + Json.quote("controlPort") + ":" + controlPort() + ","
+                + Json.quote("dataWorkers") + ":" + config.dataWorkers() + ","
+                + Json.quote("controlWorkers") + ":" + config.controlWorkers() + ","
                 + Json.quote("catalogResources") + ":" + catalog.size()
                 + "}";
     }
 
-    private void handle(HttpExchange exchange) {
+    private void handleData(HttpExchange exchange) {
+        handle(exchange, false);
+    }
+
+    private void handleControl(HttpExchange exchange) {
+        handle(exchange, true);
+    }
+
+    private void handle(HttpExchange exchange, boolean controlPlane) {
         long handlerStartedAt = System.nanoTime();
         String method = exchange.getRequestMethod();
         String rawPath = exchange.getRequestURI().getRawPath();
         String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
+        long requestId = requestIds.incrementAndGet();
+
+        addCorrelationHeaders(exchange, requestId, controlPlane);
+
         RequestTraceAccumulator trace = new RequestTraceAccumulator(
                 config,
-                requestIds.incrementAndGet(),
+                requestId,
                 handlerStartedAt,
                 method,
                 rawPath,
                 rangeHeader);
 
         try {
-            route(exchange, trace, rawPath, method, rangeHeader);
+            if (controlPlane) {
+                routeControl(exchange, trace, rawPath, method);
+            } else {
+                routeData(exchange, trace, rawPath, method, rangeHeader);
+            }
         } catch (IOException exception) {
             trace.outcome = trace.firstBodyWriteAtMonotonicNs == null
                     ? TraceOutcome.SERVER_IO_ERROR
@@ -152,12 +199,11 @@ final class MediaLabServer implements AutoCloseable {
         }
     }
 
-    private void route(
+    private void routeControl(
             HttpExchange exchange,
             RequestTraceAccumulator trace,
             String rawPath,
-            String method,
-            String rangeHeader) throws IOException {
+            String method) throws IOException {
 
         if ("/__lab/health".equals(rawPath)) {
             if (!"GET".equals(method)) {
@@ -178,6 +224,16 @@ final class MediaLabServer implements AutoCloseable {
             sendJson(exchange, trace, 200, configJson());
             return;
         }
+
+        sendNotFound(exchange, trace);
+    }
+
+    private void routeData(
+            HttpExchange exchange,
+            RequestTraceAccumulator trace,
+            String rawPath,
+            String method,
+            String rangeHeader) throws IOException {
 
         if (!rawPath.startsWith("/fixtures/")) {
             sendNotFound(exchange, trace);
@@ -258,6 +314,17 @@ final class MediaLabServer implements AutoCloseable {
         exchange.sendResponseHeaders(status, responseLength);
         writeResource(exchange, trace, resource, start, responseLength);
         trace.outcome = TraceOutcome.SUCCESS;
+    }
+
+    private void addCorrelationHeaders(
+            HttpExchange exchange,
+            long requestId,
+            boolean controlPlane) {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("X-Sponge-Lab-Session", config.sessionId());
+        headers.set("X-Sponge-Lab-Request", Long.toString(requestId));
+        headers.set("X-Sponge-Lab-Profile", config.profile().name());
+        headers.set("X-Sponge-Lab-Plane", controlPlane ? "control" : "data");
     }
 
     private void writeResource(
@@ -361,17 +428,38 @@ final class MediaLabServer implements AutoCloseable {
             return;
         }
 
-        server.stop(0);
-        executor.shutdown();
+        dataServer.stop(0);
+        controlServer.stop(0);
+
+        dataExecutor.shutdown();
+        controlExecutor.shutdown();
+
         try {
-            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
+            boolean dataStopped = dataExecutor.awaitTermination(5, TimeUnit.SECONDS);
+            boolean controlStopped = controlExecutor.awaitTermination(5, TimeUnit.SECONDS);
+            if (!dataStopped) {
+                dataExecutor.shutdownNow();
+            }
+            if (!controlStopped) {
+                controlExecutor.shutdownNow();
             }
         } catch (InterruptedException interrupted) {
-            executor.shutdownNow();
+            dataExecutor.shutdownNow();
+            controlExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         } finally {
             traceWriter.close();
         }
+    }
+
+    private static ExecutorService newFixedThreadPool(int workers, String prefix) {
+        AtomicLong workerIds = new AtomicLong();
+        return Executors.newFixedThreadPool(
+                workers,
+                runnable -> {
+                    Thread thread = new Thread(runnable, prefix + workerIds.incrementAndGet());
+                    thread.setDaemon(false);
+                    return thread;
+                });
     }
 }
