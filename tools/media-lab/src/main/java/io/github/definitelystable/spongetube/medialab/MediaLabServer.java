@@ -43,10 +43,10 @@ final class MediaLabServer implements AutoCloseable {
 
     static MediaLabServer create(MediaLabConfig config) throws IOException {
         FixtureCatalog catalog = FixtureCatalog.load(config.fixtureRoot());
-        JsonLineTraceWriter traceWriter = new JsonLineTraceWriter(config.tracePath());
 
         HttpServer server = null;
         ExecutorService executor = null;
+        JsonLineTraceWriter traceWriter = null;
         try {
             InetAddress loopback = InetAddress.getByName("127.0.0.1");
             server = HttpServer.create(new InetSocketAddress(loopback, config.port()), 0);
@@ -60,6 +60,7 @@ final class MediaLabServer implements AutoCloseable {
                         thread.setDaemon(false);
                         return thread;
                     });
+            traceWriter = new JsonLineTraceWriter(config.tracePath());
 
             MediaLabServer mediaLab = new MediaLabServer(
                     config,
@@ -78,7 +79,9 @@ final class MediaLabServer implements AutoCloseable {
             if (executor != null) {
                 executor.shutdownNow();
             }
-            traceWriter.close();
+            if (traceWriter != null) {
+                traceWriter.close();
+            }
             throw exception;
         }
     }
