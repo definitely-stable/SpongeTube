@@ -36,6 +36,7 @@
     "mpd": {
       "type": "static",
       "mediaPresentationDuration": "PT3M0.0S",
+      "maxSegmentDuration": "PT10.006S",
       "representations": [
         {
           "adaptationContentType": "video",
