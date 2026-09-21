@@ -44,8 +44,15 @@ jobs:
       - name: Install Android API 36
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found at $SDKMANAGER"
+            find "$SDK_ROOT/cmdline-tools" -maxdepth 4 -type f -name sdkmanager -print || true
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Generate dependency verification metadata
         shell: bash
