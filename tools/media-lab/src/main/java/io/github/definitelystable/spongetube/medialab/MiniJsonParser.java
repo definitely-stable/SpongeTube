@@ -57,9 +57,10 @@ final class MiniJsonParser {
             expect(':');
             Object value = parseValue();
 
-            if (result.putIfAbsent(key, value) != null) {
+            if (result.containsKey(key)) {
                 throw error("Duplicate JSON object key: " + key);
             }
+            result.put(key, value);
 
             skipWhitespace();
             if (peek('}')) {
