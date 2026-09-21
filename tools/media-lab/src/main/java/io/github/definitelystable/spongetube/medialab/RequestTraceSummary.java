@@ -25,7 +25,7 @@ final class RequestTraceSummary {
         Map<ResourceKey, List<Interval>> intervalsByResource = new HashMap<>();
 
         for (RequestTrace trace : traces) {
-            if (!isFixturePath(trace.path())) {
+            if (!"data".equals(trace.plane()) || !isFixturePath(trace.path())) {
                 continue;
             }
 
