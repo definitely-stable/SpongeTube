@@ -2,6 +2,7 @@ package io.github.definitelystable.spongetube.benchmark
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import java.io.File
 
 internal object BenchmarkEvidenceExporter {
@@ -18,10 +19,22 @@ internal object BenchmarkEvidenceExporter {
             "unsupported evidence namespace: $namespace"
         }
 
-        val stagingDir = File(
-            "/sdcard/Android/media/${context.packageName}" +
-                "/additional_test_output/$namespace/$sessionId",
-        )
+        val stagingDir = if (Build.VERSION.SDK_INT >= 29) {
+            File(
+                "/sdcard/Android/media/${context.packageName}" +
+                    "/additional_test_output/$namespace/$sessionId",
+            )
+        } else {
+            val externalFiles = checkNotNull(
+                context.getExternalFilesDir(null),
+            ) {
+                "legacy external files directory unavailable"
+            }
+            File(
+                externalFiles,
+                "m0-test-output/$namespace/$sessionId",
+            )
+        }
         check(stagingDir.deleteRecursively()) {
             "failed to clear evidence staging directory: $stagingDir"
         }
