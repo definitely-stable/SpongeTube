@@ -153,6 +153,10 @@ class MediaLabServerTest {
         assertEquals(12, traceLines.size());
         assertTrue(traceLines.stream().allMatch(line -> line.startsWith("{") && line.endsWith("}")));
         assertTrue(traceLines.stream().anyMatch(line ->
+                line.contains("\"status\":200")
+                        && line.contains("\"resolvedRangeStart\":0")
+                        && line.contains("\"resolvedRangeEndExclusive\":256")));
+        assertTrue(traceLines.stream().anyMatch(line ->
                 line.contains("\"status\":206")
                         && line.contains("\"resolvedRangeStart\":10")
                         && line.contains("\"resolvedRangeEndExclusive\":20")));
