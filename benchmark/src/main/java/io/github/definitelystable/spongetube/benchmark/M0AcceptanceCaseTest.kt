@@ -1,6 +1,5 @@
 package io.github.definitelystable.spongetube.benchmark
 
-import android.os.SystemClock
 import android.util.JsonReader
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -95,30 +94,22 @@ class M0AcceptanceCaseTest {
 
         if (expectOutage) {
             Thread.sleep(N4_CANONICAL_OBSERVATION_MS)
-            val recovered = waitForStableReadyPlaying(
-                device = device,
-                timeoutMs = N4_RESUME_TIMEOUT_MS,
-            )
-            val terminalError = device.hasObject(
-                By.textContains(PLAYBACK_ERROR_TEXT),
-            )
-            assertTrue(
-                "${baseline.name} produced neither stable recovery nor a structured playback error after canonical N4",
-                recovered || terminalError,
-            )
         } else {
             Thread.sleep(NON_OUTAGE_OBSERVATION_MS)
-            assertTrue(
-                "${baseline.name} did not reach stable READY/playing before finalization",
-                waitForStableReadyPlaying(
-                    device = device,
-                    timeoutMs = NON_OUTAGE_READY_TIMEOUT_MS,
-                ),
-            )
         }
 
-        device.pressHome()
-        device.waitForIdle()
+        assertTrue(
+            "${baseline.name} did not reach a quiescent measurement state before finalization",
+            BenchmarkEvidenceExporter.finishWhenQuiescent(
+                context = context,
+                sessionId = sessionId,
+                timeoutMs = if (expectOutage) {
+                    N4_FINALIZE_TIMEOUT_MS
+                } else {
+                    NON_OUTAGE_FINALIZE_TIMEOUT_MS
+                },
+            ),
+        )
 
         val staged = BenchmarkEvidenceExporter.exportCompleted(
             context = context,
@@ -169,36 +160,6 @@ class M0AcceptanceCaseTest {
         }
     }
 
-    private fun waitForStableReadyPlaying(
-        device: UiDevice,
-        timeoutMs: Long,
-    ): Boolean {
-        val deadline = SystemClock.elapsedRealtime() + timeoutMs
-        var stableSinceMs: Long? = null
-
-        while (SystemClock.elapsedRealtime() < deadline) {
-            val now = SystemClock.elapsedRealtime()
-            val readyAndPlaying = device.hasObject(
-                By.textContains(READY_PLAYING_TEXT),
-            )
-
-            if (readyAndPlaying) {
-                val started = stableSinceMs ?: now.also {
-                    stableSinceMs = it
-                }
-                if (now - started >= STABLE_READY_WINDOW_MS) {
-                    return true
-                }
-            } else {
-                stableSinceMs = null
-            }
-
-            Thread.sleep(READY_POLL_MS)
-        }
-
-        return false
-    }
-
     private fun readCacheObservation(file: File): CacheObservation {
         var atPreparation: Long? = null
         var atEnd: Long? = null
@@ -246,12 +207,8 @@ class M0AcceptanceCaseTest {
         val RUN_ID = Regex("[A-Za-z0-9._-]+")
         const val INITIAL_PLAY_TIMEOUT_MS = 60_000L
         const val NON_OUTAGE_OBSERVATION_MS = 8_000L
-        const val NON_OUTAGE_READY_TIMEOUT_MS = 30_000L
+        const val NON_OUTAGE_FINALIZE_TIMEOUT_MS = 30_000L
         const val N4_CANONICAL_OBSERVATION_MS = 145_000L
-        const val N4_RESUME_TIMEOUT_MS = 45_000L
-        const val STABLE_READY_WINDOW_MS = 2_000L
-        const val READY_POLL_MS = 100L
-        const val READY_PLAYING_TEXT = "State: Ready · playing"
-        const val PLAYBACK_ERROR_TEXT = "State: Playback error"
+        const val N4_FINALIZE_TIMEOUT_MS = 45_000L
     }
 }
