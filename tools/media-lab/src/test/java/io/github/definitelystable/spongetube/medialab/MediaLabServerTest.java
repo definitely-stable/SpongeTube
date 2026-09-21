@@ -39,7 +39,10 @@ class MediaLabServerTest {
                     occupied.getLocalPort(),
                     2,
                     0,
-                    1);
+                    1,
+                    null,
+                    null,
+                    MediaLabConfig.DEFAULT_WRITE_QUANTUM_BYTES);
 
             assertThrows(java.net.BindException.class, () -> MediaLabServer.create(config));
         }
@@ -62,7 +65,10 @@ class MediaLabServerTest {
                     0,
                     2,
                     occupied.getLocalPort(),
-                    1);
+                    1,
+                    null,
+                    null,
+                    MediaLabConfig.DEFAULT_WRITE_QUANTUM_BYTES);
 
             assertThrows(java.net.BindException.class, () -> MediaLabServer.create(config));
         }
@@ -90,7 +96,10 @@ class MediaLabServerTest {
                 0,
                 4,
                 0,
-                2);
+                2,
+                null,
+                null,
+                MediaLabConfig.DEFAULT_WRITE_QUANTUM_BYTES);
 
         HttpClient client = HttpClient.newHttpClient();
 
@@ -100,7 +109,7 @@ class MediaLabServerTest {
             assertTrue(server.dataPort() > 0);
             assertTrue(server.controlPort() > 0);
             assertNotEquals(server.dataPort(), server.controlPort());
-            assertTrue(server.readyJson().contains("\"schemaVersion\":2"));
+            assertTrue(server.readyJson().contains("\"schemaVersion\":3"));
             assertTrue(server.readyJson().contains("\"MEDIA_LAB_READY\""));
             assertTrue(server.readyJson().contains("\"dataPort\":" + server.dataPort()));
             assertTrue(server.readyJson().contains("\"controlPort\":" + server.controlPort()));
@@ -146,6 +155,9 @@ class MediaLabServerTest {
             assertEquals("bytes", full.headers().firstValue("Accept-Ranges").orElseThrow());
             assertEquals("data", full.headers().firstValue("X-Sponge-Lab-Plane").orElseThrow());
             assertEquals("N0", full.headers().firstValue("X-Sponge-Lab-Profile").orElseThrow());
+            assertEquals(
+                    config.resolvedScenario().scenarioHash(),
+                    full.headers().firstValue("X-Sponge-Lab-Scenario").orElseThrow());
             assertTrue(Long.parseLong(
                     full.headers().firstValue("X-Sponge-Lab-Request").orElseThrow()) > 0);
 
@@ -251,6 +263,14 @@ class MediaLabServerTest {
 
         List<String> traceLines = Files.readAllLines(tracePath);
         assertEquals(16, traceLines.size());
+        assertTrue(Files.exists(config.sessionTracePath()));
+        assertTrue(Files.exists(config.calibrationPath()));
+        String sessionEvents = Files.readString(config.sessionTracePath());
+        assertTrue(sessionEvents.contains("\"SESSION_STARTED\""));
+        assertTrue(sessionEvents.contains("\"FIRST_MEDIA_PROGRESS\""));
+        assertTrue(sessionEvents.contains("\"SESSION_COMPLETED\""));
+        String calibration = Files.readString(config.calibrationPath());
+        assertTrue(calibration.contains("\"scenarioHash\""));
         assertTrue(traceLines.stream().allMatch(line -> line.startsWith("{") && line.endsWith("}")));
         assertTrue(traceLines.stream().anyMatch(line ->
                 line.contains("\"status\":200")

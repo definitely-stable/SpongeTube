@@ -10,6 +10,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -18,11 +19,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 final class MediaLabServer implements AutoCloseable {
 
-    private static final int COPY_BUFFER_BYTES = 8 * 1024;
-
     private final MediaLabConfig config;
+    private final ResolvedScenario scenario;
+    private final MonotonicClock clock;
     private final FixtureCatalog catalog;
-    private final JsonLineTraceWriter traceWriter;
+    private final JsonLineTraceWriter requestTraceWriter;
+    private final JsonLineTraceWriter eventTraceWriter;
+    private final SessionCalibration calibration;
+    private final SessionEventRecorder events;
+    private final FixtureBodyWriter fixtureBodyWriter;
     private final HttpServer dataServer;
     private final HttpServer controlServer;
     private final ExecutorService dataExecutor;
@@ -32,15 +37,27 @@ final class MediaLabServer implements AutoCloseable {
 
     private MediaLabServer(
             MediaLabConfig config,
+            ResolvedScenario scenario,
+            MonotonicClock clock,
             FixtureCatalog catalog,
-            JsonLineTraceWriter traceWriter,
+            JsonLineTraceWriter requestTraceWriter,
+            JsonLineTraceWriter eventTraceWriter,
+            SessionCalibration calibration,
+            SessionEventRecorder events,
+            FixtureBodyWriter fixtureBodyWriter,
             HttpServer dataServer,
             HttpServer controlServer,
             ExecutorService dataExecutor,
             ExecutorService controlExecutor) {
         this.config = config;
+        this.scenario = scenario;
+        this.clock = clock;
         this.catalog = catalog;
-        this.traceWriter = traceWriter;
+        this.requestTraceWriter = requestTraceWriter;
+        this.eventTraceWriter = eventTraceWriter;
+        this.calibration = calibration;
+        this.events = events;
+        this.fixtureBodyWriter = fixtureBodyWriter;
         this.dataServer = dataServer;
         this.controlServer = controlServer;
         this.dataExecutor = dataExecutor;
@@ -48,29 +65,56 @@ final class MediaLabServer implements AutoCloseable {
     }
 
     static MediaLabServer create(MediaLabConfig config) throws IOException {
+        MonotonicClock clock = SystemMonotonicClock.INSTANCE;
+        return create(config, config.resolvedScenario(), clock, new SystemSleeper(clock));
+    }
+
+    static MediaLabServer create(
+            MediaLabConfig config,
+            ResolvedScenario scenario,
+            MonotonicClock clock,
+            Sleeper sleeper) throws IOException {
         FixtureCatalog catalog = FixtureCatalog.load(config.fixtureRoot());
 
         HttpServer dataServer = null;
         HttpServer controlServer = null;
         ExecutorService dataExecutor = null;
         ExecutorService controlExecutor = null;
-        JsonLineTraceWriter traceWriter = null;
+        JsonLineTraceWriter requestTraceWriter = null;
+        JsonLineTraceWriter eventTraceWriter = null;
+
         try {
+            ensureArtifactsAbsent(config);
+
             InetAddress loopback = InetAddress.getByName("127.0.0.1");
 
-            // Bind both listeners before creating the trace. A partial bind failure must not
-            // leave an empty trace that could be mistaken for a valid scenario session.
+            // Bind both listeners before creating evidence artifacts. A partial bind failure must
+            // not leave an empty trace that could be mistaken for a valid scenario session.
             dataServer = HttpServer.create(new InetSocketAddress(loopback, config.dataPort()), 0);
             controlServer = HttpServer.create(new InetSocketAddress(loopback, config.controlPort()), 0);
 
             dataExecutor = newFixedThreadPool(config.dataWorkers(), "media-lab-data-");
             controlExecutor = newFixedThreadPool(config.controlWorkers(), "media-lab-control-");
-            traceWriter = new JsonLineTraceWriter(config.tracePath());
+
+            requestTraceWriter = new JsonLineTraceWriter(config.tracePath());
+            eventTraceWriter = new JsonLineTraceWriter(config.sessionTracePath());
+
+            SessionCalibration calibration = new SessionCalibration();
+            SessionEventRecorder events =
+                    new SessionEventRecorder(config, scenario, clock, eventTraceWriter);
+            FixtureBodyWriter fixtureBodyWriter =
+                    new FixtureBodyWriter(scenario, clock, sleeper, events, calibration);
 
             MediaLabServer mediaLab = new MediaLabServer(
                     config,
+                    scenario,
+                    clock,
                     catalog,
-                    traceWriter,
+                    requestTraceWriter,
+                    eventTraceWriter,
+                    calibration,
+                    events,
+                    fixtureBodyWriter,
                     dataServer,
                     controlServer,
                     dataExecutor,
@@ -96,18 +140,27 @@ final class MediaLabServer implements AutoCloseable {
             if (controlExecutor != null) {
                 controlExecutor.shutdownNow();
             }
-            if (traceWriter != null) {
-                traceWriter.close();
+            boolean requestTraceCreated = requestTraceWriter != null;
+            boolean eventTraceCreated = eventTraceWriter != null;
+            closeQuietly(requestTraceWriter);
+            closeQuietly(eventTraceWriter);
+            if (requestTraceCreated) {
+                deleteQuietly(config.tracePath());
+            }
+            if (eventTraceCreated) {
+                deleteQuietly(config.sessionTracePath());
             }
             throw exception;
         }
     }
 
-    void start() {
+    void start() throws IOException {
         controlServer.start();
         try {
             dataServer.start();
-        } catch (RuntimeException exception) {
+            events.start();
+        } catch (IOException | RuntimeException exception) {
+            dataServer.stop(0);
             controlServer.stop(0);
             throw exception;
         }
@@ -123,22 +176,27 @@ final class MediaLabServer implements AutoCloseable {
 
     String readyJson() {
         return "{"
-                + Json.quote("schemaVersion") + ":2,"
+                + Json.quote("schemaVersion") + ":3,"
                 + Json.quote("event") + ":" + Json.quote("MEDIA_LAB_READY") + ","
                 + Json.quote("host") + ":" + Json.quote("127.0.0.1") + ","
                 + Json.quote("dataPort") + ":" + dataPort() + ","
                 + Json.quote("controlPort") + ":" + controlPort() + ","
                 + Json.quote("sessionId") + ":" + Json.quote(config.sessionId()) + ","
                 + Json.quote("profileId") + ":" + Json.quote(config.profile().name()) + ","
+                + Json.quote("scenarioId") + ":" + Json.quote(scenario.scenarioId()) + ","
+                + Json.quote("scenarioHash") + ":" + Json.quote(scenario.scenarioHash()) + ","
                 + Json.quote("dataWorkers") + ":" + config.dataWorkers() + ","
                 + Json.quote("controlWorkers") + ":" + config.controlWorkers() + ","
-                + Json.quote("catalogResources") + ":" + catalog.size()
+                + Json.quote("catalogResources") + ":" + catalog.size() + ","
+                + Json.quote("requestTrace") + ":" + Json.quote(config.tracePath().toString()) + ","
+                + Json.quote("sessionTrace") + ":" + Json.quote(config.sessionTracePath().toString()) + ","
+                + Json.quote("calibration") + ":" + Json.quote(config.calibrationPath().toString())
                 + "}";
     }
 
     String configJson() {
         return "{"
-                + Json.quote("schemaVersion") + ":2,"
+                + Json.quote("schemaVersion") + ":3,"
                 + Json.quote("sessionId") + ":" + Json.quote(config.sessionId()) + ","
                 + Json.quote("profileId") + ":" + Json.quote(config.profile().name()) + ","
                 + Json.quote("host") + ":" + Json.quote("127.0.0.1") + ","
@@ -146,7 +204,8 @@ final class MediaLabServer implements AutoCloseable {
                 + Json.quote("controlPort") + ":" + controlPort() + ","
                 + Json.quote("dataWorkers") + ":" + config.dataWorkers() + ","
                 + Json.quote("controlWorkers") + ":" + config.controlWorkers() + ","
-                + Json.quote("catalogResources") + ":" + catalog.size()
+                + Json.quote("catalogResources") + ":" + catalog.size() + ","
+                + Json.quote("scenario") + ":" + scenario.toJson()
                 + "}";
     }
 
@@ -159,7 +218,7 @@ final class MediaLabServer implements AutoCloseable {
     }
 
     private void handle(HttpExchange exchange, boolean controlPlane) {
-        long handlerStartedAt = System.nanoTime();
+        long handlerStartedAt = clock.nowNanos();
         String method = exchange.getRequestMethod();
         String rawPath = exchange.getRequestURI().getRawPath();
         String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
@@ -169,6 +228,7 @@ final class MediaLabServer implements AutoCloseable {
 
         RequestTraceAccumulator trace = new RequestTraceAccumulator(
                 config,
+                scenario,
                 requestId,
                 handlerStartedAt,
                 method,
@@ -181,6 +241,9 @@ final class MediaLabServer implements AutoCloseable {
             } else {
                 routeData(exchange, trace, rawPath, method, rangeHeader);
             }
+        } catch (NoProgressCancelledException cancelled) {
+            trace.outcome = TraceOutcome.CANCELLED_DURING_NO_PROGRESS;
+            System.err.println("media-lab impairment wait cancelled: " + cancelled.getMessage());
         } catch (IOException exception) {
             trace.outcome = trace.firstBodyWriteAtMonotonicNs == null
                     ? TraceOutcome.SERVER_IO_ERROR
@@ -192,7 +255,8 @@ final class MediaLabServer implements AutoCloseable {
         } finally {
             exchange.close();
             try {
-                traceWriter.append(trace.complete(System.nanoTime()));
+                RequestTrace completed = trace.complete(clock.nowNanos());
+                requestTraceWriter.append(completed);
             } catch (IOException traceFailure) {
                 System.err.println("media-lab trace failure: " + traceFailure.getMessage());
             }
@@ -212,7 +276,9 @@ final class MediaLabServer implements AutoCloseable {
             }
             sendJson(exchange, trace, 200,
                     "{" + Json.quote("status") + ":" + Json.quote("ok") + ","
-                            + Json.quote("sessionId") + ":" + Json.quote(config.sessionId()) + "}");
+                            + Json.quote("sessionId") + ":" + Json.quote(config.sessionId()) + ","
+                            + Json.quote("scenarioHash") + ":" + Json.quote(scenario.scenarioHash())
+                            + "}");
             return;
         }
 
@@ -324,6 +390,7 @@ final class MediaLabServer implements AutoCloseable {
         headers.set("X-Sponge-Lab-Session", config.sessionId());
         headers.set("X-Sponge-Lab-Request", Long.toString(requestId));
         headers.set("X-Sponge-Lab-Profile", config.profile().name());
+        headers.set("X-Sponge-Lab-Scenario", scenario.scenarioHash());
         headers.set("X-Sponge-Lab-Plane", controlPlane ? "control" : "data");
     }
 
@@ -341,25 +408,11 @@ final class MediaLabServer implements AutoCloseable {
                 input.skipNBytes(start);
             }
 
-            byte[] buffer = new byte[COPY_BUFFER_BYTES];
-            long remaining = length;
-
-            while (remaining > 0) {
-                int requested = (int) Math.min(buffer.length, remaining);
-                int read = input.read(buffer, 0, requested);
-                if (read < 0) {
-                    throw new IOException("Unexpected EOF while serving " + resource.resourceId());
-                }
-
-                trace.markFirstBodyWrite();
-                output.write(buffer, 0, read);
-                trace.bodyBytesWritten += read;
-                remaining -= read;
-            }
+            fixtureBodyWriter.write(input, output, trace, length);
         }
     }
 
-    private static void sendJson(
+    private void sendJson(
             HttpExchange exchange,
             RequestTraceAccumulator trace,
             int status,
@@ -371,14 +424,14 @@ final class MediaLabServer implements AutoCloseable {
         trace.plannedResponseBytes = body.length;
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream output = exchange.getResponseBody()) {
-            trace.markFirstBodyWrite();
+            trace.markFirstBodyWrite(clock.nowNanos());
             output.write(body);
             trace.bodyBytesWritten += body.length;
         }
         trace.outcome = TraceOutcome.SUCCESS;
     }
 
-    private static void sendNotFound(
+    private void sendNotFound(
             HttpExchange exchange,
             RequestTraceAccumulator trace) throws IOException {
         trace.outcome = TraceOutcome.NOT_FOUND;
@@ -386,7 +439,7 @@ final class MediaLabServer implements AutoCloseable {
         trace.outcome = TraceOutcome.NOT_FOUND;
     }
 
-    private static void sendMethodNotAllowed(
+    private void sendMethodNotAllowed(
             HttpExchange exchange,
             RequestTraceAccumulator trace,
             String allow) throws IOException {
@@ -396,7 +449,7 @@ final class MediaLabServer implements AutoCloseable {
         trace.outcome = TraceOutcome.METHOD_NOT_ALLOWED;
     }
 
-    private static void sendErrorJson(
+    private void sendErrorJson(
             HttpExchange exchange,
             RequestTraceAccumulator trace,
             int status,
@@ -416,7 +469,7 @@ final class MediaLabServer implements AutoCloseable {
         trace.plannedResponseBytes = body.length;
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream output = exchange.getResponseBody()) {
-            trace.markFirstBodyWrite();
+            trace.markFirstBodyWrite(clock.nowNanos());
             output.write(body);
             trace.bodyBytesWritten += body.length;
         }
@@ -434,6 +487,7 @@ final class MediaLabServer implements AutoCloseable {
         dataExecutor.shutdown();
         controlExecutor.shutdown();
 
+        IOException failure = null;
         try {
             boolean dataStopped = dataExecutor.awaitTermination(5, TimeUnit.SECONDS);
             boolean controlStopped = controlExecutor.awaitTermination(5, TimeUnit.SECONDS);
@@ -447,8 +501,58 @@ final class MediaLabServer implements AutoCloseable {
             dataExecutor.shutdownNow();
             controlExecutor.shutdownNow();
             Thread.currentThread().interrupt();
-        } finally {
-            traceWriter.close();
+        }
+
+        try {
+            events.complete();
+        } catch (IOException exception) {
+            failure = exception;
+        }
+
+        try {
+            CalibrationReportWriter.write(config.calibrationPath(), scenario, calibration);
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+
+        try {
+            requestTraceWriter.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+
+        try {
+            eventTraceWriter.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private static void ensureArtifactsAbsent(MediaLabConfig config) throws IOException {
+        for (Path path : new Path[] {
+                config.tracePath(),
+                config.sessionTracePath(),
+                config.calibrationPath()
+        }) {
+            if (Files.exists(path)) {
+                throw new IOException("Evidence artifact already exists: " + path);
+            }
         }
     }
 
@@ -461,5 +565,24 @@ final class MediaLabServer implements AutoCloseable {
                     thread.setDaemon(false);
                     return thread;
                 });
+    }
+
+    private static void closeQuietly(JsonLineTraceWriter writer) {
+        if (writer == null) {
+            return;
+        }
+        try {
+            writer.close();
+        } catch (IOException ignored) {
+            // Startup failure cleanup only.
+        }
+    }
+
+    private static void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException ignored) {
+            // Startup failure cleanup only.
+        }
     }
 }

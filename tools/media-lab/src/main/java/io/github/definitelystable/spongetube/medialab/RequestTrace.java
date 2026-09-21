@@ -7,6 +7,8 @@ record RequestTrace(
         String fixtureId,
         String resourceId,
         String profileId,
+        String scenarioId,
+        String scenarioHash,
         String method,
         String path,
         String rangeHeader,
@@ -25,7 +27,7 @@ record RequestTrace(
         TraceOutcome outcome) {
 
     String toJsonLine() {
-        StringBuilder json = new StringBuilder(512);
+        StringBuilder json = new StringBuilder(640);
         json.append('{');
         field(json, "schemaVersion", schemaVersion).append(',');
         field(json, "sessionId", sessionId).append(',');
@@ -33,6 +35,8 @@ record RequestTrace(
         nullableField(json, "fixtureId", fixtureId).append(',');
         nullableField(json, "resourceId", resourceId).append(',');
         field(json, "profileId", profileId).append(',');
+        field(json, "scenarioId", scenarioId).append(',');
+        field(json, "scenarioHash", scenarioHash).append(',');
         field(json, "method", method).append(',');
         field(json, "path", path).append(',');
         nullableField(json, "rangeHeader", rangeHeader).append(',');
