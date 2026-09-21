@@ -62,7 +62,7 @@ Provide a controlled VOD origin containing:
 - descriptor-expiry simulation;
 - delayed response and connection-reset injection.
 
-A network impairment layer should provide repeatable bandwidth, latency, jitter, loss and blackouts. Toxiproxy or Linux `tc/netem` are candidates; selection is evidence-driven.
+M0's built-in Media Lab provides deterministic **application-layer delivery impairment** for N0/N1/N4. It must not be described as faithful RTT/packet-loss/TCP/QUIC/VPN emulation. Transport/network-level impairment such as loss, route reset and VPN behavior belongs to M2, where Toxiproxy, Linux `tc/netem` or another evidence-backed mechanism can be selected.
 
 Real YouTube tests are **compatibility probes**, not deterministic performance benchmarks.
 
@@ -76,7 +76,7 @@ Initial reproducible profiles:
 | N1 | Slow | 1.5 Mbps, 120 ms RTT |
 | N2 | High latency | 8 Mbps, 450 ms RTT, jitter |
 | N3 | Burst/blackout | 8 Mbps for 15 s, 0 for 30 s, repeat |
-| N4 | Long outage | healthy network → 120 s blackout |
+| N4 | Long no-progress window | healthy delivery → existing media response makes zero forward progress for 120 s → delivery resumes |
 | N5 | Lossy | 5 Mbps, 150 ms RTT, 2% loss |
 | N6 | Route reset | active connection reset/default-network replacement |
 | N7 | VPN flap | VPN-like default route disappears/reappears in test harness |
@@ -268,6 +268,8 @@ M0 must produce a versioned machine-readable result containing build, device/run
 
 M0 implements N0, N1 and canonical N4 first. The broader N2/N3/N5–N11 matrix remains specified here for M2 unless an earlier implementation is required to prove the harness.
 
+Before any M0 A/B comparison, the Media Lab profile itself must be calibrated and its observed pacing/no-progress interval compared with the configured values.
+
 ## 11. CI tiers
 
 ```text
@@ -278,10 +280,10 @@ PR
   selected microbench regression checks
 
 Nightly
-  Android emulator matrix
-  impairment profiles N0-N11
+  Android emulator matrix (API 23 / 34 / 36; optional API 37 preview compatibility)
+  M0 impairment profiles N0 / N1 / canonical N4
   Macrobenchmark/Perfetto
-  real-provider compatibility smoke
+  real-provider compatibility smoke only after the YouTube adapter milestone exists
 
 Release candidate
   physical-device matrix
