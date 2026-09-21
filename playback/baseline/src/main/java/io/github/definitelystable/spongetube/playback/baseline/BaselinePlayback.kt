@@ -1,8 +1,6 @@
 package io.github.definitelystable.spongetube.playback.baseline
 
 import android.content.Context
-import androidx.annotation.MainThread
-import androidx.annotation.WorkerThread
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -15,7 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 @UnstableApi
 object BaselinePlayback {
 
-    @WorkerThread
     fun prepare(
         context: Context,
         spec: BaselinePlaybackSpec,
@@ -59,7 +56,6 @@ object BaselinePlayback {
         }
     }
 
-    @MainThread
     fun createSession(
         context: Context,
         prepared: PreparedBaselinePlayback,
