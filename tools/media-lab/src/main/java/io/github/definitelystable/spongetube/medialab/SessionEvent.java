@@ -7,6 +7,8 @@ record SessionEvent(
         String scenarioHash,
         String event,
         long atMonotonicNs,
+        Long referencePlaybackBitrateBps,
+        Double aggregateRateRatio,
         Long configuredRateBps,
         Long noProgressStartAfterMs,
         Long noProgressDurationMs) {
@@ -19,6 +21,10 @@ record SessionEvent(
                 + Json.quote("scenarioHash") + ":" + Json.quote(scenarioHash) + ","
                 + Json.quote("event") + ":" + Json.quote(event) + ","
                 + Json.quote("atMonotonicNs") + ":" + atMonotonicNs + ","
+                + Json.quote("referencePlaybackBitrateBps") + ":"
+                + nullable(referencePlaybackBitrateBps) + ","
+                + Json.quote("aggregateRateRatio") + ":"
+                + nullableDecimal(aggregateRateRatio) + ","
                 + Json.quote("configuredRateBps") + ":" + nullable(configuredRateBps) + ","
                 + Json.quote("noProgressStartAfterMs") + ":" + nullable(noProgressStartAfterMs) + ","
                 + Json.quote("noProgressDurationMs") + ":" + nullable(noProgressDurationMs)
@@ -27,5 +33,11 @@ record SessionEvent(
 
     private static String nullable(Long value) {
         return value == null ? "null" : Long.toString(value);
+    }
+
+    private static String nullableDecimal(Double value) {
+        return value == null
+                ? "null"
+                : String.format(java.util.Locale.ROOT, "%.6f", value);
     }
 }
