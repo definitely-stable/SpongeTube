@@ -298,6 +298,8 @@ class ArtifactContractTest(unittest.TestCase):
                         "observedNoProgressDurationMs": None,
                         "noProgressDurationErrorMs": None,
                         "maxSchedulerSlipMs": 2,
+                        "firstBodyDelaySamplesMs": [120, 121],
+                        "schedulerSlipSamplesMs": [0, 2, 1],
                     }
                 ),
                 encoding="utf-8",
@@ -324,6 +326,14 @@ class ArtifactContractTest(unittest.TestCase):
             self.assertEqual(310090, result["labAccuracy"]["observedRateBps"])
             self.assertEqual(1, result["labAccuracy"]["firstBodyDelayErrorMs"])
             self.assertEqual(2, result["labAccuracy"]["maxSchedulerSlipMs"])
+            self.assertEqual(
+                [120, 121],
+                result["labAccuracy"]["firstBodyDelaySamplesMs"],
+            )
+            self.assertEqual(
+                [0, 2, 1],
+                result["labAccuracy"]["schedulerSlipSamplesMs"],
+            )
 
     def test_result_from_files_includes_matching_cache_observations(self):
         with tempfile.TemporaryDirectory() as temp_dir:
