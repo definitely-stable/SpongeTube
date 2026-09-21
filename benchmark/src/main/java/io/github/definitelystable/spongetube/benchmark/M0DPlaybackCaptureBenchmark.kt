@@ -51,5 +51,17 @@ class M0DPlaybackCaptureBenchmark {
             20_000,
         )
         assertTrue("DIRECT baseline never reached playing state", playing)
+
+        val httpEngine = device.wait(
+            Until.hasObject(By.textContains("HTTP_ENGINE")),
+            5_000,
+        )
+        assertTrue(
+            "RECOMMENDED_PLATFORM did not resolve to HTTP_ENGINE",
+            httpEngine,
+        )
+
+        pressHome()
+        device.waitForIdle()
     }
 }
