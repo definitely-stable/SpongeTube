@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import io.github.definitelystable.spongetube.playback.baseline.BaselineCacheState
 import io.github.definitelystable.spongetube.playback.baseline.BaselineMode
@@ -39,6 +40,7 @@ import io.github.definitelystable.spongetube.playback.baseline.BaselineTransport
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
+@UnstableApi
 class MainActivity : ComponentActivity() {
 
     private val prepareExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -228,6 +230,7 @@ private enum class BaselineSelection(val label: String) {
     CACHE_WARM("CACHE WARM"),
 }
 
+@UnstableApi
 private data class BaselineLabState(
     val phase: String = "Idle · load F1 to begin",
     val requestedTransport: BaselineTransport = BaselineTransport.RECOMMENDED_PLATFORM,
@@ -238,6 +241,7 @@ private data class BaselineLabState(
     val error: String? = null,
 )
 
+@UnstableApi
 @Composable
 private fun BaselineLabShell(
     state: BaselineLabState,
