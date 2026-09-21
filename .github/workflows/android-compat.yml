@@ -118,20 +118,48 @@ jobs:
             sleep 1
           done
 
+          APP_APK="$(find app/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          TEST_APK="$(find benchmark/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          test -n "$APP_APK"
+          test -n "$TEST_APK"
+          adb install -r -t "$APP_APK"
+          adb install -r -t "$TEST_APK"
+
+          INSTRUMENTATION="$(adb shell pm list instrumentation | tr -d '\r' | awk '
+            /io.github.definitelystable.spongetube.benchmark/ {
+              sub(/^instrumentation:/, "", $1)
+              print $1
+              exit
+            }
+          ')"
+          test -n "$INSTRUMENTATION"
+
           adb reverse tcp:18080 tcp:18081
           adb logcat -c
 
-          ./gradlew :benchmark:connectedBenchmarkAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.benchmark.M0AndroidSmokeTest \
-            -Pandroid.testInstrumentationRunnerArguments.spongetube.runId="$RUN_ID" \
-            -Pandroid.testInstrumentationRunnerArguments.spongetube.expectedTransport="${{ matrix.expected_transport }}"
+          DEVICE_ROOT="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/android-smoke/$SESSION_ID"
 
-          adb logcat -d -v threadtime > "$ROOT/android/logcat.txt"
+          set +e
+          adb shell am instrument -w -r \
+            -e class io.github.definitelystable.spongetube.benchmark.M0AndroidSmokeTest \
+            -e spongetube.runId "$RUN_ID" \
+            -e spongetube.expectedTransport "${{ matrix.expected_transport }}" \
+            "$INSTRUMENTATION" \
+            | tee "$ROOT/android/instrumentation.txt"
+          INSTRUMENT_STATUS=${PIPESTATUS[0]}
+          set -e
 
-          SOURCE_DIR="$(find benchmark/build/outputs/connected_android_test_additional_output \
-            -type d -path "*/android-smoke/$SESSION_ID" -print -quit)"
-          test -n "$SOURCE_DIR"
-          cp -R "$SOURCE_DIR/." "$ROOT/android/"
+          adb logcat -d -v threadtime > "$ROOT/android/logcat.txt" || true
+
+          if [[ "$INSTRUMENT_STATUS" -ne 0 ]] \
+            || grep -q 'FAILURES!!!' "$ROOT/android/instrumentation.txt" \
+            || ! grep -q 'OK (' "$ROOT/android/instrumentation.txt"; then
+            echo "::error::API ${{ matrix.api }} compatibility instrumentation failed"
+            exit 1
+          fi
+
+          adb shell ls -la "$DEVICE_ROOT"
+          adb pull "$DEVICE_ROOT/." "$ROOT/android/"
 
           jq -e --arg session "$SESSION_ID" '
             .schemaVersion == 1 and
