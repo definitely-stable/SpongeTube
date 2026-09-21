@@ -1,0 +1,145 @@
+name: Fixture Conformance
+
+on:
+  pull_request:
+    paths:
+      - "test-fixtures/media/F1/**"
+      - "test-fixtures/media/manifest.json"
+      - "test-fixtures/media/checksums.sha256"
+  push:
+    branches: [ main ]
+    paths:
+      - "test-fixtures/media/F1/**"
+      - "test-fixtures/media/manifest.json"
+      - "test-fixtures/media/checksums.sha256"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fixture-conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dashif:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout SpongeTube
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Checkout DASH-IF Conformance 3.0.0
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: Dash-Industry-Forum/DASH-IF-Conformance
+          ref: 56970b64e0e89454c06b3cc5ca712211b9b1ec62
+          path: .dashif
+          persist-credentials: false
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: curl, mbstring, sqlite3, xml
+          tools: none
+
+      - name: Set up JDK 21 for DASH-IF validators
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install validator runtime
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gpac jq
+
+      - name: Install verified Composer 2.10.3
+        shell: bash
+        run: |
+          curl --fail --show-error --silent --location \
+            https://getcomposer.org/download/2.10.3/composer.phar \
+            --output "$RUNNER_TEMP/composer.phar"
+          echo "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6  $RUNNER_TEMP/composer.phar" \
+            | sha256sum --check --strict
+
+      - name: Prepare DASH-IF application
+        shell: bash
+        working-directory: .dashif
+        run: |
+          set -euo pipefail
+
+          cp env_production.example .env
+          sed -i 's/^SESSION_DRIVER=.*/SESSION_DRIVER=file/' .env
+          sed -i 's/^CACHE_STORE=.*/CACHE_STORE=file/' .env
+          sed -i 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=sync/' .env
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' .env
+          sed -i 's/^OTEL_TRACES_EXPORTER=.*/OTEL_TRACES_EXPORTER=null/' .env
+
+          touch database/database.sqlite
+          php "$RUNNER_TEMP/composer.phar" install \
+            --no-interaction --prefer-dist --no-progress --no-dev
+          php artisan key:generate --force
+          php artisan migrate --force
+
+          php -v
+          php "$RUNNER_TEMP/composer.phar" --version
+          java -version
+          echo "dashifCommit=$(git rev-parse HEAD)"
+          echo "gpacPackage=$(dpkg-query -W -f='${Version}' gpac)"
+
+      - name: Serve canonical F1
+        shell: bash
+        run: |
+          python3 -m http.server 18091 \
+            --bind 127.0.0.1 \
+            --directory test-fixtures/media/F1 \
+            >"$RUNNER_TEMP/f1-http.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/f1-http.pid"
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18091/manifest.mpd >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat "$RUNNER_TEMP/f1-http.log"
+          exit 1
+
+      - name: Run DASH-IF 3.0.0 conformance
+        shell: bash
+        working-directory: .dashif
+        run: |
+          set -euo pipefail
+
+          php artisan app:analyze-manifest \
+            http://127.0.0.1:18091/manifest.mpd \
+            > "$GITHUB_WORKSPACE/dashif-result.json"
+
+          jq empty "$GITHUB_WORKSPACE/dashif-result.json"
+
+          FAILURES="$(jq '[.. | objects | select(.state? == "FAIL" and has("messages"))] | length' \
+            "$GITHUB_WORKSPACE/dashif-result.json")"
+          WARNINGS="$(jq '[.. | objects | select(.state? == "WARN" and has("messages"))] | length' \
+            "$GITHUB_WORKSPACE/dashif-result.json")"
+
+          echo "DASH-IF failures=$FAILURES warnings=$WARNINGS"
+
+          if [[ "$FAILURES" -ne 0 ]]; then
+            jq . "$GITHUB_WORKSPACE/dashif-result.json"
+            exit 1
+          fi
+
+      - name: Upload conformance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dashif-conformance
+          path: |
+            dashif-result.json
+            ${{ runner.temp }}/f1-http.log
+          if-no-files-found: warn
+          retention-days: 14

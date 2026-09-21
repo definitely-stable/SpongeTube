@@ -473,18 +473,21 @@ Target:
 ### F1 — long-form separate A/V DASH
 
 Purpose:
-- separate A/V requests;
-- Range-heavy access;
-- enough duration for N4.
+- separate concurrent A/V requests;
+- long-form delivery under N0/N1/N4;
+- enough duration for canonical N4.
 
-Preferred target:
-- about 180 seconds;
-- AVC video, one representation;
-- AAC-LC audio, one representation;
-- fMP4 static DASH;
-- no adaptive alternatives.
+Implemented B3 shape:
+- exactly 180 seconds;
+- AVC/H.264 Main video, one 640×360 representation;
+- AAC-LC 48 kHz stereo audio, one representation;
+- static segmented fMP4 DASH;
+- no adaptive alternatives;
+- 18 × 10 s video media segments;
+- 18 near-10 s audio segments plus one 53.3 ms AAC tail segment;
+- both SegmentTimelines cover exactly 180 s.
 
-Prefer single-file/range-addressable separate A/V DASH if Media3 compatibility is clean. This better matches future separate-track/range workloads. If the generator's single-file DASH form is less stable, use explicit fMP4 segments and record that decision.
+B3 deliberately chooses explicit segmented fMP4 instead of single-file/range-addressable DASH. This keeps the canonical long-form A/V fixture independent of Media3 packaging behavior. HTTP Range correctness remains isolated in B1 and F0. A future F2 diagnostic fixture may add a range-heavy DASH shape only if M0-C exposes a concrete question.
 
 The fixture shape is validated during M0-B and then frozen; it must not silently change later.
 
@@ -506,7 +509,14 @@ Record:
 - codec/profile;
 - SHA-256 per payload.
 
-Recommended current generator baseline: FFmpeg 9.0.2, released 2026-09-18.
+Canonical B3 generator: FFmpeg 9.0.2, released 2026-09-18.
+
+Committed B3 observations:
+- F0: 1,054,544 bytes; 843,635 bit/s measured average;
+- F1: 13,956,166 bytes including MPD;
+- F1 media payload: 13,954,053 bytes;
+- F1 referencePlaybackBitrateBps: 620,180;
+- total F0 + F1: 15,010,710 bytes, well below the 40 MiB budget.
 
 Synthetic video/audio sources avoid external media licensing dependencies.
 
@@ -558,9 +568,10 @@ F2/F3 diagnostic packaging variants are deliberately deferred until a real ambig
 At startup:
 1. resolve fixture root;
 2. reject symlinks;
-3. enumerate regular files;
-4. create immutable URL-to-file mapping;
-5. reject normalized collisions.
+3. when manifest.json is present, verify exact payload set, sizes and SHA-256 before serving;
+4. enumerate regular files;
+5. create immutable URL-to-file mapping using role-aware manifest MIME metadata;
+6. reject normalized collisions.
 
 Fixture paths use a conservative ASCII subset. Encoded path tricks are rejected instead of decoded into arbitrary filesystem paths.
 

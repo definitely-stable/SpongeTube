@@ -1,0 +1,332 @@
+{
+  "schemaVersion": 1,
+  "generator": {
+    "name": "FFmpeg",
+    "version": "9.0.2",
+    "canonicalBytesGeneratedAt": "2026-09-21",
+    "recommendedRegenerationBaseline": "9.0.2"
+  },
+  "fixtures": [
+    {
+      "fixtureId": "F0",
+      "kind": "progressive-mp4",
+      "durationMs": 10000,
+      "codecs": [
+        "avc1-main",
+        "mp4a.40.2"
+      ],
+      "container": "MP4",
+      "actualBytes": 1054544,
+      "mediaPayloadBytes": 1054544,
+      "actualAverageBitrateBps": 843635,
+      "referencePlaybackBitrateBps": null,
+      "resources": [
+        {
+          "relativePath": "F0/progressive.mp4",
+          "role": "progressive-av",
+          "sizeBytes": 1054544,
+          "sha256": "3ea3ba4288f3267652a508bdf3624766c075289ca45ad1a46f36ebbcb29e5b4c",
+          "contentType": "video/mp4"
+        }
+      ]
+    },
+    {
+      "fixtureId": "F1",
+      "kind": "static-dash-fmp4",
+      "durationMs": 180000,
+      "codecs": [
+        "avc1.4d401e",
+        "mp4a.40.2"
+      ],
+      "container": "DASH/fMP4",
+      "actualBytes": 13956166,
+      "mediaPayloadBytes": 13954053,
+      "actualAverageBitrateBps": 620180,
+      "referencePlaybackBitrateBps": 620180,
+      "videoPayloadBytes": 12468861,
+      "audioPayloadBytes": 1485192,
+      "resources": [
+        {
+          "relativePath": "F1/manifest.mpd",
+          "role": "dash-manifest",
+          "sizeBytes": 2113,
+          "sha256": "e0e05820165ae7c93c81ee8a71a4a3c1412bf6262416dcb1709c769caee07a56",
+          "contentType": "application/dash+xml"
+        },
+        {
+          "relativePath": "F1/init-0.m4s",
+          "role": "video-init",
+          "sizeBytes": 827,
+          "sha256": "479c777b460d7d56f0927cd45937135143ce8515bdf04993f9b36d4d3b9a6f65",
+          "contentType": "video/mp4"
+        },
+        {
+          "relativePath": "F1/init-1.m4s",
+          "role": "audio-init",
+          "sizeBytes": 764,
+          "sha256": "14dba1642c1accb6b1f64e13b1598323dcd354dd736edefea3de1ef80340c903",
+          "contentType": "audio/mp4"
+        },
+        {
+          "relativePath": "F1/segment-0-00001.m4s",
+          "role": "video-segment",
+          "sizeBytes": 711501,
+          "sha256": "f3e8a844487d57a05c69975389566bde3bcb38d9afa1d53538be18c959d77fa3",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00002.m4s",
+          "role": "video-segment",
+          "sizeBytes": 701674,
+          "sha256": "1c1ecb923c9264783ebd187ecee7eeda264e7185d0a31d3ef8db97607ed26974",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00003.m4s",
+          "role": "video-segment",
+          "sizeBytes": 687863,
+          "sha256": "f482c543b6856feadb9271f1796218ee1305e8a79813be82552f1c917571596e",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00004.m4s",
+          "role": "video-segment",
+          "sizeBytes": 693268,
+          "sha256": "78426ce494325c57ba6311ac880503466f128b79f17e8bc2ccb74ea0a26366df",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00005.m4s",
+          "role": "video-segment",
+          "sizeBytes": 684248,
+          "sha256": "d7a422a2c222abaae6403fad8fb390bd5fccadb9a9ddf0b15636d72297fd7ce6",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00006.m4s",
+          "role": "video-segment",
+          "sizeBytes": 699679,
+          "sha256": "c0d953e71eddf5eca29f2c326c0be89062f1e66f58f176906d1b757258f879ad",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00007.m4s",
+          "role": "video-segment",
+          "sizeBytes": 692040,
+          "sha256": "b1ca06a89feedcbd8b19f6cb2050c967f3f923fc9f6cba371b04a46774831e57",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00008.m4s",
+          "role": "video-segment",
+          "sizeBytes": 699168,
+          "sha256": "30f4b136c6fec64690a8188d8d8f3e393bc78c850516f374c162176974965add",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00009.m4s",
+          "role": "video-segment",
+          "sizeBytes": 691376,
+          "sha256": "50378c68a978c31dd2d1f2999306fa0c6989748b573f7b67b5318a5b93717d48",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00010.m4s",
+          "role": "video-segment",
+          "sizeBytes": 688592,
+          "sha256": "bf6b018f723c6e2d8a34f04d84e3bd6200e99b39c2ae859d7b3cdc278355ea12",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00011.m4s",
+          "role": "video-segment",
+          "sizeBytes": 681280,
+          "sha256": "b9110ebcf326f0eb563986513c197b7a6949388ce541f176e95a78e0ccc80edd",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00012.m4s",
+          "role": "video-segment",
+          "sizeBytes": 697291,
+          "sha256": "d48e9a6c20f53d76e2f3a0bd1c78b62874bb9d6f3a7b0f0e9bf7e1dc62b02744",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00013.m4s",
+          "role": "video-segment",
+          "sizeBytes": 690901,
+          "sha256": "e8db62913cd0e14fb7af850f670221022f235716f268b6a37f2d8334f666537f",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00014.m4s",
+          "role": "video-segment",
+          "sizeBytes": 692360,
+          "sha256": "38117cecd1ac9c6167f2dbf5ae36bdbfa93d47187855c19355ad44fe06d1b598",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00015.m4s",
+          "role": "video-segment",
+          "sizeBytes": 689136,
+          "sha256": "1a06389d455acf2f9b5203333cce96e9ca1503a786fa7b922ff685be2a1da840",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00016.m4s",
+          "role": "video-segment",
+          "sizeBytes": 691877,
+          "sha256": "f400ab189ad3d84ee935869d0f0b4a2a6194e54e392c2b839f9880e8265e98dc",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00017.m4s",
+          "role": "video-segment",
+          "sizeBytes": 678127,
+          "sha256": "1210ea3f68148884143b55a5441de26fc1e693badd97381ffb04d37427c74290",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-0-00018.m4s",
+          "role": "video-segment",
+          "sizeBytes": 697653,
+          "sha256": "38c3a372d41c0d09986a37ed3faca3dfd7bf04cf5bae4f43b71b942a4bab3a91",
+          "contentType": "video/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00001.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 81811,
+          "sha256": "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00002.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82463,
+          "sha256": "6d6ae7393926ab6cf07cee17e88fd8a13e13eebb71a688d76f242334b0028b75",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00003.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82510,
+          "sha256": "918e5a61f33f7e281423b5f5e90d5b227835b5638f7c49eeeae9e3cbda7aaa70",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00004.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82330,
+          "sha256": "628d6677333c0cebcbb45e3f18447ecb65cbe1332024c30962a88542f4cecd73",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00005.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82520,
+          "sha256": "8fd53f2c4c555b3b58c91ac0ae6ed7c73feea713d2fb46d384f942df1170af1f",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00006.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82526,
+          "sha256": "7be1e645f0bbc9118a454ccc45eacd4c93e393ee6c26f1664e70985f1609222b",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00007.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82496,
+          "sha256": "63376d0e97b663510fbf5aafe64a42acec4075ec9b8cdd41caedfceb72620173",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00008.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82337,
+          "sha256": "555a469a6c1950f0cabf9d1568349a15fe1f2b92d38783d8c20f6537cfc24945",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00009.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82501,
+          "sha256": "7e3a003511a36a293ad6f90fb89d3bce29c088e02204ce82ff2065906a5a11eb",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00010.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82508,
+          "sha256": "3e3071112a1197873c635a49cfafcdb59ce1d940618722a9bbbfc5e72414df17",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00011.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82495,
+          "sha256": "d97891316fb20598cc7ae4827dbc400afdbfb2591d571667af13ef56bd599aa9",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00012.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82336,
+          "sha256": "45e08e1a72b0de76c72439e128e86596399143a55b160854f8d6fb8ebf92fd2d",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00013.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82512,
+          "sha256": "8787097020a25175fec94ed7b096d07a0a3807895c6f8479f2fbca0d29158340",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00014.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82506,
+          "sha256": "883132cf854d80b298cd05789fc4f712d0030a8d1f6e319bc017e6815b122296",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00015.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82502,
+          "sha256": "b043f90ccfacafdf5b0b7b9641518ffd8ee6db502d13e04d76e55484ed2f96a1",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00016.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82356,
+          "sha256": "97bad7c70178d951333decf51c3bdbe10aad9b9c72266c77abab5fc7bbde03c4",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00017.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82509,
+          "sha256": "7527430b4b18d14a6c66190c676757838a063cf2746ffd7faf4d3e9c1eb3f42d",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00018.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 82508,
+          "sha256": "06d1688a57f84a49df20f0e48eb49fa215d4963359ade4fa29f65c387b347c7b",
+          "contentType": "audio/iso.segment"
+        },
+        {
+          "relativePath": "F1/segment-1-00019.m4s",
+          "role": "audio-segment",
+          "sizeBytes": 702,
+          "sha256": "189d2b34cc5b117b410bf55b61c3d5fb0c450fef91f4e4da2cdb1cd8ef27e823",
+          "contentType": "audio/iso.segment"
+        }
+      ]
+    }
+  ]
+}
