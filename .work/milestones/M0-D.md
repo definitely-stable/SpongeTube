@@ -79,8 +79,13 @@ Requirements:
 Normative metrics:
 - TTFF = FIRST_FRAME - PLAY_REQUESTED;
 - stallCount = closed REBUFFER intervals after FIRST_FRAME while playback intends progress and no seek is active;
-- stallTotal = sum of those intervals;
+- stallTotal = sum of those closed intervals;
+- progressIntent = sum of wall-clock intervals after FIRST_FRAME while playIntent=true, no seek is active, and playback has not terminated; REBUFFER time remains inside this denominator;
+- rebufferRatio = stallTotal / progressIntent when progressIntent > 0, otherwise null;
+- sessionWall = SESSION_ENDED - SESSION_STARTED when both boundaries exist;
 - seekToFrame = FIRST_FRAME_AFTER_SEEK - SEEK_STARTED.
+
+An open REBUFFER at PLAYBACK_ERROR, PLAYBACK_ENDED, SESSION_ENDED, or stream end is not silently completed. The result is PARTIAL with UNCLOSED_REBUFFER. Actual media-timeline progress is not inferred from wall-clock time.
 
 Startup/seek buffering never counts as a normal-playback stall.
 
@@ -152,6 +157,11 @@ Correlation:
 - fixture/resource/range identity.
 
 No cross-clock subtraction.
+
+Identity ownership is single-source:
+- run-manifest.json owns build/device/fixture/scenario/baseline/cache/transport identity;
+- result.json owns derived observations and must carry manifestSha256;
+- consumers reject a result whose run/session/scenario identity does not match the bound manifest.
 
 Artifact layout:
 
