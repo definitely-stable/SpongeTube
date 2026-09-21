@@ -24,8 +24,8 @@ class RequestTraceSummaryTest {
     @Test
     void partiallyOverlappingRangesCountOnlyOverlapAsDuplicate() {
         MediaNetworkSummary summary = RequestTraceSummary.summarize(List.of(
-                trace(1, "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
-                trace(2, "/fixtures/F1/video.m4s", "F1", "video", 206, 50L, 150L, 100)));
+                trace(1, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
+                trace(2, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 50L, 150L, 100)));
 
         assertEquals(200, summary.networkBytes());
         assertEquals(150, summary.uniqueRangeBytes());
@@ -35,8 +35,8 @@ class RequestTraceSummaryTest {
     @Test
     void nestedRangeCountsNestedBytesAsDuplicate() {
         MediaNetworkSummary summary = RequestTraceSummary.summarize(List.of(
-                trace(1, "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 200L, 200),
-                trace(2, "/fixtures/F1/video.m4s", "F1", "video", 206, 50L, 100L, 50)));
+                trace(1, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 200L, 200),
+                trace(2, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 50L, 100L, 50)));
 
         assertEquals(250, summary.networkBytes());
         assertEquals(200, summary.uniqueRangeBytes());
@@ -46,7 +46,7 @@ class RequestTraceSummaryTest {
     @Test
     void coverageIsUnionedPerLogicalResource() {
         MediaNetworkSummary summary = RequestTraceSummary.summarize(List.of(
-                trace(1, "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
+                trace(1, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
                 trace(2, "data", "/fixtures/F1/audio.m4s", "F1", "audio", 206, 0L, 100L, 100)));
 
         assertEquals(200, summary.networkBytes());
@@ -136,7 +136,7 @@ class RequestTraceSummaryTest {
             Long endExclusive,
             long bodyBytesWritten) {
         return new RequestTrace(
-                1,
+                2,
                 "session-1",
                 requestId,
                 plane,
