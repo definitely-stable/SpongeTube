@@ -45,12 +45,12 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.tracing)
     implementation(libs.androidx.compose.ui.tooling.preview)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     add("benchmarkImplementation", libs.androidx.profileinstaller)
-    add("benchmarkImplementation", libs.androidx.tracing)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
