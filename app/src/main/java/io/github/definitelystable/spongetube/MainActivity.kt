@@ -38,6 +38,7 @@ import io.github.definitelystable.spongetube.playback.baseline.BaselinePlayback
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackIdentity
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackSession
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackSpec
+import io.github.definitelystable.spongetube.measurement.BaselineObservationArtifactWriter
 import io.github.definitelystable.spongetube.measurement.PlaybackMeasurementSession
 import io.github.definitelystable.spongetube.playback.baseline.BaselineTransport
 import java.util.UUID
@@ -249,9 +250,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun closeActivePlayback() {
-        activeMeasurement?.close()
+        val measurement = activeMeasurement
+        val session = activeSession
+
+        if (measurement != null && session != null) {
+            BaselineObservationArtifactWriter.write(
+                file = measurement.artifactFile.parentFile
+                    .resolve("baseline-observations.json"),
+                sessionId = measurement.sessionId,
+                cacheBytesAtPreparation = session.cacheBytesAtPreparation,
+                cacheBytesAtEnd = session.cacheBytesNow(),
+            )
+        }
+
+        measurement?.close()
         activeMeasurement = null
-        activeSession?.close()
+        session?.close()
         activeSession = null
     }
 
