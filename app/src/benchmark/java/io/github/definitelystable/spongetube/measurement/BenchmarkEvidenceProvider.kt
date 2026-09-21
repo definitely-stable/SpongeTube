@@ -86,6 +86,7 @@ class BenchmarkEvidenceProvider : ContentProvider() {
             "playback-events.jsonl",
             "playback-summary.json",
             "playback-stats-cross-check.json",
+            "baseline-observations.json",
         )
     }
 }
