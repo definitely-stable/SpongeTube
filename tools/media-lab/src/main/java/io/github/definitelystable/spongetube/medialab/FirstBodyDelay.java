@@ -19,12 +19,18 @@ final class FirstBodyDelay {
     }
 
     void await() throws InterruptedException {
+        long startedAt = clock.nowNanos();
         if (delayNs == 0) {
+            calibration.observeFirstBodyDelay(0);
             return;
         }
 
-        long target = Math.addExact(clock.nowNanos(), delayNs);
+        long target = Math.addExact(startedAt, delayNs);
         sleeper.sleepUntil(target);
-        calibration.observeSchedulerSlip(Math.max(0L, clock.nowNanos() - target));
+        long wokeAt = clock.nowNanos();
+
+        calibration.observeSchedulerSlip(Math.max(0L, wokeAt - target));
+        calibration.observeFirstBodyDelay(
+                Math.max(0L, wokeAt - startedAt) / 1_000_000L);
     }
 }
