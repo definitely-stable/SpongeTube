@@ -13,7 +13,12 @@ record MediaLabConfig(
         int dataPort,
         int dataWorkers,
         int controlPort,
-        int controlWorkers) {
+        int controlWorkers,
+        Long referencePlaybackBitrateBps,
+        Long noProgressStartAfterMs,
+        int writeQuantumBytes) {
+
+    static final int DEFAULT_WRITE_QUANTUM_BYTES = 8 * 1024;
 
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
@@ -41,12 +46,59 @@ record MediaLabConfig(
         if (dataPort != 0 && dataPort == controlPort) {
             throw new IllegalArgumentException("data-port and control-port must differ");
         }
-
-        // B1 intentionally exposes only the control profile. B2 owns impairment behavior.
-        if (profile != MediaLabProfile.N0) {
+        if (writeQuantumBytes < 1 || writeQuantumBytes > 1024 * 1024) {
             throw new IllegalArgumentException(
-                    "Profile " + profile + " is reserved for M0-B2; B1 supports N0 only");
+                    "write-quantum-bytes must be between 1 and 1048576");
         }
+
+        switch (profile) {
+            case N0 -> {
+                if (referencePlaybackBitrateBps != null || noProgressStartAfterMs != null) {
+                    throw new IllegalArgumentException(
+                            "N0 does not accept N1/N4-specific scenario parameters");
+                }
+            }
+            case N1 -> {
+                if (referencePlaybackBitrateBps == null || referencePlaybackBitrateBps <= 0) {
+                    throw new IllegalArgumentException(
+                            "N1 requires --reference-playback-bitrate-bps > 0");
+                }
+                if (noProgressStartAfterMs != null) {
+                    throw new IllegalArgumentException(
+                            "N1 does not accept --no-progress-start-after-ms");
+                }
+            }
+            case N4 -> {
+                if (noProgressStartAfterMs == null || noProgressStartAfterMs < 0) {
+                    throw new IllegalArgumentException(
+                            "N4 requires --no-progress-start-after-ms >= 0");
+                }
+                if (referencePlaybackBitrateBps != null) {
+                    throw new IllegalArgumentException(
+                            "N4 does not accept --reference-playback-bitrate-bps");
+                }
+            }
+        }
+    }
+
+    Path sessionTracePath() {
+        return siblingArtifact(".events");
+    }
+
+    Path calibrationPath() {
+        return siblingArtifact(".calibration");
+    }
+
+    ResolvedScenario resolvedScenario() {
+        return ResolvedScenario.resolve(this);
+    }
+
+    private Path siblingArtifact(String suffix) {
+        String fileName = tracePath.getFileName().toString();
+        int extension = fileName.lastIndexOf('.');
+        String stem = extension > 0 ? fileName.substring(0, extension) : fileName;
+        String ext = extension > 0 ? fileName.substring(extension) : "";
+        return tracePath.resolveSibling(stem + suffix + ext);
     }
 
     private static void validatePort(int value, String name) {
