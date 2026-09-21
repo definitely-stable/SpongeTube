@@ -31,6 +31,20 @@ class CliArgumentsTest {
     }
 
     @Test
+    void rejectsTraceInsideFixtureRoot() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("fixtures"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CliArguments.parse(new String[] {
+                        "serve",
+                        "--fixture-root=" + fixtureRoot,
+                        "--trace=" + fixtureRoot.resolve("trace.jsonl"),
+                        "--session-id=test-1"
+                }));
+    }
+
+    @Test
     void rejectsFutureImpairmentProfilesInB1() throws Exception {
         Path fixtureRoot = Files.createDirectory(temp.resolve("fixtures"));
 
