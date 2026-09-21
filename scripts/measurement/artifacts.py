@@ -80,6 +80,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "runId": args.run_id,
+        "sessionId": args.session_id,
         "createdAtUtc": args.created_at_utc or utc_now(),
         "gitCommit": require_git_sha(args.git_commit),
         "fixture": {
@@ -212,6 +213,75 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def read_json_object(path: pathlib.Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return payload
+
+
+def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
+    playback = read_json_object(pathlib.Path(args.playback_summary))
+    network = read_json_object(pathlib.Path(args.network_summary))
+
+    if playback.get("schemaVersion") != 1:
+        raise ValueError("unsupported playback summary schemaVersion")
+    if network.get("schemaVersion") != 1:
+        raise ValueError("unsupported network summary schemaVersion")
+
+    playback_session = playback.get("sessionId")
+    network_session = network.get("sessionId")
+    if playback_session != args.session_id:
+        raise ValueError(
+            f"playback sessionId mismatch: {playback_session!r}"
+        )
+    if network_session != args.session_id:
+        raise ValueError(
+            f"network sessionId mismatch: {network_session!r}"
+        )
+
+    scenario_hash = network.get("scenarioHash")
+    if scenario_hash != args.scenario_hash:
+        raise ValueError(
+            f"scenarioHash mismatch: {scenario_hash!r}"
+        )
+
+    seek_samples = playback.get("seekToFrame", [])
+    if not isinstance(seek_samples, list):
+        raise ValueError("playback seekToFrame must be an array")
+
+    limitations = list(args.limitation)
+    issues = playback.get("issues", [])
+    if not isinstance(issues, list):
+        raise ValueError("playback issues must be an array")
+    for issue in issues:
+        if isinstance(issue, dict):
+            code = issue.get("code", "UNKNOWN")
+            detail = issue.get("detail", "")
+            limitations.append(f"playback:{code}:{detail}")
+
+    namespace = argparse.Namespace(
+        run_id=args.run_id,
+        status=playback.get("status"),
+        ttff_ns=playback.get("ttffNs"),
+        stall_count=playback.get("stallCount"),
+        stall_total_ns=playback.get("stallTotalNs"),
+        seek_to_frame_ns=[
+            str(sample["durationNs"])
+            for sample in seek_samples
+            if isinstance(sample, dict) and "durationNs" in sample
+        ],
+        playback_error_code=playback.get("playbackErrorCodes", []),
+        request_count=network.get("requestCount"),
+        network_bytes=network.get("networkBytes"),
+        unique_range_bytes=network.get("uniqueRangeBytes"),
+        duplicate_range_bytes=network.get("duplicateRangeBytes"),
+        http_error_count=network.get("httpErrorCount"),
+        limitation=limitations,
+    )
+    return build_result(namespace)
+
+
 def add_common_output(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output", required=True, type=pathlib.Path)
 
@@ -220,6 +290,7 @@ def manifest_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser("manifest")
     add_common_output(parser)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--session-id", required=True)
     parser.add_argument("--created-at-utc")
     parser.add_argument("--git-commit", required=True)
     parser.add_argument("--fixture-id", required=True)
@@ -245,6 +316,22 @@ def manifest_parser(subparsers: Any) -> None:
     parser.add_argument("--benchmark-version", required=True)
     parser.add_argument("--order-seed", required=True, type=int)
     parser.set_defaults(builder=build_manifest)
+
+
+def result_from_files_parser(subparsers: Any) -> None:
+    parser = subparsers.add_parser("result-from-files")
+    add_common_output(parser)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--session-id", required=True)
+    parser.add_argument("--scenario-hash", required=True)
+    parser.add_argument("--playback-summary", required=True)
+    parser.add_argument("--network-summary", required=True)
+    parser.add_argument(
+        "--limitation",
+        action="append",
+        default=[],
+    )
+    parser.set_defaults(builder=build_result_from_files)
 
 
 def result_parser(subparsers: Any) -> None:
@@ -284,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     manifest_parser(subparsers)
+    result_from_files_parser(subparsers)
     result_parser(subparsers)
 
     args = parser.parse_args(argv)
