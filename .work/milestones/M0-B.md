@@ -164,12 +164,21 @@ Suggested CLI:
       --data-workers=8
       --control-port=0
       --control-workers=2
+      --write-quantum-bytes=8192
+      [--reference-playback-bitrate-bps=<bps>]   # required by N1
+      [--no-progress-start-after-ms=<ms>]        # required by N4
 
 Invalid configuration fails before bind.
 
-Both listeners are bound before the trace file is created. If either bind fails, startup fails without leaving an empty trace artifact.
+N1 has no hidden fixture bitrate: the caller supplies the F1 reference playback bitrate resolved from the committed B3 fixture manifest. N4 has no hidden start offset: the caller supplies it explicitly; canonical duration remains 120000 ms.
 
-The first stdout record is machine-readable READY JSON containing at least schemaVersion, host, dataPort, controlPort, sessionId, profileId and effective worker counts. Human logs go to stderr.
+Both listeners are bound before evidence files are created. If either bind fails, startup fails without leaving an empty session artifact.
+
+The --trace path is the request-trace base name. B2 derives sibling evidence files:
+- <trace-stem>.events<ext> for session events;
+- <trace-stem>.calibration<ext> for configured-vs-observed calibration.
+
+The first stdout record is machine-readable READY JSON containing at least schemaVersion, host, dataPort, controlPort, sessionId, profileId, scenarioId, scenarioHash, effective worker counts and evidence paths. Human logs go to stderr.
 
 ## 6. Server execution model
 
@@ -747,7 +756,7 @@ R2: N4 affects only one track/request.
 Mitigation: one shared gate.
 
 R3: N4 blocks control endpoints.
-Mitigation: control path bypasses fixture impairment.
+Mitigation: data/control listeners and executors are physically independent; B2 real-socket smoke proves control completion while media remains blocked.
 
 R4: broken Range semantics poison seek/cache experiments.
 Mitigation: RFC table tests + loopback integration.
