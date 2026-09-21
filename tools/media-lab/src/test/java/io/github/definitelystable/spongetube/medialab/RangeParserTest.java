@@ -64,9 +64,9 @@ class RangeParserTest {
     }
 
     @Test
-    void reversedRangeIsUnsatisfiable() {
+    void reversedRangeIsInvalidAndIgnored() {
         assertInstanceOf(
-                RangeDecision.Unsatisfiable.class,
+                RangeDecision.Full.class,
                 RangeParser.parse("bytes=20-10", 100));
     }
 
@@ -75,6 +75,12 @@ class RangeParserTest {
         assertInstanceOf(
                 RangeDecision.Unsatisfiable.class,
                 RangeParser.parse("bytes=-0", 100));
+    }
+
+    @Test
+    void zeroLengthRepresentationIgnoresRangeDeterministically() {
+        assertInstanceOf(RangeDecision.Full.class, RangeParser.parse("bytes=0-0", 0));
+        assertInstanceOf(RangeDecision.Full.class, RangeParser.parse("bytes=-1", 0));
     }
 
     @Test
