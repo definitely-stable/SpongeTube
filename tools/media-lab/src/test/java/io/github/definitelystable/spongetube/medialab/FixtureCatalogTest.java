@@ -22,8 +22,6 @@ class FixtureCatalogTest {
         Path root = Files.createDirectory(temp.resolve("media"));
         Path fixture = Files.createDirectory(root.resolve("F0"));
         Files.write(fixture.resolve("sample.bin"), new byte[] {1, 2, 3});
-        Files.writeString(root.resolve("manifest.json"), "{}");
-
         FixtureCatalog catalog = FixtureCatalog.load(root);
 
         FixtureResource resource = catalog.findRawPath("/fixtures/F0/sample.bin");
