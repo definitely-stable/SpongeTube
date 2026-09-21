@@ -776,14 +776,30 @@ Mitigation: debug/lab source-set only.
 R12: fixture bytes permanently bloat Git.
 Mitigation: reviewed initial budget around 40 MiB.
 
+R13: N4 media waits consume the same executor as health/config and make the control plane appear dead.
+Mitigation: physically separate data/control listeners and executors; B2 tests canonical F1 saturation plus control responsiveness.
+
+R14: a profile label such as N1 hides resolved parameters and makes historical benchmark runs incomparable.
+Mitigation: canonical ResolvedScenario + scenarioHash; fixture identity remains separately hashed.
+
+R15: configured impairment is mistaken for delivered impairment.
+Mitigation: calibration records configured-vs-observed error and scheduler slip before benchmark conclusions are accepted.
+
+R16: Android and host events are correlated by timestamps from unrelated monotonic clocks.
+Mitigation: stable request/session correlation headers and IDs; never subtract cross-domain timestamps.
+
+R17: a byte-identical but malformed DASH fixture poisons playback conclusions.
+Mitigation: fixture generation/change workflow includes structural inspection and DASH-IF conformance evidence.
+
 ## 25. Definition of Done
 
 M0-B/#5 is complete only when:
 - [ ] tools:media-lab is the only new Gradle module.
 - [ ] no third-party runtime dependency is used by the lab.
-- [ ] server binds loopback only and supports port 0.
-- [ ] READY/config output is machine-readable.
-- [ ] explicit executor and clean shutdown are tested.
+- [ ] data and control servers bind loopback only and support independent port 0 allocation.
+- [ ] READY/config output is machine-readable and reports both ports/worker counts.
+- [ ] data/control executors are independent; partial bind failures leave no trace artifact.
+- [ ] clean shutdown is tested.
 - [ ] only cataloged resources are served.
 - [ ] GET/HEAD/404/405 are tested.
 - [ ] 206 single-range semantics are tested.
@@ -795,9 +811,14 @@ M0-B/#5 is complete only when:
 - [ ] N4 duration is 120000 ms.
 - [ ] unit tests never wait 120 real seconds.
 - [ ] trace schema v1 is committed and thread-safe.
+- [ ] lab response correlation headers expose session/request/profile/plane; B2 adds scenarioHash.
+- [ ] B2 emits session-level scenario transition events.
+- [ ] resolved scenario identity is canonical and hashed.
+- [ ] configured-vs-observed delivery calibration is retained before M0-F comparisons.
 - [ ] F0 is committed, hashed and Range-tested.
 - [ ] F1 contains exactly one video and one audio representation.
 - [ ] F1 records provenance, actual bytes and actual bitrate.
+- [ ] F1 DASH structure/conformance evidence exists for the committed bytes/MPD.
 - [ ] fixture checksums are part of check.
 - [ ] fixture size remains within reviewed budget.
 - [ ] adb reverse path is documented for emulator and physical device.
@@ -818,3 +839,10 @@ M0-B/#5 is complete only when:
 - FFmpeg formats/DASH: https://ffmpeg.org/ffmpeg-formats.html
 - FFmpeg releases: https://ffmpeg.org/download.html
 - JUnit 6.1.3 release notes: https://docs.junit.org/6.1.3/release-notes.html
+- Media3 FakeClock: https://developer.android.com/reference/androidx/media3/test/utils/FakeClock
+- GStreamer Validate scenarios: https://gstreamer.freedesktop.org/documentation/gst-devtools/gst-validate-scenarios.html
+- DASH-IF Conformance: https://github.com/Dash-Industry-Forum/DASH-IF-Conformance
+- Toxiproxy (future M2 transport-fault layer): https://github.com/Shopify/toxiproxy
+- Linux tc-netem (future M2 packet/network layer): https://man7.org/linux/man-pages/man8/tc-netem.8.html
+- Android Macrobenchmark: https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
+- Perfetto Trace Summarization: https://perfetto.dev/docs/analysis/trace-summary
