@@ -6,7 +6,7 @@ sealed interface RangeDecision permits RangeDecision.Full, RangeDecision.Partial
     }
 
     record Partial(long startInclusive, long endExclusive) implements RangeDecision {
-        Partial {
+        public Partial {
             if (startInclusive < 0 || endExclusive <= startInclusive) {
                 throw new IllegalArgumentException("Invalid partial range");
             }
