@@ -54,13 +54,10 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Generate dependency verification metadata
+      - name: Require committed dependency verification metadata
         shell: bash
         run: |
-          ./gradlew --write-verification-metadata sha256 help assembleDebug
-          echo "::group::verification-metadata.xml"
-          cat gradle/verification-metadata.xml
-          echo "::endgroup::"
+          test -s gradle/verification-metadata.xml
 
       - name: Verify build and configuration cache
         shell: bash
