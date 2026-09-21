@@ -57,9 +57,16 @@ jobs:
 
           yes | "$SDKMANAGER" --licenses >/dev/null || true
 
+          if [[ ! -x "$SDK_ROOT/platform-tools/adb" ]]; then
+            "$SDKMANAGER" "platform-tools"
+          fi
           if [[ ! -d "$SDK_ROOT/system-images/android-36/google_apis/x86_64" ]]; then
             "$SDKMANAGER" "$IMAGE"
           fi
+
+          export PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/emulator" >> "$GITHUB_PATH"
 
           echo "no" | "$AVDMANAGER" create avd \
             --force \
