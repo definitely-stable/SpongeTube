@@ -192,6 +192,11 @@ jobs:
             sleep 0.25
           done
 
+          test -s build/m0-d/server/requests.events.jsonl
+          test -s build/m0-d/server/requests.calibration.jsonl
+          mv build/m0-d/server/requests.events.jsonl build/m0-d/server/events.jsonl
+          mv build/m0-d/server/requests.calibration.jsonl build/m0-d/server/calibration.json
+
           LAB_BIN="$(cat build/m0-d/media-lab-bin.txt)"
           "$LAB_BIN" summarize             --trace="$PWD/build/m0-d/server/requests.jsonl"             --output="$PWD/build/m0-d/server/network-summary.json"
 
@@ -237,8 +242,9 @@ jobs:
 
           python3 scripts/measurement/artifacts.py manifest             --output=build/m0-d/run/manifest.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --git-commit="$HEAD_SHA"             --fixture-id=F1             --fixture-manifest=test-fixtures/media/manifest.json             --fixture-resource-sha256="$MPD_SHA"             --scenario-id=N0             --scenario-hash="$SCENARIO_HASH"             --mode=DIRECT             --cache-state=NONE             --requested-transport=RECOMMENDED_PLATFORM             --effective-transport=HTTP_ENGINE             --build-type=benchmark             --debuggable=false             --profileable=true             --minify=false             --compilation-mode=None             --startup-mode=COLD             --device-api="$API"             --device-fingerprint="$FINGERPRINT"             --device-model="$MODEL"             --device-abi="$ABI"             --media3-version=1.11.1             --benchmark-version=1.5.0             --order-seed=0
 
-          python3 scripts/measurement/artifacts.py result-from-files             --output=build/m0-d/run/result.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --scenario-hash="$SCENARIO_HASH"             --playback-summary=build/m0-d/android/playback-summary.json             --network-summary=build/m0-d/server/network-summary.json             --limitation="API 36 emulator correctness capture; not representative performance evidence"
+          python3 scripts/measurement/artifacts.py result-from-files             --output=build/m0-d/run/result.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --scenario-hash="$SCENARIO_HASH"             --playback-summary=build/m0-d/android/playback-summary.json             --network-summary=build/m0-d/server/network-summary.json             --lab-calibration=build/m0-d/server/calibration.json             --limitation="API 36 emulator correctness capture; not representative performance evidence"
 
+          jq -e '.labAccuracy != null' build/m0-d/run/result.json
           jq . build/m0-d/run/manifest.json
           jq . build/m0-d/run/result.json
 
