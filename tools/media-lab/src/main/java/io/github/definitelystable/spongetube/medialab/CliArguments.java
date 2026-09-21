@@ -43,7 +43,10 @@ final class CliArguments {
                         "data-port",
                         "data-workers",
                         "control-port",
-                        "control-workers" -> true;
+                        "control-workers",
+                        "reference-playback-bitrate-bps",
+                        "no-progress-start-after-ms",
+                        "write-quantum-bytes" -> true;
                 default -> false;
             }) {
                 throw new IllegalArgumentException("Unknown option: --" + key);
@@ -58,7 +61,15 @@ final class CliArguments {
         int dataWorkers = parseInt(values.getOrDefault("data-workers", "8"), "data-workers");
         int controlPort = parseInt(values.getOrDefault("control-port", "0"), "control-port");
         int controlWorkers = parseInt(values.getOrDefault("control-workers", "2"), "control-workers");
+        int writeQuantumBytes = parseInt(
+                values.getOrDefault(
+                        "write-quantum-bytes",
+                        Integer.toString(MediaLabConfig.DEFAULT_WRITE_QUANTUM_BYTES)),
+                "write-quantum-bytes");
         MediaLabProfile profile = MediaLabProfile.parse(values.getOrDefault("profile", "N0"));
+
+        Long referenceBitrate = optionalLong(values, "reference-playback-bitrate-bps");
+        Long noProgressStartAfterMs = optionalLong(values, "no-progress-start-after-ms");
 
         return new MediaLabConfig(
                 Path.of(fixtureRoot),
@@ -68,7 +79,10 @@ final class CliArguments {
                 dataPort,
                 dataWorkers,
                 controlPort,
-                controlWorkers);
+                controlWorkers,
+                referenceBitrate,
+                noProgressStartAfterMs,
+                writeQuantumBytes);
     }
 
     static String usage() {
@@ -78,14 +92,18 @@ final class CliArguments {
                     --fixture-root=<path> \
                     --trace=<path> \
                     --session-id=<id> \
-                    [--profile=N0] \
+                    [--profile=N0|N1|N4] \
                     [--data-port=0] \
                     [--data-workers=8] \
                     [--control-port=0] \
-                    [--control-workers=2]
+                    [--control-workers=2] \
+                    [--write-quantum-bytes=8192] \
+                    [--reference-playback-bitrate-bps=<bps>] \
+                    [--no-progress-start-after-ms=<ms>]
 
-                Data and control listeners are separate loopback-only servers.
-                M0-B1 supports profile N0 only. N1/N4 arrive in M0-B2.
+                N1 requires --reference-playback-bitrate-bps.
+                N4 requires --no-progress-start-after-ms; canonical duration is 120000 ms.
+                Request trace, session events and calibration summary share the --trace basename.
                 """;
     }
 
@@ -97,11 +115,24 @@ final class CliArguments {
         return value;
     }
 
+    private static Long optionalLong(Map<String, String> values, String key) {
+        String value = values.get(key);
+        return value == null ? null : parseLong(value, key);
+    }
+
     private static int parseInt(String value, String key) {
         try {
             return Integer.parseInt(value);
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Invalid integer for --" + key + ": " + value);
+        }
+    }
+
+    private static long parseLong(String value, String key) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Invalid long for --" + key + ": " + value);
         }
     }
 
