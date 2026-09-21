@@ -137,7 +137,11 @@ jobs:
           adb reverse tcp:18080 tcp:18081
           adb logcat -c
 
-          DEVICE_ROOT="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/android-smoke/$SESSION_ID"
+          if [[ "${{ matrix.api }}" -lt 29 ]]; then
+            DEVICE_ROOT="/sdcard/Android/data/io.github.definitelystable.spongetube.benchmark/files/m0-test-output/android-smoke/$SESSION_ID"
+          else
+            DEVICE_ROOT="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/android-smoke/$SESSION_ID"
+          fi
 
           set +e
           adb shell am instrument -w -r \
