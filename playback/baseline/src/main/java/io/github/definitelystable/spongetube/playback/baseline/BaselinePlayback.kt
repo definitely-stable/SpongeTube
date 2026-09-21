@@ -8,6 +8,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import java.util.concurrent.atomic.AtomicBoolean
 
 @UnstableApi
@@ -59,6 +60,7 @@ object BaselinePlayback {
     fun createSession(
         context: Context,
         prepared: PreparedBaselinePlayback,
+        analyticsListeners: List<AnalyticsListener> = emptyList(),
     ): BaselinePlaybackSession {
         val resources = prepared.consume()
 
@@ -66,6 +68,7 @@ object BaselinePlayback {
 
         return try {
             player = ExoPlayer.Builder(context.applicationContext).build()
+            analyticsListeners.forEach(player::addAnalyticsListener)
             val mediaItem = MediaItem.fromUri(resources.spec.mediaUri)
             val mediaSource = DashMediaSource.Factory(resources.dataSourceFactory)
                 .createMediaSource(mediaItem)
