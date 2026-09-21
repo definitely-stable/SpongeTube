@@ -172,6 +172,22 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.ttff_ns is not None and args.ttff_ns < 0:
         raise ValueError("ttffNs must be >= 0")
+    if args.progress_intent_ns is not None and args.progress_intent_ns < 0:
+        raise ValueError("progressIntentNs must be >= 0")
+    if args.session_wall_ns is not None and args.session_wall_ns < 0:
+        raise ValueError("sessionWallNs must be >= 0")
+    if args.rebuffer_ratio is not None:
+        if not 0.0 <= args.rebuffer_ratio <= 1.0:
+            raise ValueError("rebufferRatio must be between 0 and 1")
+        if not args.progress_intent_ns:
+            raise ValueError(
+                "rebufferRatio requires progressIntentNs > 0"
+            )
+        expected_ratio = args.stall_total_ns / args.progress_intent_ns
+        if abs(expected_ratio - args.rebuffer_ratio) > 1e-9:
+            raise ValueError(
+                "rebufferRatio must equal stallTotalNs / progressIntentNs"
+            )
 
     if args.unique_range_bytes > args.network_bytes:
         raise ValueError("uniqueRangeBytes cannot exceed networkBytes")
@@ -193,11 +209,18 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
     result = {
         "schemaVersion": 1,
         "runId": args.run_id,
+        "manifestSha256": require_sha256(
+            "manifestSha256",
+            args.manifest_sha256,
+        ),
         "status": status,
         "playback": {
             "ttffNs": args.ttff_ns,
             "stallCount": args.stall_count,
             "stallTotalNs": args.stall_total_ns,
+            "progressIntentNs": args.progress_intent_ns,
+            "sessionWallNs": args.session_wall_ns,
+            "rebufferRatio": args.rebuffer_ratio,
             "seekToFrameNs": seek_samples,
             "playbackErrorCodes": list(args.playback_error_code),
         },
@@ -233,6 +256,8 @@ def read_json_object(path: pathlib.Path) -> dict[str, Any]:
 def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
     playback = read_json_object(pathlib.Path(args.playback_summary))
     network = read_json_object(pathlib.Path(args.network_summary))
+    run_manifest_path = pathlib.Path(args.run_manifest)
+    run_manifest = read_json_object(run_manifest_path)
     calibration = (
         read_json_object(pathlib.Path(args.lab_calibration))
         if args.lab_calibration is not None
@@ -243,6 +268,18 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("unsupported playback summary schemaVersion")
     if network.get("schemaVersion") != 1:
         raise ValueError("unsupported network summary schemaVersion")
+    if run_manifest.get("schemaVersion") != 1:
+        raise ValueError("unsupported run manifest schemaVersion")
+    if run_manifest.get("runId") != args.run_id:
+        raise ValueError("run manifest runId mismatch")
+    if run_manifest.get("sessionId") != args.session_id:
+        raise ValueError("run manifest sessionId mismatch")
+    manifest_scenario = run_manifest.get("scenario")
+    if (
+        not isinstance(manifest_scenario, dict)
+        or manifest_scenario.get("scenarioHash") != args.scenario_hash
+    ):
+        raise ValueError("run manifest scenarioHash mismatch")
 
     playback_session = playback.get("sessionId")
     network_session = network.get("sessionId")
@@ -307,10 +344,14 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
         run_id=args.run_id,
         session_id=args.session_id,
         scenario_hash=args.scenario_hash,
+        manifest_sha256=file_sha256(run_manifest_path),
         status=playback.get("status"),
         ttff_ns=playback.get("ttffNs"),
         stall_count=playback.get("stallCount"),
         stall_total_ns=playback.get("stallTotalNs"),
+        progress_intent_ns=playback.get("progressIntentNs"),
+        session_wall_ns=playback.get("sessionWallNs"),
+        rebuffer_ratio=playback.get("rebufferRatio"),
         seek_to_frame_ns=[
             str(sample["durationNs"])
             for sample in seek_samples
@@ -372,6 +413,7 @@ def result_from_files_parser(subparsers: Any) -> None:
     parser.add_argument("--scenario-hash", required=True)
     parser.add_argument("--playback-summary", required=True)
     parser.add_argument("--network-summary", required=True)
+    parser.add_argument("--run-manifest", required=True)
     parser.add_argument("--lab-calibration")
     parser.add_argument(
         "--limitation",
@@ -387,10 +429,14 @@ def result_parser(subparsers: Any) -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--scenario-hash", required=True)
+    parser.add_argument("--manifest-sha256", required=True)
     parser.add_argument("--status", required=True)
     parser.add_argument("--ttff-ns", type=int)
     parser.add_argument("--stall-count", required=True, type=int)
     parser.add_argument("--stall-total-ns", required=True, type=int)
+    parser.add_argument("--progress-intent-ns", type=int)
+    parser.add_argument("--session-wall-ns", type=int)
+    parser.add_argument("--rebuffer-ratio", type=float)
     parser.add_argument(
         "--seek-to-frame-ns",
         action="append",
