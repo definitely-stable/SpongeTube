@@ -237,6 +237,8 @@ final class MediaLabServer implements AutoCloseable {
             start = 0;
             endExclusive = resource.length();
             status = 200;
+            trace.resolvedRangeStart = start;
+            trace.resolvedRangeEndExclusive = endExclusive;
         }
 
         long responseLength = endExclusive - start;
@@ -281,7 +283,6 @@ final class MediaLabServer implements AutoCloseable {
 
                 trace.markFirstBodyWrite();
                 output.write(buffer, 0, read);
-                output.flush();
                 trace.bodyBytesWritten += read;
                 remaining -= read;
             }
