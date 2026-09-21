@@ -1,0 +1,211 @@
+name: Android Compatibility
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/android-compat.yml"
+      - "scripts/ci/prepare-emulator.sh"
+      - "benchmark/src/main/java/io/github/definitelystable/spongetube/benchmark/M0AndroidSmokeTest.kt"
+      - "app/**"
+      - "playback/**"
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-compat-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-compat:
+    name: android-compat-api-${{ matrix.api }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 23
+            expected_transport: DEFAULT_HTTP
+          - api: 34
+            expected_transport: HTTP_ENGINE
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Build compatibility target and Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict --configuration-cache \
+            :app:assembleBenchmark \
+            :benchmark:assembleBenchmark \
+            :tools:media-lab:installDist
+
+      - name: Prepare emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh \
+            "${{ matrix.api }}" \
+            "m0-compat-api${{ matrix.api }}" \
+            "build/android-compat/api-${{ matrix.api }}/device"
+
+      - name: Run N0 compatibility smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ROOT="build/android-compat/api-${{ matrix.api }}"
+          mkdir -p "$ROOT"/{server,android}
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+
+          RUN_ID="android-compat-api${{ matrix.api }}"
+          SESSION_ID="$RUN_ID-1"
+
+          "$LAB_BIN" serve \
+            --fixture-root="$PWD/test-fixtures/media" \
+            --trace="$PWD/$ROOT/server/requests.jsonl" \
+            --session-id="$SESSION_ID" \
+            --profile=N0 \
+            --data-port=18081 \
+            --control-port=18082 \
+            > "$ROOT/server/media-lab.out" \
+            2> "$ROOT/server/media-lab.err" &
+          LAB_PID=$!
+
+          cleanup() {
+            if kill -0 "$LAB_PID" 2>/dev/null; then
+              kill "$LAB_PID" || true
+              for _ in {1..40}; do
+                kill -0 "$LAB_PID" 2>/dev/null || break
+                sleep 0.25
+              done
+            fi
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://127.0.0.1:18082/__lab/config \
+              > "$ROOT/server/scenario.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$ROOT/server/media-lab.out" || true
+              cat "$ROOT/server/media-lab.err" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          APP_APK="$(find app/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          TEST_APK="$(find benchmark/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          test -n "$APP_APK"
+          test -n "$TEST_APK"
+          adb install -r -t "$APP_APK"
+          adb install -r -t "$TEST_APK"
+
+          INSTRUMENTATION="$(adb shell pm list instrumentation | tr -d '\r' | awk '
+            /io.github.definitelystable.spongetube.benchmark/ {
+              sub(/^instrumentation:/, "", $1)
+              print $1
+              exit
+            }
+          ')"
+          test -n "$INSTRUMENTATION"
+
+          adb reverse tcp:18080 tcp:18081
+          adb logcat -c
+
+          if [[ "${{ matrix.api }}" -lt 29 ]]; then
+            DEVICE_ROOT="/sdcard/Android/data/io.github.definitelystable.spongetube.benchmark/files/m0-test-output/android-smoke/$SESSION_ID"
+          else
+            DEVICE_ROOT="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/android-smoke/$SESSION_ID"
+          fi
+
+          set +e
+          adb shell am instrument -w -r \
+            -e class io.github.definitelystable.spongetube.benchmark.M0AndroidSmokeTest \
+            -e spongetube.runId "$RUN_ID" \
+            -e spongetube.expectedTransport "${{ matrix.expected_transport }}" \
+            "$INSTRUMENTATION" \
+            | tee "$ROOT/android/instrumentation.txt"
+          INSTRUMENT_STATUS=${PIPESTATUS[0]}
+          set -e
+
+          adb logcat -d -v threadtime > "$ROOT/android/logcat.txt" || true
+
+          if [[ "$INSTRUMENT_STATUS" -ne 0 ]] \
+            || grep -q 'FAILURES!!!' "$ROOT/android/instrumentation.txt" \
+            || ! grep -q 'OK (' "$ROOT/android/instrumentation.txt"; then
+            echo "::error::API ${{ matrix.api }} compatibility instrumentation failed"
+            exit 1
+          fi
+
+          adb shell ls -la "$DEVICE_ROOT"
+          adb pull "$DEVICE_ROOT/." "$ROOT/android/"
+
+          jq -e --arg session "$SESSION_ID" '
+            .schemaVersion == 1 and
+            .sessionId == $session and
+            .status == "COMPLETE" and
+            (.playbackErrorCodes | length) == 0
+          ' "$ROOT/android/playback-summary.json"
+
+          cleanup
+          trap - EXIT
+
+          test -s "$ROOT/server/requests.events.jsonl"
+          test -s "$ROOT/server/requests.calibration.jsonl"
+          mv "$ROOT/server/requests.events.jsonl" "$ROOT/server/events.jsonl"
+          mv "$ROOT/server/requests.calibration.jsonl" "$ROOT/server/calibration.json"
+
+          "$LAB_BIN" summarize \
+            --trace="$ROOT/server/requests.jsonl" \
+            --output="$ROOT/server/network-summary.json"
+
+          jq -e --arg session "$SESSION_ID" '
+            .schemaVersion == 1 and
+            .sessionId == $session and
+            .requestCount > 0 and
+            .httpErrorCount == 0
+          ' "$ROOT/server/network-summary.json"
+
+          test "$(cat "$ROOT/device/device-api.txt")" = "${{ matrix.api }}"
+
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-compat-api-${{ matrix.api }}
+          path: |
+            build/android-compat/api-${{ matrix.api }}/
+            benchmark/build/outputs/androidTest-results/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: |
+          adb emu kill || true

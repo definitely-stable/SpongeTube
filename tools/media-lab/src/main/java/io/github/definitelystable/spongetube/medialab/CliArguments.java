@@ -103,12 +103,16 @@ final class CliArguments {
 
                   media-lab summarize \
                     --trace=<requests.jsonl> \
-                    --output=<network-summary.json>
+                    --output=<network-summary.json> \
+                    [--expected-session-id=<id>] \
+                    [--expected-scenario-id=<id>] \
+                    [--expected-scenario-hash=<sha256>]
 
                 N1 requires --reference-playback-bitrate-bps.
                 N4 requires --no-progress-start-after-ms; canonical duration is 120000 ms.
                 Request trace, session events and calibration summary share the --trace basename.
                 summarize accepts request trace schema v2 and rejects mixed data-plane session/scenario identity.
+                Expected identity options make zero-network cache hits explicit while still validating non-empty traces.
                 """;
     }
 

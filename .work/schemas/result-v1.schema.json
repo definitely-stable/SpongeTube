@@ -82,6 +82,20 @@
         "httpErrorCount": { "type": "integer", "minimum": 0 }
       }
     },
+    "cache": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "cacheBytesAtPreparation",
+        "cacheBytesAtEnd",
+        "cacheDeltaBytes"
+      ],
+      "properties": {
+        "cacheBytesAtPreparation": { "type": "integer", "minimum": 0 },
+        "cacheBytesAtEnd": { "type": "integer", "minimum": 0 },
+        "cacheDeltaBytes": { "type": "integer" }
+      }
+    },
     "labAccuracy": {
       "type": ["object", "null"],
       "additionalProperties": false,
@@ -92,7 +106,15 @@
         "firstBodyDelayErrorMs": { "type": ["number", "null"] },
         "observedNoProgressDurationMs": { "type": ["number", "null"], "minimum": 0 },
         "noProgressDurationErrorMs": { "type": ["number", "null"] },
-        "maxSchedulerSlipMs": { "type": ["number", "null"], "minimum": 0 }
+        "maxSchedulerSlipMs": { "type": ["number", "null"], "minimum": 0 },
+        "firstBodyDelaySamplesMs": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "schedulerSlipSamplesMs": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        }
       }
     },
     "limitations": {

@@ -4,6 +4,7 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
+import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileNotFoundException
@@ -53,6 +54,27 @@ class BenchmarkEvidenceProvider : ContentProvider() {
         )
     }
 
+    override fun call(
+        method: String,
+        arg: String?,
+        extras: Bundle?,
+    ): Bundle? {
+        if (method != METHOD_FINISH_IF_QUIESCENT) {
+            return super.call(method, arg, extras)
+        }
+
+        val sessionId = arg
+            ?.takeIf(SESSION_ID::matches)
+            ?: throw IllegalArgumentException("valid session id required")
+
+        return Bundle().apply {
+            putBoolean(
+                KEY_FINISHED,
+                MeasurementSessionControl.finishIfQuiescent(sessionId),
+            )
+        }
+    }
+
     override fun getType(uri: Uri): String = "application/octet-stream"
 
     override fun query(
@@ -82,10 +104,14 @@ class BenchmarkEvidenceProvider : ContentProvider() {
     private companion object {
         val SESSION_ID = Regex("[A-Za-z0-9._-]+")
         const val COMPLETE_MARKER = "evidence-complete.marker"
+        const val METHOD_FINISH_IF_QUIESCENT =
+            "finishIfQuiescent"
+        const val KEY_FINISHED = "finished"
         val ALLOWED_ARTIFACTS = setOf(
             "playback-events.jsonl",
             "playback-summary.json",
             "playback-stats-cross-check.json",
+            "baseline-observations.json",
         )
     }
 }

@@ -7,6 +7,8 @@ The roadmap is ordered to prove the risky assumptions before building a large Yo
 
 ## M0 — Reproducible Android & Media Evidence Bootstrap
 
+Status: **Complete — 2026-09-21**
+
 Goal: create the smallest Android/media laboratory capable of falsifying later SpongeTube architecture and performance claims.
 
 Canonical milestone specification: `.work/milestones/M0.md`.
@@ -18,7 +20,7 @@ M0 is split into focused, reviewable deliveries:
 - **M0-C — Media3 Baselines**: Direct Media3 and standard CacheDataSource/SimpleCache reference paths.
 - **M0-D — Measurement Harness**: structured playback/network metrics, cross-domain request correlation, run-manifest/result schema, Macrobenchmark and versioned Perfetto summary extraction.
 - **M0-E — CI, Testing & Supply Chain**: stable `verify`/`android-smoke` checks, SHA-pinned Actions, emulator correctness automation and reproducible artifacts.
-- **M0-F — Acceptance Evidence**: calibrated N0/N1/N4 A/B matrix, fixed-seed interleaved run order, raw observations plus uncertainty, and at least one physical-device evidence run.
+- **M0-F — Acceptance Evidence**: calibrated N0/N1/N4 Direct/Standard-Cache matrix on a deterministic API 36 emulator, explicit COLD/WARM cache observations, raw versioned artifacts, and no representative performance claim.
 
 M0 explicitly does **not** implement Sponge FetchBroker, PlayableCoverage, Smart Buffer policy, a custom persistent store, YouTube extraction, Room/KSP/DI, Shorts, Live, TV or iOS.
 
@@ -29,9 +31,9 @@ Exit:
 - Direct and Standard Cache Media3 baselines play the same controlled content;
 - N0/N1/N4 are reproducible, scenario-hashed and calibrated before comparison;
 - every benchmark run has a versioned manifest tying build, fixture, scenario, playback mode, cache state and device/runtime state together;
-- CI has stable required checks and reproducible artifacts;
-- emulator evidence is used for correctness, not representative performance;
-- at least one physical-device baseline exists before numeric performance claims are marked Validated.
+- CI has stable `verify` / `android-smoke` executable checks and reproducible artifacts;
+- M0 acceptance is emulator-only and validates correctness/reproducibility, not representative device performance;
+- emulator timing/resource observations are diagnostic only and cannot validate a product performance claim.
 
 ## M1 — Persistent Playback Core
 

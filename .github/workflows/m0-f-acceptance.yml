@@ -1,0 +1,447 @@
+name: M0 Acceptance
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m0-f-acceptance.yml"
+      - "app/**"
+      - "benchmark/**"
+      - "playback/**"
+      - "tools/media-lab/**"
+      - "scripts/ci/**"
+      - "scripts/measurement/**"
+      - "test-fixtures/media/**"
+      - "gradle/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m0-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/9-m0-f-acceptance'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Build acceptance target and Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict --configuration-cache \
+            :app:assembleBenchmark \
+            :benchmark:assembleBenchmark \
+            :tools:media-lab:installDist \
+            :tools:media-lab:test
+          python3 -m unittest discover \
+            -s scripts/measurement/tests \
+            -p 'test_*.py' \
+            -v
+
+          mkdir -p build/m0-acceptance/lab-tests
+          cp -R tools/media-lab/build/test-results/test/. \
+            build/m0-acceptance/lab-tests/
+          grep -R "media-lab postGateDrainBytes=" \
+            build/m0-acceptance/lab-tests/
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh \
+            36 \
+            m0f-api36 \
+            build/m0-acceptance/device
+
+      - name: Install benchmark APKs once
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_APK="$(find app/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          TEST_APK="$(find benchmark/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          test -n "$APP_APK"
+          test -n "$TEST_APK"
+
+          adb install -r -t "$APP_APK"
+          adb install -r -t "$TEST_APK"
+
+          adb shell pm list instrumentation | tr -d '\r' \
+            > build/m0-acceptance/instrumentation.txt
+          INSTRUMENTATION="$(awk '
+            /io.github.definitelystable.spongetube.benchmark/ {
+              sub(/^instrumentation:/, "", $1)
+              print $1
+              exit
+            }
+          ' build/m0-acceptance/instrumentation.txt)"
+          test -n "$INSTRUMENTATION"
+          echo "$INSTRUMENTATION" > build/m0-acceptance/instrumentation-component.txt
+
+      - name: Run canonical emulator acceptance matrix
+        shell: bash
+        env:
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          INSTRUMENTATION="$(cat build/m0-acceptance/instrumentation-component.txt)"
+          F1_BITRATE="$(jq -r '.fixtures[] | select(.fixtureId == "F1") | .referencePlaybackBitrateBps' test-fixtures/media/manifest.json)"
+          MPD_SHA="$(awk '$2 == "F1/manifest.mpd" { print $1 }' test-fixtures/media/checksums.sha256)"
+          test "$F1_BITRATE" -gt 0
+          test "${#MPD_SHA}" -eq 64
+
+          case_identity() {
+            case "$1" in
+              DIRECT)
+                MODE="DIRECT"
+                CACHE_STATE="NONE"
+                ;;
+              CACHE_COLD)
+                MODE="STANDARD_CACHE"
+                CACHE_STATE="COLD"
+                ;;
+              CACHE_WARM)
+                MODE="STANDARD_CACHE"
+                CACHE_STATE="WARM"
+                ;;
+              *)
+                echo "::error::unknown baseline $1"
+                return 1
+                ;;
+            esac
+          }
+
+          run_case() {
+            local profile="$1"
+            local baseline="$2"
+            local lower_profile lower_baseline
+            lower_profile="$(printf '%s' "$profile" | tr '[:upper:]' '[:lower:]')"
+            lower_baseline="$(printf '%s' "$baseline" | tr '[:upper:]' '[:lower:]')"
+            local run_id="m0f-${lower_profile}-${lower_baseline}"
+            local session_id="$run_id-1"
+            local root="build/m0-acceptance/cases/$profile/$baseline"
+            local trace="$PWD/$root/server/requests.jsonl"
+            local device_root="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/m0-acceptance/$session_id"
+
+            rm -rf "$root"
+            mkdir -p "$root"/{server,android,run}
+
+            local args=(
+              serve
+              "--fixture-root=$PWD/test-fixtures/media"
+              "--trace=$trace"
+              "--session-id=$session_id"
+              "--profile=$profile"
+              "--data-port=18081"
+              "--control-port=18082"
+            )
+            if [[ "$profile" == "N1" ]]; then
+              args+=("--reference-playback-bitrate-bps=$F1_BITRATE")
+            elif [[ "$profile" == "N4" ]]; then
+              args+=("--no-progress-start-after-ms=10000")
+            fi
+
+            "$LAB_BIN" "${args[@]}" \
+              > "$root/server/media-lab.out" \
+              2> "$root/server/media-lab.err" &
+            local lab_pid=$!
+
+            cleanup_lab() {
+              if kill -0 "$lab_pid" 2>/dev/null; then
+                kill "$lab_pid" || true
+                for _ in {1..40}; do
+                  kill -0 "$lab_pid" 2>/dev/null || break
+                  sleep 0.25
+                done
+              fi
+            }
+
+            case_exit() {
+              local status=$?
+              if [[ "$status" -ne 0 ]]; then
+                {
+                  echo "profile=$profile"
+                  echo "baseline=$baseline"
+                  echo "runId=$run_id"
+                  echo "sessionId=$session_id"
+                  echo "exitStatus=$status"
+                } > "$root/case-failure.txt"
+              fi
+              cleanup_lab
+            }
+            trap case_exit EXIT
+
+            for attempt in {1..30}; do
+              if curl --fail --silent \
+                http://127.0.0.1:18082/__lab/config \
+                > "$root/server/scenario.json"; then
+                break
+              fi
+              if [[ "$attempt" -eq 30 ]]; then
+                cleanup_lab
+                cat "$root/server/media-lab.out" || true
+                cat "$root/server/media-lab.err" || true
+                return 1
+              fi
+              sleep 1
+            done
+
+            local scenario_hash
+            scenario_hash="$(jq -r '.scenario.scenarioHash' "$root/server/scenario.json")"
+            test "${#scenario_hash}" -eq 64
+            jq -e --arg profile "$profile" '.profileId == $profile' \
+              "$root/server/scenario.json"
+            if [[ "$profile" == "N4" ]]; then
+              jq -e '
+                .scenario.noProgressStartAfterMs == 10000 and
+                .scenario.noProgressDurationMs == 120000
+              ' "$root/server/scenario.json"
+            fi
+
+            adb reverse --remove-all || true
+            adb reverse tcp:18080 tcp:18081
+            adb logcat -c
+
+            local expect_outage=false
+            [[ "$profile" == "N4" ]] && expect_outage=true
+
+            local instrument_status=0
+            set +e
+            adb shell am instrument -w -r \
+              -e class io.github.definitelystable.spongetube.benchmark.M0AcceptanceCaseTest \
+              -e spongetube.runId "$run_id" \
+              -e spongetube.baseline "$baseline" \
+              -e spongetube.expectOutage "$expect_outage" \
+              "$INSTRUMENTATION" \
+              | tee "$root/android/instrumentation.txt"
+            instrument_status=${PIPESTATUS[0]}
+            set -e
+
+            adb logcat -d -v threadtime > "$root/android/logcat.txt" || true
+
+            if [[ "$instrument_status" -ne 0 ]] \
+              || grep -q 'FAILURES!!!' "$root/android/instrumentation.txt" \
+              || ! grep -q 'OK (' "$root/android/instrumentation.txt"; then
+              cleanup_lab
+              echo "::error::$profile/$baseline instrumentation failed"
+              return 1
+            fi
+
+            adb shell ls -la "$device_root"
+            adb pull "$device_root/." "$root/android/"
+
+            cleanup_lab
+            trap - EXIT
+
+            test -s "$root/server/requests.events.jsonl"
+            test -s "$root/server/requests.calibration.jsonl"
+            mv "$root/server/requests.events.jsonl" "$root/server/events.jsonl"
+            mv "$root/server/requests.calibration.jsonl" "$root/server/calibration.json"
+
+            "$LAB_BIN" summarize \
+              --trace="$root/server/requests.jsonl" \
+              --output="$root/server/network-summary.json" \
+              --expected-session-id="$session_id" \
+              --expected-scenario-id="$profile" \
+              --expected-scenario-hash="$scenario_hash"
+
+            jq -e \
+              --arg session "$session_id" \
+              --arg profile "$profile" \
+              --arg scenarioHash "$scenario_hash" '
+              .schemaVersion == 1 and
+              .sessionId == $session and
+              .scenarioId == $profile and
+              .scenarioHash == $scenarioHash and
+              .requestCount >= 0 and
+              .httpErrorCount == 0
+            ' "$root/server/network-summary.json"
+            if [[ "$baseline" != "CACHE_WARM" ]]; then
+              jq -e '.requestCount > 0' "$root/server/network-summary.json"
+            fi
+            jq -e --arg session "$session_id" '
+              .schemaVersion == 1 and
+              .sessionId == $session and
+              .status == "COMPLETE"
+            ' "$root/android/playback-summary.json"
+            if [[ "$profile" != "N4" ]]; then
+              jq -e '.playbackErrorCodes | length == 0'                 "$root/android/playback-summary.json"
+            fi
+
+            case_identity "$baseline"
+
+            local api fingerprint model abi
+            api="$(cat build/m0-acceptance/device/device-api.txt)"
+            fingerprint="$(cat build/m0-acceptance/device/device-fingerprint.txt)"
+            model="$(cat build/m0-acceptance/device/device-model.txt)"
+            abi="$(cat build/m0-acceptance/device/device-abi.txt)"
+
+            python3 scripts/measurement/artifacts.py manifest \
+              --output="$root/run/manifest.json" \
+              --run-id="$run_id" \
+              --session-id="$session_id" \
+              --git-commit="$GIT_SHA" \
+              --fixture-id=F1 \
+              --fixture-manifest=test-fixtures/media/manifest.json \
+              --fixture-resource-sha256="$MPD_SHA" \
+              --scenario-id="$profile" \
+              --scenario-hash="$scenario_hash" \
+              --mode="$MODE" \
+              --cache-state="$CACHE_STATE" \
+              --requested-transport=RECOMMENDED_PLATFORM \
+              --effective-transport=HTTP_ENGINE \
+              --build-type=benchmark \
+              --debuggable=false \
+              --profileable=true \
+              --minify=false \
+              --compilation-mode=INSTALLED_DEFAULT \
+              --startup-mode=COLD \
+              --device-api="$api" \
+              --device-fingerprint="$fingerprint" \
+              --device-model="$model" \
+              --device-abi="$abi" \
+              --media3-version=1.11.1 \
+              --benchmark-version=1.5.0 \
+              --order-seed=0
+
+            python3 scripts/measurement/artifacts.py result-from-files \
+              --output="$root/run/result.json" \
+              --run-id="$run_id" \
+              --session-id="$session_id" \
+              --scenario-hash="$scenario_hash" \
+              --playback-summary="$root/android/playback-summary.json" \
+              --network-summary="$root/server/network-summary.json" \
+              --run-manifest="$root/run/manifest.json" \
+              --lab-calibration="$root/server/calibration.json" \
+              --baseline-observations="$root/android/baseline-observations.json" \
+              --limitation="API 36 emulator M0 correctness acceptance; timing/resource observations are non-representative"
+
+            jq -e '.status == "COMPLETE"' "$root/run/result.json"
+            jq -e '.manifestSha256 | length == 64' "$root/run/result.json"
+            if [[ "$profile" != "N4" ]]; then
+              jq -e '.playback.playbackErrorCodes | length == 0'                 "$root/run/result.json"
+            fi
+            jq -e '.cache != null' "$root/run/result.json"
+
+            case "$baseline" in
+              DIRECT)
+                jq -e '
+                  .cache.cacheBytesAtPreparation == 0 and
+                  .cache.cacheBytesAtEnd == 0
+                ' "$root/run/result.json"
+                ;;
+              CACHE_COLD)
+                jq -e '
+                  .cache.cacheBytesAtPreparation == 0 and
+                  .cache.cacheBytesAtEnd > 0
+                ' "$root/run/result.json"
+                ;;
+              CACHE_WARM)
+                jq -e '.cache.cacheBytesAtPreparation > 0' \
+                  "$root/run/result.json"
+                ;;
+            esac
+
+            if [[ "$profile" == "N1" ]]; then
+              jq -e --argjson expected "$((F1_BITRATE / 2))" '
+                .configuredRateBps == $expected and
+                .configuredFirstBodyDelayMs == 120
+              ' "$root/server/calibration.json"
+              if [[ "$baseline" != "CACHE_WARM" ]]; then
+                jq -e '
+                  .observedRateBps != null and
+                  .observedFirstBodyDelayMs != null
+                ' "$root/server/calibration.json"
+              fi
+            elif [[ "$profile" == "N4" ]]; then
+              jq -e '
+                .configuredNoProgressDurationMs == 120000
+              ' "$root/server/calibration.json"
+              if [[ "$baseline" != "CACHE_WARM" ]]; then
+                jq -e '
+                  .observedNoProgressDurationMs != null
+                ' "$root/server/calibration.json"
+              fi
+              jq -e '
+                (
+                  .playback.stallCount > 0 and
+                  .playback.stallTotalNs > 0 and
+                  .playback.rebufferRatio > 0
+                ) or
+                (.playback.playbackErrorCodes | length > 0)
+              ' "$root/run/result.json"
+            fi
+          }
+
+          # M0 is correctness-only. Keep one committed, repeatable case order.
+          # CACHE_WARM immediately follows its matching COLD case by contract.
+          CASE_ORDER=(
+            "N0 DIRECT"
+            "N0 CACHE_COLD"
+            "N0 CACHE_WARM"
+            "N1 DIRECT"
+            "N1 CACHE_COLD"
+            "N1 CACHE_WARM"
+            "N4 DIRECT"
+            "N4 CACHE_COLD"
+            "N4 CACHE_WARM"
+          )
+
+          printf '%s\n' "${CASE_ORDER[@]}" > build/m0-acceptance/case-order.txt
+
+          for entry in "${CASE_ORDER[@]}"; do
+            read -r profile baseline <<< "$entry"
+            run_case "$profile" "$baseline"
+          done
+
+          find build/m0-acceptance/cases -name result.json -print -exec jq -c '{
+            runId,
+            status,
+            playback: {
+              stallCount: .playback.stallCount,
+              rebufferRatio: .playback.rebufferRatio
+            },
+            network: .network,
+            cache: .cache,
+            labAccuracy: .labAccuracy
+          }' {} \; > build/m0-acceptance/matrix-summary.txt
+
+      - name: Upload M0 acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m0-acceptance-evidence
+          path: |
+            build/m0-acceptance/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: |
+          adb emu kill || true
