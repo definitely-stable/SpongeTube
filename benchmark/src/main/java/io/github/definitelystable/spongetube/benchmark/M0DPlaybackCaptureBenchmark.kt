@@ -1,8 +1,10 @@
 package io.github.definitelystable.spongetube.benchmark
 
 import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.ExperimentalMetricApi
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
+import androidx.benchmark.macro.TraceSectionMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -21,10 +23,25 @@ class M0DPlaybackCaptureBenchmark {
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
 
+    @OptIn(ExperimentalMetricApi::class)
     @Test
     fun directN0CorrectnessCapture() = benchmarkRule.measureRepeated(
         packageName = BenchmarkToolchainContract.TARGET_PACKAGE,
-        metrics = listOf(StartupTimingMetric()),
+        metrics = listOf(
+            StartupTimingMetric(),
+            TraceSectionMetric(
+                sectionName = PREPARE_TRACE,
+                mode = TraceSectionMetric.Mode.Sum,
+                label = "spongetubePrepare",
+                targetPackageOnly = true,
+            ),
+            TraceSectionMetric(
+                sectionName = PREPARE_TRACE,
+                mode = TraceSectionMetric.Mode.Count,
+                label = "spongetubePrepareCount",
+                targetPackageOnly = true,
+            ),
+        ),
         compilationMode = CompilationMode.None(),
         startupMode = StartupMode.COLD,
         iterations = 1,
@@ -63,5 +80,9 @@ class M0DPlaybackCaptureBenchmark {
 
         pressHome()
         device.waitForIdle()
+    }
+
+    private companion object {
+        const val PREPARE_TRACE = "SpongeTube:M0:prepare"
     }
 }
