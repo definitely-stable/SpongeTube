@@ -254,9 +254,11 @@ jobs:
 
           python3 scripts/measurement/artifacts.py manifest             --output=build/m0-d/run/manifest.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --git-commit="$HEAD_SHA"             --fixture-id=F1             --fixture-manifest=test-fixtures/media/manifest.json             --fixture-resource-sha256="$MPD_SHA"             --scenario-id=N0             --scenario-hash="$SCENARIO_HASH"             --mode=DIRECT             --cache-state=NONE             --requested-transport=RECOMMENDED_PLATFORM             --effective-transport=HTTP_ENGINE             --build-type=benchmark             --debuggable=false             --profileable=true             --minify=false             --compilation-mode=None             --startup-mode=COLD             --device-api="$API"             --device-fingerprint="$FINGERPRINT"             --device-model="$MODEL"             --device-abi="$ABI"             --media3-version=1.11.1             --benchmark-version=1.5.0             --order-seed=0
 
-          python3 scripts/measurement/artifacts.py result-from-files             --output=build/m0-d/run/result.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --scenario-hash="$SCENARIO_HASH"             --playback-summary=build/m0-d/android/playback-summary.json             --network-summary=build/m0-d/server/network-summary.json             --lab-calibration=build/m0-d/server/calibration.json             --limitation="API 36 emulator correctness capture; not representative performance evidence"
+          python3 scripts/measurement/artifacts.py result-from-files             --output=build/m0-d/run/result.json             --run-id="$RUN_ID"             --session-id="$SESSION_ID"             --scenario-hash="$SCENARIO_HASH"             --playback-summary=build/m0-d/android/playback-summary.json             --network-summary=build/m0-d/server/network-summary.json             --run-manifest=build/m0-d/run/manifest.json             --lab-calibration=build/m0-d/server/calibration.json             --limitation="API 36 emulator correctness capture; not representative performance evidence"
 
           jq -e '.labAccuracy != null' build/m0-d/run/result.json
+          jq -e '.manifestSha256 | length == 64' build/m0-d/run/result.json
+          jq -e '.playback.rebufferRatio == null or (.playback.rebufferRatio >= 0 and .playback.rebufferRatio <= 1)' build/m0-d/run/result.json
           jq . build/m0-d/run/manifest.json
           jq . build/m0-d/run/result.json
 
