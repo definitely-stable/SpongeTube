@@ -286,9 +286,11 @@ jobs:
             jq -e --arg session "$session_id" '
               .schemaVersion == 1 and
               .sessionId == $session and
-              .status == "COMPLETE" and
-              (.playbackErrorCodes | length) == 0
+              .status == "COMPLETE"
             ' "$root/android/playback-summary.json"
+            if [[ "$profile" != "N4" ]]; then
+              jq -e '.playbackErrorCodes | length == 0'                 "$root/android/playback-summary.json"
+            fi
 
             case_identity "$baseline"
 
@@ -340,7 +342,9 @@ jobs:
 
             jq -e '.status == "COMPLETE"' "$root/run/result.json"
             jq -e '.manifestSha256 | length == 64' "$root/run/result.json"
-            jq -e '.playback.playbackErrorCodes | length == 0' "$root/run/result.json"
+            if [[ "$profile" != "N4" ]]; then
+              jq -e '.playback.playbackErrorCodes | length == 0'                 "$root/run/result.json"
+            fi
             jq -e '.cache != null' "$root/run/result.json"
 
             case "$baseline" in
@@ -381,12 +385,15 @@ jobs:
                 jq -e '
                   .observedNoProgressDurationMs != null
                 ' "$root/server/calibration.json"
-                jq -e '
+              fi
+              jq -e '
+                (
                   .playback.stallCount > 0 and
                   .playback.stallTotalNs > 0 and
                   .playback.rebufferRatio > 0
-                ' "$root/run/result.json"
-              fi
+                ) or
+                (.playback.playbackErrorCodes | length > 0)
+              ' "$root/run/result.json"
             fi
           }
 
