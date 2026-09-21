@@ -68,19 +68,34 @@ No mutable HTTP control plane in M0-B.
 
 Fixture root, profile, session id, trace path, port and worker count are immutable for the process lifetime. Restarting the process resets all scenario state.
 
-### 2.6 Port model
+### 2.6 Data/control plane isolation
 
-The host binds 127.0.0.1:0 by default and prints its selected port in a machine-readable READY record.
+The Media Lab exposes two independent IPv4-loopback listeners with independent bounded executors:
 
-The orchestrator maps a stable Android port:
+    DataServer
+      127.0.0.1:<dynamic-data-port>
+      /fixtures/...
 
-    adb -s <serial> reverse tcp:18080 tcp:<hostPort>
+    ControlServer
+      127.0.0.1:<dynamic-control-port>
+      /__lab/health
+      /__lab/config
 
-App/test URL:
+Both ports default to 0 and are reported in the machine-readable READY record.
+
+This is a correctness property, not only an optimization. B2 N4 may deliberately block every media-body worker; health/config must still be schedulable because the control plane does not share the data executor.
+
+The orchestrator maps only the data listener to Android:
+
+    adb -s <serial> reverse tcp:18080 tcp:<dataPort>
+
+App/test media URL:
 
     http://localhost:18080/
 
-This works for both emulator and USB-connected physical devices.
+The control listener remains host-local and is used by the orchestrator/CI only.
+
+`adb reverse` is valid for deterministic media-delivery tests on emulator and USB-connected devices. It is **not** evidence for Android VPN/default-route semantics because it changes the network path. M2 route/VPN scenarios must use a test path that actually traverses Android's selected default network.
 
 ### 2.7 Cleartext is lab/debug only
 
@@ -145,24 +160,36 @@ Suggested CLI:
       --profile=N0|N1|N4
       --session-id=<id>
       --trace=<path>
-      --port=0
-      --workers=8
+      --data-port=0
+      --data-workers=8
+      --control-port=0
+      --control-workers=2
 
 Invalid configuration fails before bind.
 
-The first stdout record is machine-readable READY JSON containing schemaVersion, host, selected port, sessionId and profileId. Human logs go to stderr.
+Both listeners are bound before the trace file is created. If either bind fails, startup fails without leaving an empty trace artifact.
+
+The first stdout record is machine-readable READY JSON containing at least schemaVersion, host, dataPort, controlPort, sessionId, profileId and effective worker counts. Human logs go to stderr.
 
 ## 6. Server execution model
 
 Bind:
-- IPv4 loopback only;
-- never 0.0.0.0 by default.
+- two IPv4-loopback listeners only;
+- never 0.0.0.0 by default;
+- data and control ports are distinct when explicitly configured.
 
-Executor:
+Data executor:
 - explicit fixed/bounded worker pool;
 - provisional workers = 8;
-- enough for concurrent A/V plus control traffic;
-- effective value appears in startup config.
+- owns fixture delivery only.
+
+Control executor:
+- separate explicit fixed/bounded worker pool;
+- provisional workers = 2;
+- owns health/config only;
+- must never execute fixture-body impairment waits.
+
+Effective values appear in startup/config output.
 
 Responses:
 - fixed content length whenever known;
@@ -170,21 +197,23 @@ Responses:
 - all exchange streams closed;
 - client disconnect recorded explicitly.
 
+The B2 responsiveness gate is stronger than "control code bypasses impairment": with canonical F1 A/V concurrency, N4 must be able to occupy/block data workers while a control request still completes promptly on the independent listener/executor.
+
 ## 7. HTTP surface
 
-Control endpoints:
+Control listener only:
 
     GET /__lab/health
     GET /__lab/config
 
-Control endpoints are never subject to N1/N4 body impairment.
-
-Fixture endpoints:
+Data listener only:
 
     GET  /fixtures/<fixture-id>/<resource>
     HEAD /fixtures/<fixture-id>/<resource>
 
-Other methods:
+The opposite-plane path is 404. Control endpoints are never subject to N1/N4 body impairment.
+
+Other fixture methods:
 
     405 Method Not Allowed
     Allow: GET, HEAD
@@ -193,6 +222,12 @@ Fixture headers include:
 - Accept-Ranges: bytes
 - Cache-Control: no-store
 - exact Content-Length
+- X-Sponge-Lab-Session
+- X-Sponge-Lab-Request
+- X-Sponge-Lab-Profile
+- X-Sponge-Lab-Plane
+
+The lab-only correlation headers allow the Android measurement harness to join a client observation to a host request without subtracting timestamps from different monotonic clock domains.
 
 No dynamic gzip compression.
 
@@ -328,6 +363,10 @@ Tests use fake time; no unit test waits 120 real seconds.
 Server duration math uses System.nanoTime() or injected monotonic clock.
 
 Later Android timestamps belong to a different clock domain. Host and Android monotonic timestamps must never be subtracted directly. `handlerStartedAtMonotonicNs` is the JDK handler-entry timestamp; the lab does not claim access to the underlying socket-accept timestamp.
+
+B2 deterministic impairment tests use an injected monotonic clock/sleeper, following the same principle as Media3's FakeClock: timed state transitions are advanced explicitly instead of making PR tests sleep in real time.
+
+A future provider-expiry simulator may add a separate VirtualWallClock for signed-URL/descriptor expiry and Retry-After semantics. It must never replace or be mixed with the monotonic clock used for durations, pacing and deadlines.
 
 ## 14. Request trace schema v1
 
