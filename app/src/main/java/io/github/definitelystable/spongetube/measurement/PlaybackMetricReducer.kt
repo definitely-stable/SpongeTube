@@ -42,6 +42,9 @@ data class PlaybackMetrics(
     val ttffNs: Long?,
     val stallCount: Int,
     val stallTotalNs: Long,
+    val progressIntentNs: Long?,
+    val sessionWallNs: Long?,
+    val rebufferRatio: Double?,
     val seekToFrame: List<SeekToFrameSample>,
     val playbackErrorCodes: List<String>,
     val issues: List<MetricIssue>,
@@ -64,6 +67,9 @@ object PlaybackMetricReducer {
                 ttffNs = null,
                 stallCount = 0,
                 stallTotalNs = 0,
+                progressIntentNs = null,
+                sessionWallNs = null,
+                rebufferRatio = null,
                 seekToFrame = emptyList(),
                 playbackErrorCodes = events.mapNotNull { it.errorCode },
                 issues = structuralIssues,
@@ -85,10 +91,20 @@ object PlaybackMetricReducer {
             )
         }
 
+        val sessionStartedAt = events.firstOrNull {
+            it.type == PlaybackEventType.SESSION_STARTED
+        }?.atElapsedRealtimeNs
+        val sessionEndedAt = events.lastOrNull {
+            it.type == PlaybackEventType.SESSION_ENDED
+        }?.atElapsedRealtimeNs
+
         var playRequestedAt: Long? = null
         var firstFrameAt: Long? = null
         var playIntent = false
         var activeSeekOperationId: Long? = null
+        var playbackTerminal = false
+        var progressIntentStartedAt: Long? = null
+        var progressIntentNs = 0L
 
         var rebufferOpen = false
         var countedStallStartedAt: Long? = null
@@ -99,6 +115,30 @@ object PlaybackMetricReducer {
         val seekStarts = linkedMapOf<Long, Long>()
         val seekSamples = linkedMapOf<Long, SeekToFrameSample>()
         val playbackErrors = mutableListOf<String>()
+
+        fun pauseProgressIntent(atNs: Long) {
+            val start = progressIntentStartedAt ?: return
+            require(atNs >= start) {
+                "validated monotonic stream produced negative progress-intent duration"
+            }
+            progressIntentNs = Math.addExact(
+                progressIntentNs,
+                atNs - start,
+            )
+            progressIntentStartedAt = null
+        }
+
+        fun maybeStartProgressIntent(atNs: Long) {
+            if (
+                progressIntentStartedAt == null &&
+                firstFrameAt != null &&
+                playIntent &&
+                activeSeekOperationId == null &&
+                !playbackTerminal
+            ) {
+                progressIntentStartedAt = atNs
+            }
+        }
 
         fun pauseCountedStall(atNs: Long) {
             val start = countedStallStartedAt ?: return
@@ -145,14 +185,17 @@ object PlaybackMetricReducer {
                     }
                     playIntent = true
                     maybeStartCountedStall(event.atElapsedRealtimeNs)
+                    maybeStartProgressIntent(event.atElapsedRealtimeNs)
                 }
 
                 PlaybackEventType.PLAY_INTENT_CHANGED -> {
                     playIntent = checkNotNull(event.playIntent)
                     if (playIntent) {
                         maybeStartCountedStall(event.atElapsedRealtimeNs)
+                        maybeStartProgressIntent(event.atElapsedRealtimeNs)
                     } else {
                         pauseCountedStall(event.atElapsedRealtimeNs)
+                        pauseProgressIntent(event.atElapsedRealtimeNs)
                     }
                 }
 
@@ -160,6 +203,7 @@ object PlaybackMetricReducer {
                     if (firstFrameAt == null) {
                         firstFrameAt = event.atElapsedRealtimeNs
                         maybeStartCountedStall(event.atElapsedRealtimeNs)
+                        maybeStartProgressIntent(event.atElapsedRealtimeNs)
                     } else {
                         issues += MetricIssue(
                             MetricIssueCode.DUPLICATE_FIRST_FRAME,
@@ -170,6 +214,7 @@ object PlaybackMetricReducer {
 
                 PlaybackEventType.SEEK_STARTED -> {
                     pauseCountedStall(event.atElapsedRealtimeNs)
+                    pauseProgressIntent(event.atElapsedRealtimeNs)
                     val operationId = checkNotNull(event.operationId)
 
                     if (activeSeekOperationId != null) {
@@ -220,6 +265,7 @@ object PlaybackMetricReducer {
                     if (activeSeekOperationId == operationId) {
                         activeSeekOperationId = null
                         maybeStartCountedStall(event.atElapsedRealtimeNs)
+                        maybeStartProgressIntent(event.atElapsedRealtimeNs)
                     }
                 }
 
@@ -252,15 +298,38 @@ object PlaybackMetricReducer {
 
                 PlaybackEventType.PLAYBACK_ERROR -> {
                     playbackErrors += checkNotNull(event.errorCode)
+                    pauseProgressIntent(event.atElapsedRealtimeNs)
+                    playbackTerminal = true
                     if (rebufferOpen) {
-                        finishRebuffer(event.atElapsedRealtimeNs)
+                        pauseCountedStall(event.atElapsedRealtimeNs)
+                        issues += MetricIssue(
+                            MetricIssueCode.UNCLOSED_REBUFFER,
+                            "REBUFFER terminated by PLAYBACK_ERROR at sequence ${event.sequence}",
+                        )
                     }
                 }
 
-                PlaybackEventType.PLAYBACK_ENDED,
-                PlaybackEventType.SESSION_ENDED,
-                -> if (rebufferOpen) {
-                    finishRebuffer(event.atElapsedRealtimeNs)
+                PlaybackEventType.PLAYBACK_ENDED -> {
+                    pauseProgressIntent(event.atElapsedRealtimeNs)
+                    playbackTerminal = true
+                    if (rebufferOpen) {
+                        pauseCountedStall(event.atElapsedRealtimeNs)
+                        issues += MetricIssue(
+                            MetricIssueCode.UNCLOSED_REBUFFER,
+                            "REBUFFER terminated by PLAYBACK_ENDED at sequence ${event.sequence}",
+                        )
+                    }
+                }
+
+                PlaybackEventType.SESSION_ENDED -> {
+                    pauseProgressIntent(event.atElapsedRealtimeNs)
+                    if (rebufferOpen) {
+                        pauseCountedStall(event.atElapsedRealtimeNs)
+                        issues += MetricIssue(
+                            MetricIssueCode.UNCLOSED_REBUFFER,
+                            "REBUFFER remained open at SESSION_ENDED",
+                        )
+                    }
                 }
 
                 else -> Unit
@@ -279,10 +348,13 @@ object PlaybackMetricReducer {
                 "FIRST_FRAME was not observed",
             )
         }
-        if (rebufferOpen) {
+        if (
+            rebufferOpen &&
+            issues.none { it.code == MetricIssueCode.UNCLOSED_REBUFFER }
+        ) {
             issues += MetricIssue(
                 MetricIssueCode.UNCLOSED_REBUFFER,
-                "REBUFFER remained open at session boundary",
+                "REBUFFER remained open at event-stream boundary",
             )
         }
 
@@ -308,6 +380,26 @@ object PlaybackMetricReducer {
         } else {
             null
         }
+
+        val sessionWallNs = if (
+            sessionStartedAt != null &&
+            sessionEndedAt != null &&
+            sessionEndedAt >= sessionStartedAt
+        ) {
+            sessionEndedAt - sessionStartedAt
+        } else {
+            null
+        }
+
+        val progressIntentValue = if (firstFrameAt != null) {
+            progressIntentNs
+        } else {
+            null
+        }
+
+        val rebufferRatio = progressIntentValue
+            ?.takeIf { it > 0L }
+            ?.let { stallTotalNs.toDouble() / it.toDouble() }
 
         val invalidSemanticIssue = issues.any { issue ->
             when (issue.code) {
@@ -336,6 +428,9 @@ object PlaybackMetricReducer {
             ttffNs = ttff,
             stallCount = stallCount,
             stallTotalNs = stallTotalNs,
+            progressIntentNs = progressIntentValue,
+            sessionWallNs = sessionWallNs,
+            rebufferRatio = rebufferRatio,
             seekToFrame = seekSamples.values.toList(),
             playbackErrorCodes = playbackErrors.toList(),
             issues = issues.toList(),
@@ -394,6 +489,9 @@ object PlaybackMetricReducer {
         ttffNs = null,
         stallCount = 0,
         stallTotalNs = 0,
+        progressIntentNs = null,
+        sessionWallNs = null,
+        rebufferRatio = null,
         seekToFrame = emptyList(),
         playbackErrorCodes = emptyList(),
         issues = listOf(MetricIssue(code, detail)),
