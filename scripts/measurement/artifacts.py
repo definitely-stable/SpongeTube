@@ -212,17 +212,13 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
         "limitations": limitations,
     }
 
-    session_id = getattr(args, "session_id", None)
-    scenario_hash = getattr(args, "scenario_hash", None)
-    if session_id is not None:
-        if not session_id:
-            raise ValueError("sessionId must not be blank")
-        result["sessionId"] = session_id
-    if scenario_hash is not None:
-        result["scenarioHash"] = require_sha256(
-            "scenarioHash",
-            scenario_hash,
-        )
+    if not args.session_id:
+        raise ValueError("sessionId must not be blank")
+    result["sessionId"] = args.session_id
+    result["scenarioHash"] = require_sha256(
+        "scenarioHash",
+        args.scenario_hash,
+    )
 
     return result
 
@@ -389,8 +385,8 @@ def result_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser("result")
     add_common_output(parser)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--session-id")
-    parser.add_argument("--scenario-hash")
+    parser.add_argument("--session-id", required=True)
+    parser.add_argument("--scenario-hash", required=True)
     parser.add_argument("--status", required=True)
     parser.add_argument("--ttff-ns", type=int)
     parser.add_argument("--stall-count", required=True, type=int)
