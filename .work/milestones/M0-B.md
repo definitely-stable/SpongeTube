@@ -36,7 +36,7 @@ The server must not be used to infer HTTP/2, HTTP/3 or QUIC performance.
 N1 bandwidth control is shared by all concurrent fixture responses.
 
     video response --+
-                     +--> GlobalBandwidthGovernor --> 1.5 Mbps aggregate
+                     +--> GlobalBandwidthGovernor --> 0.5 × F1 reference playback bitrate
     audio response --+
 
 A per-response limiter would incorrectly multiply available bandwidth when audio and video are fetched concurrently.
@@ -251,12 +251,27 @@ Meaning: no artificial application-layer impairment.
 
 ### N1 — SLOW
 
+Canonical M0-B N1 is relative to the actual committed F1 media demand:
+
     firstBodyDelayMs = 120
-    aggregateRateBps = 1_500_000
+    aggregateRateRatio = 0.50
+    aggregateRateBps = round(referencePlaybackBitrateBps × 0.50)
     noProgress = none
     chunkBytes = 8192
 
-The rate is aggregate across simultaneous A/V responses.
+Where:
+
+    referencePlaybackBitrateBps =
+      actualVideoAverageBitrateBps
+      + actualAudioAverageBitrateBps
+
+The actual averages are derived from committed F1 bytes and duration, not only from encoder target values or MPD advertised bandwidth.
+
+The resulting rate is aggregate across simultaneous A/V responses.
+
+This makes N1 deliberately under-provisioned at 50% of the fixture's required playback bitrate while remaining stable if the exact F1 bitrate changes during fixture generation.
+
+The lab impairment engine must therefore support a ratio-based rate specification resolved from fixture metadata. Tests for the governor may also use an explicit absolute rate for low-level deterministic unit cases.
 
 ### N4 — LONG_NO_PROGRESS
 
@@ -423,6 +438,7 @@ Per fixture:
 - container
 - actualBytes
 - actualAverageBitrateBps
+- referencePlaybackBitrateBps for fixtures with required separate A/V tracks
 - generator/version
 - generation recipe
 - resource list
@@ -552,6 +568,8 @@ Expose enough evidence for calibration:
 
 Never label a configured N1 value as measured real network throughput.
 
+Record both `referencePlaybackBitrateBps`, `aggregateRateRatio` and resolved `aggregateRateBps` in scenario/startup evidence so future comparisons remain interpretable.
+
 ## 23. Delivery plan
 
 M0-B is intentionally split into three focused PRs.
@@ -585,7 +603,7 @@ Deliver:
 - injected clock/sleeper;
 - shared GlobalBandwidthGovernor;
 - shared NoProgressGate;
-- N0/N1/N4 immutable specs;
+- N0/N1/N4 immutable specs with N1 resolved from a ratio against fixture reference bitrate;
 - provisional 8 KiB quantum;
 - fake-clock tests;
 - short socket-level smoke.
@@ -658,8 +676,8 @@ M0-B/#5 is complete only when:
 - [ ] 206 single-range semantics are tested.
 - [ ] 416 includes Content-Range: bytes */length.
 - [ ] malformed/multi-range behavior is deterministic.
-- [ ] N1 uses one aggregate bandwidth governor.
-- [ ] 120 ms is described as first-body delay, never RTT.
+- [ ] N1 uses one aggregate bandwidth governor and resolves canonical rate as 0.50 × F1 reference playback bitrate.
+- [ ] N1 evidence records reference playback bitrate, 0.50 ratio, resolved aggregate rate, and 120 ms first-body delay; the delay is never described as RTT.
 - [ ] N4 uses one session-wide no-progress gate.
 - [ ] N4 duration is 120000 ms.
 - [ ] unit tests never wait 120 real seconds.
