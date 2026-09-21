@@ -37,21 +37,24 @@ jobs:
           path: .dashif
           persist-credentials: false
 
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: curl, mbstring, sqlite3, xml
+          tools: composer:2.9.8@sha256:59b2c50e10cafa0d8efc19ede9a326d782f096c674a26baf98cf042ce23de890
+
+      - name: Set up JDK 21 for DASH-IF validators
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install validator runtime
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            composer \
-            gpac \
-            jq \
-            nodejs \
-            npm \
-            php-cli \
-            php-curl \
-            php-mbstring \
-            php-sqlite3 \
-            php-xml
+          sudo apt-get install -y --no-install-recommends gpac jq
 
       - name: Prepare DASH-IF application
         shell: bash
@@ -59,24 +62,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          composer install --no-interaction --prefer-dist --no-progress
-          npm ci --no-audit --no-fund
-          npm run build
-
           cp env_production.example .env
-          cat >> .env <<'EOF'
-
-          SESSION_DRIVER=file
-          CACHE_STORE=file
-          QUEUE_CONNECTION=sync
-          DB_CONNECTION=sqlite
-          OTEL_TRACES_EXPORTER=null
-          EOF
+          sed -i 's/^SESSION_DRIVER=.*/SESSION_DRIVER=file/' .env
+          sed -i 's/^CACHE_STORE=.*/CACHE_STORE=file/' .env
+          sed -i 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=sync/' .env
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' .env
+          sed -i 's/^OTEL_TRACES_EXPORTER=.*/OTEL_TRACES_EXPORTER=null/' .env
 
           touch database/database.sqlite
+          composer install --no-interaction --prefer-dist --no-progress --no-dev
           php artisan key:generate --force
           php artisan migrate --force
 
+          php -v
+          composer --version
+          java -version
           echo "dashifCommit=$(git rev-parse HEAD)"
           echo "mp4box=$(MP4Box -version 2>&1 | head -1)"
 
