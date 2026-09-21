@@ -101,9 +101,14 @@ final class CliArguments {
                     [--reference-playback-bitrate-bps=<bps>] \
                     [--no-progress-start-after-ms=<ms>]
 
+                  media-lab summarize \
+                    --trace=<requests.jsonl> \
+                    --output=<network-summary.json>
+
                 N1 requires --reference-playback-bitrate-bps.
                 N4 requires --no-progress-start-after-ms; canonical duration is 120000 ms.
                 Request trace, session events and calibration summary share the --trace basename.
+                summarize accepts request trace schema v2 and rejects mixed data-plane session/scenario identity.
                 """;
     }
 
