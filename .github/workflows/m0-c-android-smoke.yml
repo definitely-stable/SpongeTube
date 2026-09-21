@@ -236,6 +236,8 @@ jobs:
 
           grep -q "M0C_SMOKE_RESULT phase=DIRECT status=PASS effective=HTTP_ENGINE" \
             build/m0-c-smoke/direct.log
+          grep -q "M0C_SMOKE_RESULT phase=CACHE_COLD status=PASS effective=HTTP_ENGINE" \
+            build/m0-c-smoke/cache_cold.log
 
           grep -q "segment-0-" build/m0-c-smoke/requests.jsonl
           grep -q "segment-1-" build/m0-c-smoke/requests.jsonl
@@ -280,6 +282,10 @@ jobs:
 
             if [[ "$line" == *"status=PASS"* ]]; then
               echo "$line"
+              if [[ "$line" != *"effective=HTTP_ENGINE"* ]]; then
+                echo "CACHE_WARM did not retain the recommended HttpEngine identity."
+                exit 1
+              fi
               cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
               exit 0
             fi
