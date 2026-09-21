@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -12,7 +14,6 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -137,22 +138,44 @@ class MediaLabImpairmentIntegrationTest {
             URI healthUri = URI.create(
                     "http://127.0.0.1:" + server.controlPort() + "/__lab/health");
 
-            CompletableFuture<HttpResponse<byte[]>> media = client.sendAsync(
+            HttpResponse<InputStream> media = client.send(
                     HttpRequest.newBuilder(dataUri).GET().build(),
-                    HttpResponse.BodyHandlers.ofByteArray());
+                    HttpResponse.BodyHandlers.ofInputStream());
+            assertEquals(200, media.statusCode());
 
-            awaitEvent(config.sessionTracePath(), "NO_PROGRESS_WINDOW_ENTERED");
+            try (InputStream body = media.body()) {
+                byte[] firstQuantum = body.readNBytes(1024);
+                assertEquals(1024, firstQuantum.length);
 
-            HttpResponse<String> health = client.send(
-                    HttpRequest.newBuilder(healthUri).GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
+                awaitEvent(config.sessionTracePath(), "NO_PROGRESS_WINDOW_ENTERED");
 
-            assertEquals(200, health.statusCode());
-            assertFalse(media.isDone(), "media should still be waiting in the N4 window");
+                HttpResponse<String> health = client.send(
+                        HttpRequest.newBuilder(healthUri).GET().build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, health.statusCode());
 
-            HttpResponse<byte[]> mediaResponse = media.get(3, TimeUnit.SECONDS);
-            assertEquals(200, mediaResponse.statusCode());
-            assertArrayEquals(source, mediaResponse.body());
+                int immediatelyAvailable = body.available();
+                byte[] postGateDrain = immediatelyAvailable == 0
+                        ? new byte[0]
+                        : body.readNBytes(immediatelyAvailable);
+
+                // Any bytes visible here can only be data already written before the server-side
+                // gate took effect. The bounded/flush-per-quantum N4 path keeps that leakage
+                // within one configured write quantum. Record the measured value as test evidence.
+                assertTrue(
+                        postGateDrain.length <= scenario.writeQuantumBytes(),
+                        "post-gate drain exceeded one write quantum: " + postGateDrain.length);
+                System.out.println(
+                        "media-lab postGateDrainBytes=" + postGateDrain.length
+                                + " writeQuantumBytes=" + scenario.writeQuantumBytes());
+
+                ByteArrayOutputStream received = new ByteArrayOutputStream(source.length);
+                received.write(firstQuantum);
+                received.write(postGateDrain);
+                body.transferTo(received);
+
+                assertArrayEquals(source, received.toByteArray());
+            }
         }
 
         String events = Files.readString(config.sessionTracePath());
