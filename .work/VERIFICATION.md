@@ -73,10 +73,10 @@ Initial reproducible profiles:
 | ID | Profile | Shape |
 |---|---|---|
 | N0 | Good Wi-Fi | 50 Mbps, 20 ms RTT, no loss |
-| N1 | Slow | 1.5 Mbps, 120 ms RTT |
+| N1 | Slow application delivery | 1.5 Mbps aggregate fixture-body pacing + 120 ms configured first-body delay (not RTT) |
 | N2 | High latency | 8 Mbps, 450 ms RTT, jitter |
 | N3 | Burst/blackout | 8 Mbps for 15 s, 0 for 30 s, repeat |
-| N4 | Long no-progress window | healthy delivery → existing media response makes zero forward progress for 120 s → delivery resumes |
+| N4 | Long no-progress window | healthy delivery → session-wide fixture-body progress stops for 120 s → delivery resumes |
 | N5 | Lossy | 5 Mbps, 150 ms RTT, 2% loss |
 | N6 | Route reset | active connection reset/default-network replacement |
 | N7 | VPN flap | VPN-like default route disappears/reappears in test harness |
