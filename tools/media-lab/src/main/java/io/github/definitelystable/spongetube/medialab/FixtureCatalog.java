@@ -33,6 +33,7 @@ final class FixtureCatalog {
         }
 
         Map<String, FixtureResource> resources = new HashMap<>();
+        var manifest = FixtureManifest.tryLoad(realRoot);
 
         try (Stream<Path> fixtureDirs = Files.list(realRoot)) {
             for (Path fixtureDir : fixtureDirs.sorted().toList()) {
@@ -70,6 +71,21 @@ final class FixtureCatalog {
                         }
 
                         String id = resourceId.toString();
+                        String rootRelativePath =
+                                realRoot.relativize(path).toString().replace('\\', '/');
+
+                        String contentType;
+                        if (manifest.isPresent()) {
+                            FixtureManifest.ResourceMetadata metadata =
+                                    manifest.get().resource(rootRelativePath).orElseThrow(
+                                            () -> new IOException(
+                                                    "Fixture resource is missing from manifest: "
+                                                            + rootRelativePath));
+                            contentType = metadata.contentType();
+                        } else {
+                            contentType = ContentTypes.forPath(id);
+                        }
+
                         String urlPath = "/fixtures/" + fixtureId + "/" + id;
                         FixtureResource resource = new FixtureResource(
                                 fixtureId,
@@ -77,7 +93,7 @@ final class FixtureCatalog {
                                 urlPath,
                                 path.toRealPath(LinkOption.NOFOLLOW_LINKS),
                                 Files.size(path),
-                                ContentTypes.forPath(id));
+                                contentType);
 
                         if (resources.putIfAbsent(urlPath, resource) != null) {
                             throw new IOException("Duplicate fixture URL path: " + urlPath);
