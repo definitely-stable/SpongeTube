@@ -2,9 +2,20 @@
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <permission
+        android:name="io.github.definitelystable.spongetube.permission.READ_M0_EVIDENCE"
+        android:protectionLevel="signature" />
+
     <application android:networkSecurityConfig="@xml/network_security_config">
         <profileable
             android:shell="true"
             tools:targetApi="29" />
+
+        <provider
+            android:name=".measurement.BenchmarkEvidenceProvider"
+            android:authorities="io.github.definitelystable.spongetube.m0.evidence"
+            android:exported="true"
+            android:readPermission="io.github.definitelystable.spongetube.permission.READ_M0_EVIDENCE" />
     </application>
 </manifest>
