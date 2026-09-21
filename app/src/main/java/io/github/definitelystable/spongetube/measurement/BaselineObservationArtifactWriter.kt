@@ -1,9 +1,6 @@
 package io.github.definitelystable.spongetube.measurement
 
 import java.io.File
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.StandardOpenOption
 
 object BaselineObservationArtifactWriter {
 
@@ -39,13 +36,14 @@ object BaselineObservationArtifactWriter {
             append("\n}\n")
         }
 
-        Files.writeString(
-            file.toPath(),
-            payload,
-            StandardCharsets.UTF_8,
-            StandardOpenOption.CREATE_NEW,
-            StandardOpenOption.WRITE,
-        )
+        check(file.createNewFile()) {
+            "baseline observation artifact already exists: $file"
+        }
+        file.outputStream()
+            .bufferedWriter(Charsets.UTF_8)
+            .use { writer ->
+                writer.write(payload)
+            }
     }
 
     private fun jsonEscape(value: String): String = buildString {
