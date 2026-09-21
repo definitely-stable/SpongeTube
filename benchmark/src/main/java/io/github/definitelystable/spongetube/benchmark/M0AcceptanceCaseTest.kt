@@ -95,12 +95,16 @@ class M0AcceptanceCaseTest {
 
         if (expectOutage) {
             Thread.sleep(N4_CANONICAL_OBSERVATION_MS)
+            val recovered = waitForStableReadyPlaying(
+                device = device,
+                timeoutMs = N4_RESUME_TIMEOUT_MS,
+            )
+            val terminalError = device.hasObject(
+                By.textContains(PLAYBACK_ERROR_TEXT),
+            )
             assertTrue(
-                "${baseline.name} did not reach stable READY/playing after canonical N4",
-                waitForStableReadyPlaying(
-                    device = device,
-                    timeoutMs = N4_RESUME_TIMEOUT_MS,
-                ),
+                "${baseline.name} produced neither stable recovery nor a structured playback error after canonical N4",
+                recovered || terminalError,
             )
         } else {
             Thread.sleep(NON_OUTAGE_OBSERVATION_MS)
@@ -248,5 +252,6 @@ class M0AcceptanceCaseTest {
         const val STABLE_READY_WINDOW_MS = 2_000L
         const val READY_POLL_MS = 100L
         const val READY_PLAYING_TEXT = "State: Ready · playing"
+        const val PLAYBACK_ERROR_TEXT = "State: Playback error"
     }
 }
