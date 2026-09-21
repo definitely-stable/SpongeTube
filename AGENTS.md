@@ -44,3 +44,14 @@ For performance/network/storage claims, follow `.work/VERIFICATION.md` and add e
 Sponge Core owns remote media fetches. Playback/prefetch/offline retention must not independently refetch the same media coverage.
 
 Respect the user's system-default network/VPN policy. Never add hidden route bypass behavior.
+
+
+## Current build verification
+
+For M0-A Android build changes, run:
+
+```text
+./gradlew check assembleDebug
+```
+
+Configuration-cache compatibility is required for this verification path.
