@@ -417,13 +417,31 @@ M0 `SimpleCache/CacheDataSource` is a reference baseline only. Sponge Core must 
 The first M1 vertical slice uses a Sponge-owned extent store:
 
 - media bytes are immutable extent files under app-private durable storage (`filesDir/sponge/extents/`), sharded by generated extent identity;
-- a fetch writes a temporary file, closes and fsyncs it, computes/validates integrity, then atomically renames it to its immutable extent path;
-- Room/SQLite owns the durable metadata/index and journal: MediaAsset, TrackVariant, extent identity, media/range coverage, byte length, integrity state, retention class and commit/recovery state;
-- only after the durable file exists does one Room transaction publish the extent as `PRESENT + VALID` and make its coverage visible;
-- startup recovery deletes orphan temporary files, rejects index rows whose immutable extent is missing/invalid, and never invents coverage;
+- every committed extent records an immutable byte length and SHA-256 digest; coverage is valid only when file length and digest match the published metadata;
+- a fetch writes only to a uniquely named temporary file on the same filesystem as its final extent, closes and fsyncs the file, computes/verifies length + SHA-256, atomically renames it to the immutable extent path, and fsyncs the containing directory before metadata publication where the platform/filesystem exposes that durability primitive;
+- Room/SQLite owns the durable metadata/index and journal: MediaAsset, TrackVariant, extent identity, media/range coverage, byte length, SHA-256, integrity state, retention class and commit/recovery state;
+- one Room transaction may publish the extent as `PRESENT + VALID` only after the storage commit barrier above completes; until then CoverageIndex must behave as if the bytes do not exist;
+- startup recovery deletes orphan temporary files, rejects/quarantines index rows whose immutable extent is missing, length-mismatched or digest-invalid, and never invents coverage;
 - PlaybackBridge reads only coverage published by the Sponge index; it never falls back to a second remote Media3 fetch for coverage owned or in-flight by Sponge Core.
 
-The M1 backend is intentionally immutable-file based rather than one file per provider segment. FetchBroker may coalesce adjacent coverage into one extent, so provider segmentation is not storage identity. Packed append-only containers are a later storage optimization only if measured file-count/I/O cost justifies them; adopting them must not change the ExtentStore/CoverageIndex contract.
+The M1 backend is intentionally immutable-file based rather than one file per provider segment. FetchBroker may coalesce adjacent coverage into one extent, so provider segmentation is not storage identity. Extent identity is independent of provider URL and descriptor lifetime; descriptor refresh must not invalidate already verified bytes.
+
+Crash consistency uses an explicit publish barrier:
+
+```text
+TEMP
+  -> bytes complete
+  -> file fsync
+  -> length + SHA-256 verified
+  -> atomic same-filesystem rename
+  -> parent-directory durability barrier where available
+  -> Room transaction publishes PRESENT + VALID
+  -> CoverageIndex may expose extent
+```
+
+A crash before the Room publish can leave at most an orphan immutable file, which recovery may adopt only after full identity/integrity validation or otherwise garbage-collect. A crash after the Room publish must not leave a row pointing at uncommitted bytes.
+
+Packed append-only containers are a later storage optimization only if measured file-count/I/O cost justifies them; adopting them must not change the ExtentStore/CoverageIndex contract.
 
 ### Durable locations
 
