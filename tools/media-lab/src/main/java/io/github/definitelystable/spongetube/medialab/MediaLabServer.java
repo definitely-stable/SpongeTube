@@ -120,14 +120,14 @@ final class MediaLabServer implements AutoCloseable {
     }
 
     private void handle(HttpExchange exchange) {
-        long acceptedAt = System.nanoTime();
+        long handlerStartedAt = System.nanoTime();
         String method = exchange.getRequestMethod();
         String rawPath = exchange.getRequestURI().getRawPath();
         String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
         RequestTraceAccumulator trace = new RequestTraceAccumulator(
                 config,
                 requestIds.incrementAndGet(),
-                acceptedAt,
+                handlerStartedAt,
                 method,
                 rawPath,
                 rangeHeader);
