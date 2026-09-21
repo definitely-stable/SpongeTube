@@ -161,6 +161,24 @@ class MediaLabServerTest {
                     HttpRequest.newBuilder(base.resolve("/fixtures/F0/missing.bin")).GET().build());
             assertEquals(404, missing.statusCode());
 
+            HttpResponse<byte[]> missingHead = sendBytes(
+                    client,
+                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/missing.bin"))
+                            .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                            .build());
+            assertEquals(404, missingHead.statusCode());
+            assertEquals(0, missingHead.body().length);
+            assertTrue(missingHead.headers().firstValue("Content-Length").isPresent());
+
+            HttpResponse<byte[]> controlHead = sendBytes(
+                    client,
+                    HttpRequest.newBuilder(base.resolve("/__lab/health"))
+                            .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                            .build());
+            assertEquals(405, controlHead.statusCode());
+            assertEquals(0, controlHead.body().length);
+            assertEquals("GET", controlHead.headers().firstValue("Allow").orElseThrow());
+
             HttpResponse<String> traversal = sendText(
                     client,
                     HttpRequest.newBuilder(
@@ -180,7 +198,7 @@ class MediaLabServerTest {
         }
 
         List<String> traceLines = Files.readAllLines(tracePath);
-        assertEquals(12, traceLines.size());
+        assertEquals(14, traceLines.size());
         assertTrue(traceLines.stream().allMatch(line -> line.startsWith("{") && line.endsWith("}")));
         assertTrue(traceLines.stream().anyMatch(line ->
                 line.contains("\"status\":200")
