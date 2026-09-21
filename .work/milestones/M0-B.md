@@ -647,18 +647,34 @@ CI verifies fixture bytes; it does not regenerate them.
 
 ## 22. Calibration boundary
 
-M0-B proves that the server follows its configured schedule.
+M0-B proves that the server follows its configured schedule. A configured value is not accepted as an observed value merely because the code requested it.
 
-M0-F later calibrates observed real-time behavior before using the lab for acceptance comparisons.
+M0-F later calibrates real-time behavior before using the lab for acceptance comparisons.
 
 Expose enough evidence for calibration:
 - configured delay/rate/no-progress;
-- server write timings;
-- body bytes written.
+- observed server write timings;
+- body bytes written;
+- resolved scenario identity;
+- session transition events.
+
+Derived harness-accuracy metrics include:
+
+    observedRateBps
+    rateErrorPct
+    observedFirstBodyDelayMs
+    firstBodyDelayErrorMs
+    observedNoProgressDurationMs
+    noProgressDurationErrorMs
+    maxSchedulerSlipMs
+
+No permanent pass/fail percentage is invented before pilot runs characterize host/CI jitter. Initial calibration evidence reports raw error distributions; a tolerance becomes a gate only after evidence supports it.
+
+Socket/kernel buffering means "server stopped writing" is not identical to "client instantly received zero additional bytes". B2 includes a short real-socket calibration that characterizes bounded post-gate drain/leakage on the host path and records the limitation. Android acceptance reports app-visible no-progress separately rather than pretending host and device clocks are synchronized.
 
 Never label a configured N1 value as measured real network throughput.
 
-Record both `referencePlaybackBitrateBps`, `aggregateRateRatio` and resolved `aggregateRateBps` in scenario/startup evidence so future comparisons remain interpretable.
+Record `referencePlaybackBitrateBps`, `aggregateRateRatio`, resolved `aggregateRateBps`, scenarioHash and fixture identity in run evidence so future comparisons remain interpretable.
 
 ## 23. Delivery plan
 
@@ -673,16 +689,17 @@ Deliver:
 - tools:media-lab module;
 - Java application/test toolchain;
 - CLI/process contract;
-- loopback/port 0;
-- explicit executor/shutdown;
+- independent data/control loopback listeners on port 0;
+- independent bounded executors and clean shutdown;
 - fixture catalog;
 - GET/HEAD;
 - Range contract;
-- health/config;
+- host-only health/config;
+- lab request/session/profile/plane correlation headers;
 - JSONL trace foundation;
-- host tests.
+- host tests including partial-bind cleanup and plane isolation.
 
-No long-form committed fixture yet.
+No impairment engine and no long-form committed fixture yet.
 
 ### B2 — impairment engine
 
@@ -690,13 +707,16 @@ Title:
 test(media-lab): add deterministic impairment profiles
 
 Deliver:
-- injected clock/sleeper;
+- injected monotonic clock/sleeper;
 - shared GlobalBandwidthGovernor;
 - shared NoProgressGate;
-- N0/N1/N4 immutable specs with N1 resolved from a ratio against fixture reference bitrate;
+- N0/N1/N4 immutable ResolvedScenario specs with canonical scenarioHash;
+- N1 resolved from a ratio against fixture reference bitrate;
 - provisional 8 KiB quantum;
+- session event trace;
+- configured-vs-observed calibration summary;
 - fake-clock tests;
-- short socket-level smoke.
+- short socket-level smoke including control responsiveness and post-gate drain characterization.
 
 ### B3 — canonical fixtures and Android bridge
 
@@ -710,8 +730,11 @@ Deliver:
 - manifest.json;
 - checksums.sha256;
 - fixture verification;
+- ffprobe structural evidence;
+- DASH-IF conformance evidence when DASH fixture bytes/MPD are introduced or changed;
 - actual size/bitrate metadata;
 - adb reverse helper/docs;
+- explicit statement that adb reverse is not used to validate VPN/default-route semantics;
 - debug/lab-only localhost cleartext support needed by M0-C;
 - end-to-end host smoke using committed fixtures.
 
