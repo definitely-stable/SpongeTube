@@ -45,11 +45,11 @@ class PlaybackEventRecorderTest {
 
         assertTrue(json.startsWith("{"))
         assertTrue(json.endsWith("}"))
-        assertTrue(json.contains("\\"schemaVersion\\":1"))
-        assertTrue(json.contains("\\"sessionId\\":\"s\\n1\""))
-        assertTrue(json.contains("\\"bufferingReason\\":null"))
-        assertTrue(json.contains("\\"playIntent\\":null"))
-        assertTrue(json.contains("\\"operationId\\":null"))
-        assertTrue(json.contains("\\"errorCode\\":\"IO_\\\"FAIL\\\"\""))
+        assertTrue(json.contains("\"schemaVersion\":1"))
+        assertTrue(json.contains("\"sessionId\":\"s\\n1\""))
+        assertTrue(json.contains("\"bufferingReason\":null"))
+        assertTrue(json.contains("\"playIntent\":null"))
+        assertTrue(json.contains("\"operationId\":null"))
+        assertTrue(json.contains("\"errorCode\":\"IO_\\\"FAIL\\\"\""))
     }
 }
