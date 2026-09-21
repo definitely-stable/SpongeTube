@@ -104,191 +104,7 @@ jobs:
               exit 1
             fi
 
-            if adb devices | grep -Eq '^emulator-[0-9]+[[:space:]]+device
-
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
-
-          adb shell getprop ro.build.version.sdk
-          adb shell getprop ro.build.fingerprint
-
-      - name: Install SpongeTube debug APK
-        shell: bash
-        run: |
-          adb install -r app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Start Media Lab and bind localhost bridge
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p build/m0-c-smoke
-
-          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
-          test -n "$LAB_BIN"
-
-          "$LAB_BIN" serve \
-            --fixture-root="$PWD/test-fixtures/media" \
-            --trace="$PWD/build/m0-c-smoke/requests.jsonl" \
-            --session-id=m0-c-api36 \
-            --profile=N0 \
-            --data-port=18081 \
-            --control-port=18082 \
-            > build/m0-c-smoke/media-lab.out \
-            2> build/m0-c-smoke/media-lab.err &
-          echo $! > build/m0-c-smoke/media-lab.pid
-
-          for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:18082/__lab/health >/dev/null; then
-              break
-            fi
-            if [[ "$attempt" -eq 30 ]]; then
-              cat build/m0-c-smoke/media-lab.out || true
-              cat build/m0-c-smoke/media-lab.err || true
-              exit 1
-            fi
-            sleep 1
-          done
-
-          adb reverse tcp:18080 tcp:18081
-          adb reverse --list
-
-      - name: Run online DIRECT and COLD-cache phases
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PACKAGE="io.github.definitelystable.spongetube"
-          ACTIVITY="$PACKAGE/.M0CSmokeActivity"
-          mkdir -p build/m0-c-smoke
-
-          run_phase() {
-            local phase="$1"
-            local result_file="build/m0-c-smoke/${phase,,}.log"
-
-            adb shell am force-stop "$PACKAGE"
-            adb logcat -c
-            adb shell am start -W -n "$ACTIVITY" --es phase "$phase" \
-              > "build/m0-c-smoke/${phase,,}-am-start.txt"
-
-            for attempt in {1..45}; do
-              adb logcat -d -v threadtime > "$result_file"
-              line="$(grep "M0C_SMOKE_RESULT phase=$phase" "$result_file" | tail -1 || true)"
-
-              if [[ "$line" == *"status=PASS"* ]]; then
-                echo "$line"
-                cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
-                return 0
-              fi
-              if [[ "$line" == *"status=FAIL"* ]]; then
-                echo "$line"
-                cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
-                return 1
-              fi
-
-              sleep 1
-            done
-
-            echo "Timed out waiting for $phase"
-            cat "$result_file"
-            return 1
-          }
-
-          run_phase DIRECT
-          run_phase CACHE_COLD
-
-          grep -q "M0C_SMOKE_RESULT phase=DIRECT status=PASS effective=HTTP_ENGINE" \
-            build/m0-c-smoke/direct.log
-
-          grep -q "segment-0-" build/m0-c-smoke/requests.jsonl
-          grep -q "segment-1-" build/m0-c-smoke/requests.jsonl
-
-      - name: Stop origin
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PID="$(cat build/m0-c-smoke/media-lab.pid)"
-          kill "$PID"
-          for attempt in {1..20}; do
-            if ! kill -0 "$PID" 2>/dev/null; then
-              exit 0
-            fi
-            sleep 0.25
-          done
-
-          echo "Media Lab did not stop after SIGTERM"
-          exit 1
-
-      - name: Run offline WARM-cache and error phases
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PACKAGE="io.github.definitelystable.spongetube"
-          ACTIVITY="$PACKAGE/.M0CSmokeActivity"
-
-          run_phase() {
-            local phase="$1"
-            local result_file="build/m0-c-smoke/${phase,,}.log"
-
-            adb shell am force-stop "$PACKAGE"
-            adb logcat -c
-            adb shell am start -W -n "$ACTIVITY" --es phase "$phase" \
-              > "build/m0-c-smoke/${phase,,}-am-start.txt"
-
-            for attempt in {1..45}; do
-              adb logcat -d -v threadtime > "$result_file"
-              line="$(grep "M0C_SMOKE_RESULT phase=$phase" "$result_file" | tail -1 || true)"
-
-              if [[ "$line" == *"status=PASS"* ]]; then
-                echo "$line"
-                cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
-                return 0
-              fi
-              if [[ "$line" == *"status=FAIL"* ]]; then
-                echo "$line"
-                cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
-                return 1
-              fi
-
-              sleep 1
-            done
-
-            echo "Timed out waiting for $phase"
-            cat "$result_file"
-            return 1
-          }
-
-          run_phase CACHE_WARM
-          run_phase OFFLINE_ERROR
-
-      - name: Record smoke summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "api=$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r' || true)"
-            echo "fingerprint=$(adb shell getprop ro.build.fingerprint 2>/dev/null | tr -d '\r' || true)"
-            echo
-            grep "M0C_SMOKE_RESULT" build/m0-c-smoke/*.log 2>/dev/null || true
-            echo
-            echo "videoRequests=$(grep -c 'segment-0-' build/m0-c-smoke/requests.jsonl 2>/dev/null || true)"
-            echo "audioRequests=$(grep -c 'segment-1-' build/m0-c-smoke/requests.jsonl 2>/dev/null || true)"
-          } > build/m0-c-smoke/summary.txt
-
-          cat build/m0-c-smoke/summary.txt
-
-      - name: Upload M0-C smoke evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: m0-c-android-smoke
-          path: build/m0-c-smoke/
-          if-no-files-found: error
-          retention-days: 14
-; then
+            if adb devices | grep -Eq '^emulator-[0-9]+[[:space:]]+device$'; then
               device_seen=1
               break
             fi
@@ -361,7 +177,7 @@ jobs:
           adb reverse tcp:18080 tcp:18081
           adb reverse --list
 
-      - name: Run online DIRECT and COLD-cache phases
+      - name: Run online DIRECT, COLD and WARM phases
         shell: bash
         run: |
           set -euo pipefail
@@ -411,6 +227,30 @@ jobs:
           grep -q "segment-0-" build/m0-c-smoke/requests.jsonl
           grep -q "segment-1-" build/m0-c-smoke/requests.jsonl
 
+          BEFORE_WARM=$(wc -l < build/m0-c-smoke/requests.jsonl)
+          run_phase CACHE_WARM
+
+          tail -n +$((BEFORE_WARM + 1)) build/m0-c-smoke/requests.jsonl \
+            > build/m0-c-smoke/warm-network-requests.jsonl
+
+          if grep -q '"resource":"manifest.mpd"' build/m0-c-smoke/warm-network-requests.jsonl; then
+            echo "WARM replay refetched the cached MPD."
+            cat build/m0-c-smoke/warm-network-requests.jsonl
+            exit 1
+          fi
+
+          if grep -q 'segment-0-00001.m4s' build/m0-c-smoke/warm-network-requests.jsonl; then
+            echo "WARM replay refetched the first cached video segment."
+            cat build/m0-c-smoke/warm-network-requests.jsonl
+            exit 1
+          fi
+
+          if grep -q 'segment-1-00001.m4s' build/m0-c-smoke/warm-network-requests.jsonl; then
+            echo "WARM replay refetched the first cached audio segment."
+            cat build/m0-c-smoke/warm-network-requests.jsonl
+            exit 1
+          fi
+
       - name: Stop origin
         shell: bash
         run: |
@@ -428,48 +268,41 @@ jobs:
           echo "Media Lab did not stop after SIGTERM"
           exit 1
 
-      - name: Run offline WARM-cache and error phases
+      - name: Verify explicit DIRECT offline error
         shell: bash
         run: |
           set -euo pipefail
 
           PACKAGE="io.github.definitelystable.spongetube"
           ACTIVITY="$PACKAGE/.M0CSmokeActivity"
+          phase="OFFLINE_ERROR"
+          result_file="build/m0-c-smoke/offline_error.log"
 
-          run_phase() {
-            local phase="$1"
-            local result_file="build/m0-c-smoke/${phase,,}.log"
+          adb shell am force-stop "$PACKAGE"
+          adb logcat -c
+          adb shell am start -W -n "$ACTIVITY" --es phase "$phase" \
+            > build/m0-c-smoke/offline_error-am-start.txt
 
-            adb shell am force-stop "$PACKAGE"
-            adb logcat -c
-            adb shell am start -W -n "$ACTIVITY" --es phase "$phase" \
-              > "build/m0-c-smoke/${phase,,}-am-start.txt"
+          for attempt in {1..45}; do
+            adb logcat -d -v threadtime > "$result_file"
+            line="$(grep "M0C_SMOKE_RESULT phase=$phase" "$result_file" | tail -1 || true)"
 
-            for attempt in {1..45}; do
-              adb logcat -d -v threadtime > "$result_file"
-              line="$(grep "M0C_SMOKE_RESULT phase=$phase" "$result_file" | tail -1 || true)"
+            if [[ "$line" == *"status=PASS"* ]]; then
+              echo "$line"
+              cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
+              exit 0
+            fi
+            if [[ "$line" == *"status=FAIL"* ]]; then
+              echo "$line"
+              cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
+              exit 1
+            fi
+            sleep 1
+          done
 
-              if [[ "$line" == *"status=PASS"* ]]; then
-                echo "$line"
-                cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
-                return 0
-              fi
-              if [[ "$line" == *"status=FAIL"* ]]; then
-                echo "$line"
-                cat "$result_file" >> build/m0-c-smoke/android-logcat.txt
-                return 1
-              fi
-
-              sleep 1
-            done
-
-            echo "Timed out waiting for $phase"
-            cat "$result_file"
-            return 1
-          }
-
-          run_phase CACHE_WARM
-          run_phase OFFLINE_ERROR
+          echo "Timed out waiting for OFFLINE_ERROR"
+          cat "$result_file"
+          exit 1
 
       - name: Record smoke summary
         if: always()
@@ -483,6 +316,7 @@ jobs:
             echo
             echo "videoRequests=$(grep -c 'segment-0-' build/m0-c-smoke/requests.jsonl 2>/dev/null || true)"
             echo "audioRequests=$(grep -c 'segment-1-' build/m0-c-smoke/requests.jsonl 2>/dev/null || true)"
+            echo "warmNetworkRequests=$(wc -l < build/m0-c-smoke/warm-network-requests.jsonl 2>/dev/null || echo 0)"
           } > build/m0-c-smoke/summary.txt
 
           cat build/m0-c-smoke/summary.txt
