@@ -2,8 +2,12 @@ package io.github.definitelystable.spongetube.medialab;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,6 +22,32 @@ class MediaLabServerTest {
 
     @TempDir
     Path temp;
+
+
+    @Test
+    void bindFailureDoesNotCreateTraceFile() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("bind-fixtures"));
+        Files.createDirectory(fixtureRoot.resolve("F0"));
+        Path tracePath = temp.resolve("bind-failure.jsonl");
+
+        int occupiedPort;
+        try (ServerSocket occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            occupiedPort = occupied.getLocalPort();
+
+            MediaLabConfig config = new MediaLabConfig(
+                    fixtureRoot,
+                    tracePath,
+                    "bind-failure",
+                    MediaLabProfile.N0,
+                    occupiedPort,
+                    2);
+
+            assertThrows(java.net.BindException.class, () -> MediaLabServer.create(config));
+        }
+
+        assertFalse(Files.exists(tracePath));
+    }
+
 
     @Test
     void servesControlAndFixtureHttpContractAndWritesTrace() throws Exception {
