@@ -75,6 +75,8 @@ final class SessionEventRecorder {
                 scenario.scenarioHash(),
                 event,
                 atNanos,
+                scenario.referencePlaybackBitrateBps(),
+                scenario.aggregateRateRatio(),
                 scenario.aggregateRateBps(),
                 scenario.noProgressStartAfterMs(),
                 scenario.noProgressDurationMs()));
