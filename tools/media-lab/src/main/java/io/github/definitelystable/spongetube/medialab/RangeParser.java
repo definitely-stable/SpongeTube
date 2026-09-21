@@ -9,7 +9,8 @@ final class RangeParser {
         if (completeLength < 0) {
             throw new IllegalArgumentException("completeLength must be >= 0");
         }
-        if (rangeHeader == null || rangeHeader.isBlank()) {
+        if (rangeHeader == null || rangeHeader.isBlank() || completeLength == 0) {
+            // RFC 9110 permits a server to ignore Range for a zero-length representation.
             return new RangeDecision.Full();
         }
 
@@ -36,7 +37,7 @@ final class RangeParser {
             if (suffixLength == null) {
                 return new RangeDecision.Full();
             }
-            if (suffixLength == 0 || completeLength == 0) {
+            if (suffixLength == 0) {
                 return new RangeDecision.Unsatisfiable();
             }
             long selectedLength = Math.min(suffixLength, completeLength);
@@ -48,7 +49,7 @@ final class RangeParser {
             return new RangeDecision.Full();
         }
 
-        if (completeLength == 0 || start >= completeLength) {
+        if (start >= completeLength) {
             return new RangeDecision.Unsatisfiable();
         }
 
@@ -61,7 +62,9 @@ final class RangeParser {
             return new RangeDecision.Full();
         }
         if (start > endInclusive) {
-            return new RangeDecision.Unsatisfiable();
+            // Invalid int-range, not a valid-but-unsatisfiable range.
+            // M0-B deterministically ignores invalid Range syntax.
+            return new RangeDecision.Full();
         }
 
         long clampedEndInclusive = Math.min(endInclusive, completeLength - 1);
