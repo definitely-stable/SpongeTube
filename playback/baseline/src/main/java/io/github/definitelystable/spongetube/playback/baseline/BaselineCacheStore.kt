@@ -1,7 +1,6 @@
 package io.github.definitelystable.spongetube.playback.baseline
 
 import android.content.Context
-import androidx.annotation.WorkerThread
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
@@ -14,7 +13,6 @@ internal object BaselineCacheStore {
     private var cache: SimpleCache? = null
     private var databaseProvider: StandaloneDatabaseProvider? = null
 
-    @WorkerThread
     @Synchronized
     fun prepare(
         context: Context,
