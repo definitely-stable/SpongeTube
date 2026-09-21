@@ -181,15 +181,13 @@ object PlaybackMetricReducer {
                         activeSeekOperationId = operationId
                     }
 
-                    if (seekStarts.putIfAbsent(
-                            operationId,
-                            event.atElapsedRealtimeNs,
-                        ) != null
-                    ) {
+                    if (seekStarts.containsKey(operationId)) {
                         issues += MetricIssue(
                             MetricIssueCode.DUPLICATE_SEEK_START,
                             "operationId=$operationId",
                         )
+                    } else {
+                        seekStarts[operationId] = event.atElapsedRealtimeNs
                     }
                 }
 
