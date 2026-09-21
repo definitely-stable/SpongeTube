@@ -79,6 +79,8 @@ class JsonLineTraceWriterTest {
                 "F0",
                 "sample.bin",
                 "N0",
+                "N0",
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 "GET",
                 path,
                 null,
