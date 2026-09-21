@@ -88,14 +88,24 @@ class M0DPlaybackCaptureBenchmark {
         pressHome()
         device.waitForIdle()
 
-        val sourceListing = device.executeShellCommand(
-            "ls -1 '$sourceDir' 2>&1",
-        )
+        var sourceListing = ""
+        var sourceReady = false
+        repeat(EVIDENCE_FINALIZE_ATTEMPTS) {
+            sourceListing = device.executeShellCommand(
+                "ls -1 '$sourceDir' 2>&1",
+            )
+            sourceReady =
+                sourceListing.contains("playback-events.jsonl") &&
+                sourceListing.contains("playback-summary.json") &&
+                sourceListing.contains("playback-stats-cross-check.json")
+            if (sourceReady) {
+                return@repeat
+            }
+            Thread.sleep(EVIDENCE_FINALIZE_POLL_MS)
+        }
         assertTrue(
             "Target evidence was not finalized before benchmark teardown: $sourceListing",
-            sourceListing.contains("playback-events.jsonl") &&
-                sourceListing.contains("playback-summary.json") &&
-                sourceListing.contains("playback-stats-cross-check.json"),
+            sourceReady,
         )
 
         device.executeShellCommand("mkdir -p '$stagingDir'")
@@ -121,5 +131,7 @@ class M0DPlaybackCaptureBenchmark {
     private companion object {
         const val PREPARE_TRACE = "SpongeTube:M0:prepare"
         const val STAGING_ROOT = "/sdcard/spongetube-m0"
+        const val EVIDENCE_FINALIZE_ATTEMPTS = 40
+        const val EVIDENCE_FINALIZE_POLL_MS = 100L
     }
 }
