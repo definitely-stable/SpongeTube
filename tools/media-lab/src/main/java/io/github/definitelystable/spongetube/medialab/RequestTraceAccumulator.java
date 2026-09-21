@@ -41,6 +41,12 @@ final class RequestTraceAccumulator {
     }
 
     RequestTrace complete(long completedAtMonotonicNs) {
+        Long firstWriteDelayMs = firstBodyWriteAtMonotonicNs == null
+                ? null
+                : Math.max(0L, (firstBodyWriteAtMonotonicNs - acceptedAtMonotonicNs) / 1_000_000L);
+        long handlerDurationMs =
+                Math.max(0L, (completedAtMonotonicNs - acceptedAtMonotonicNs) / 1_000_000L);
+
         return new RequestTrace(
                 1,
                 config.sessionId(),
@@ -59,6 +65,8 @@ final class RequestTraceAccumulator {
                 acceptedAtMonotonicNs,
                 firstBodyWriteAtMonotonicNs,
                 completedAtMonotonicNs,
+                firstWriteDelayMs,
+                handlerDurationMs,
                 null,
                 0,
                 outcome);
