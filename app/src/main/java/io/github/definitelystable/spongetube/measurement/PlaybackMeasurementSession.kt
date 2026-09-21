@@ -74,7 +74,10 @@ class PlaybackMeasurementSession private constructor(
             require(generation > 0) { "generation must be > 0" }
 
             val sessionId = "$runId-$generation"
-            val root = context.getExternalFilesDir("m0-measurement")
+            val root = context.externalMediaDirs
+                .firstOrNull()
+                ?.let { File(it, "m0-measurement") }
+                ?: context.getExternalFilesDir("m0-measurement")
                 ?: File(context.filesDir, "m0-measurement")
             val artifactDirectory = File(root, sessionId)
             val artifactFile = File(artifactDirectory, "playback-events.jsonl")
