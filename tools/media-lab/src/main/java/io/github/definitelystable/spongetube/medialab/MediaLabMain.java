@@ -9,6 +9,22 @@ public final class MediaLabMain {
     }
 
     public static void main(String[] args) {
+        if (args.length > 0 && "summarize".equals(args[0])) {
+            try {
+                RequestTraceSummaryCli.run(args);
+                return;
+            } catch (IllegalArgumentException invalid) {
+                System.err.println("media-lab: " + invalid.getMessage());
+                System.err.print(CliArguments.usage());
+                System.exit(2);
+                return;
+            } catch (IOException io) {
+                System.err.println("media-lab summary failure: " + io.getMessage());
+                System.exit(1);
+                return;
+            }
+        }
+
         MediaLabConfig config;
         try {
             config = CliArguments.parse(args);
