@@ -491,7 +491,7 @@ As of 2026-09-21:
 - minimum API: 23 for M0, explicitly Provisional and subject to compatibility evidence;
 - build: AGP 9.4.0 + Gradle 9.6.0 + JDK 17;
 - Kotlin: AGP built-in Kotlin for Android modules; do not override it merely to chase a newer compiler version;
-- UI: Jetpack Compose + Material 3, Compose BOM 2026.09.00 baseline;
+- UI: Jetpack Compose + Material 3, Compose BOM 2026.06.00 baseline;
 - media: AndroidX Media3 1.11.1 baseline;
 - persistence: no Room requirement in M0; introduce Room when M1 has a real persistent index;
 - settings: add DataStore when persistent user settings exist;
