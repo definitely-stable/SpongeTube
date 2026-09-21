@@ -156,6 +156,6 @@ class RequestTraceSummaryTest {
                 0,
                 null,
                 0,
-                TraceOutcome.COMPLETED);
+                TraceOutcome.SUCCESS);
     }
 }
