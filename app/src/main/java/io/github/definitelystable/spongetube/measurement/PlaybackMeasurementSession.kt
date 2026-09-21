@@ -3,12 +3,14 @@ package io.github.definitelystable.spongetube.measurement
 import android.content.Context
 import androidx.media3.common.ForwardingSimpleBasePlayer
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.Closeable
 import java.io.File
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
+@UnstableApi
 class PlaybackMeasurementSession private constructor(
     val sessionId: String,
     val player: Player,
@@ -221,6 +223,7 @@ private class MeasurementPlayerState(
     }
 }
 
+@UnstableApi
 private class MeasuredPlayer(
     delegate: Player,
     private val state: MeasurementPlayerState,
