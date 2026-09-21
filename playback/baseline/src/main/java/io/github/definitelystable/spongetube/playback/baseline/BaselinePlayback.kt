@@ -62,8 +62,10 @@ object BaselinePlayback {
     ): BaselinePlaybackSession {
         val resources = prepared.consume()
 
+        var player: ExoPlayer? = null
+
         return try {
-            val player = ExoPlayer.Builder(context.applicationContext).build()
+            player = ExoPlayer.Builder(context.applicationContext).build()
             val mediaItem = MediaItem.fromUri(resources.spec.mediaUri)
             val mediaSource = DashMediaSource.Factory(resources.dataSourceFactory)
                 .createMediaSource(mediaItem)
@@ -77,6 +79,7 @@ object BaselinePlayback {
                 transport = resources.transport,
             )
         } catch (throwable: Throwable) {
+            player?.release()
             resources.transport.closeAsync()
             throw throwable
         }
