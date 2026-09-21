@@ -4,6 +4,7 @@ record RequestTrace(
         int schemaVersion,
         String sessionId,
         long requestId,
+        String plane,
         String fixtureId,
         String resourceId,
         String profileId,
@@ -32,6 +33,7 @@ record RequestTrace(
         field(json, "schemaVersion", schemaVersion).append(',');
         field(json, "sessionId", sessionId).append(',');
         field(json, "requestId", requestId).append(',');
+        field(json, "plane", plane).append(',');
         nullableField(json, "fixtureId", fixtureId).append(',');
         nullableField(json, "resourceId", resourceId).append(',');
         field(json, "profileId", profileId).append(',');
