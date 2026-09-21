@@ -55,6 +55,9 @@ class DashFixtureContractTest {
                 "segment-$RepresentationID$-$Number%05d$.m4s");
         assertSegmentTemplate(audio, "init-$RepresentationID$.m4s",
                 "segment-$RepresentationID$-$Number%05d$.m4s");
+
+        assertTimelineCoverage(video, 180L);
+        assertTimelineCoverage(audio, 180L);
     }
 
     private static void assertSegmentTemplate(
@@ -68,6 +71,38 @@ class DashFixtureContractTest {
         assertEquals(expectedInitialization, template.getAttribute("initialization"));
         assertEquals(expectedMedia, template.getAttribute("media"));
         assertEquals("1", template.getAttribute("startNumber"));
+    }
+
+    private static void assertTimelineCoverage(Element representation, long expectedSeconds) {
+        Element template = (Element) representation
+                .getElementsByTagNameNS(DASH_NS, "SegmentTemplate")
+                .item(0);
+        long timescale = Long.parseLong(template.getAttribute("timescale"));
+
+        Element timeline = (Element) template
+                .getElementsByTagNameNS(DASH_NS, "SegmentTimeline")
+                .item(0);
+        NodeList segments = timeline.getElementsByTagNameNS(DASH_NS, "S");
+
+        long totalUnits = 0;
+        for (int index = 0; index < segments.getLength(); index++) {
+            Element segment = (Element) segments.item(index);
+            long duration = Long.parseLong(segment.getAttribute("d"));
+            long repeat = segment.hasAttribute("r")
+                    ? Long.parseLong(segment.getAttribute("r"))
+                    : 0L;
+            if (repeat < 0) {
+                throw new AssertionError("Canonical F1 must not use open-ended SegmentTimeline repeats");
+            }
+            totalUnits = Math.addExact(
+                    totalUnits,
+                    Math.multiplyExact(duration, repeat + 1L));
+        }
+
+        assertEquals(
+                Math.multiplyExact(timescale, expectedSeconds),
+                totalUnits,
+                representation.getAttribute("id") + " timeline coverage");
     }
 
     private static Document parse(Path path) throws Exception {
