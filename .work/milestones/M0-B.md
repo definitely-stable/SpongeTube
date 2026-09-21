@@ -513,10 +513,10 @@ Canonical B3 generator: FFmpeg 9.0.2, released 2026-09-18.
 
 Committed B3 observations:
 - F0: 1,054,544 bytes; 843,635 bit/s measured average;
-- F1: 13,956,164 bytes including MPD;
+- F1: 13,956,166 bytes including MPD;
 - F1 media payload: 13,954,053 bytes;
 - F1 referencePlaybackBitrateBps: 620,180;
-- total F0 + F1: 15,010,708 bytes, well below the 40 MiB budget.
+- total F0 + F1: 15,010,710 bytes, well below the 40 MiB budget.
 
 Synthetic video/audio sources avoid external media licensing dependencies.
 
