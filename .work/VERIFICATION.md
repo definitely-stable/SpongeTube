@@ -73,7 +73,7 @@ Initial reproducible profiles:
 | ID | Profile | Shape |
 |---|---|---|
 | N0 | Good Wi-Fi | 50 Mbps, 20 ms RTT, no loss |
-| N1 | Slow application delivery | 1.5 Mbps aggregate fixture-body pacing + 120 ms configured first-body delay (not RTT) |
+| N1 | Slow application delivery | 0.50 × F1 committed reference playback bitrate as aggregate A/V pacing + 120 ms configured first-body delay (not RTT) |
 | N2 | High latency | 8 Mbps, 450 ms RTT, jitter |
 | N3 | Burst/blackout | 8 Mbps for 15 s, 0 for 30 s, repeat |
 | N4 | Long no-progress window | healthy delivery → session-wide fixture-body progress stops for 120 s → delivery resumes |
