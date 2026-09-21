@@ -410,17 +410,27 @@ RetentionClass  EPHEMERAL | CACHED | PINNED
 Freshness       CURRENT | STALE_DESCRIPTOR
 ```
 
-### Storage backends
+### Storage backend — frozen M1 decision
 
-M0/M1 may start with Media3 `SimpleCache/CacheDataSource` or a loose-file implementation for speed of validation.
+M0 `SimpleCache/CacheDataSource` is a reference baseline only. Sponge Core must not use, wrap or promote that cache as its persistent source of truth.
 
-The architecture must allow replacing it with a packed-extent backend if benchmarks show excessive file count, write amplification, fsync cost or SQLite overhead.
+The first M1 vertical slice uses a Sponge-owned extent store:
+
+- media bytes are immutable extent files under app-private durable storage (`filesDir/sponge/extents/`), sharded by generated extent identity;
+- a fetch writes a temporary file, closes and fsyncs it, computes/validates integrity, then atomically renames it to its immutable extent path;
+- Room/SQLite owns the durable metadata/index and journal: MediaAsset, TrackVariant, extent identity, media/range coverage, byte length, integrity state, retention class and commit/recovery state;
+- only after the durable file exists does one Room transaction publish the extent as `PRESENT + VALID` and make its coverage visible;
+- startup recovery deletes orphan temporary files, rejects index rows whose immutable extent is missing/invalid, and never invents coverage;
+- PlaybackBridge reads only coverage published by the Sponge index; it never falls back to a second remote Media3 fetch for coverage owned or in-flight by Sponge Core.
+
+The M1 backend is intentionally immutable-file based rather than one file per provider segment. FetchBroker may coalesce adjacent coverage into one extent, so provider segmentation is not storage identity. Packed append-only containers are a later storage optimization only if measured file-count/I/O cost justifies them; adopting them must not change the ExtentStore/CoverageIndex contract.
 
 ### Durable locations
 
-- ephemeral experimentation/cache may use `cacheDir`;
-- Smart Buffer data that promises persistence must live in app-managed durable storage;
-- pinned offline data must not rely on system-evictable cache storage.
+- M0 reference-cache experimentation may use `cacheDir`;
+- Sponge extents that contribute to Playable Reserve live under app-private `filesDir`, not system-evictable cache storage;
+- pinned/offline retention is a metadata policy over the same validated extent store, not a second download cache;
+- exported/remuxed user files are a separate optional product output and never the playback source of truth.
 
 ## 12. Offline semantics
 
