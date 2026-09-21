@@ -24,6 +24,9 @@ record MediaLabConfig(
         if (!Files.isDirectory(fixtureRoot)) {
             throw new IllegalArgumentException("Fixture root is not a directory: " + fixtureRoot);
         }
+        if (tracePath.startsWith(fixtureRoot)) {
+            throw new IllegalArgumentException("Trace path must be outside the fixture root");
+        }
         if (!SESSION_ID.matcher(sessionId).matches()) {
             throw new IllegalArgumentException("sessionId must match " + SESSION_ID.pattern());
         }
