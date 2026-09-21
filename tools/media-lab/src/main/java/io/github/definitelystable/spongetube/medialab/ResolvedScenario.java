@@ -12,6 +12,7 @@ record ResolvedScenario(
         String scenarioId,
         MediaLabProfile profile,
         long firstBodyDelayMs,
+        Long referencePlaybackBitrateBps,
         Double aggregateRateRatio,
         Long aggregateRateBps,
         int writeQuantumBytes,
@@ -65,6 +66,7 @@ record ResolvedScenario(
                     0,
                     null,
                     null,
+                    null,
                     config.writeQuantumBytes(),
                     null,
                     null,
@@ -82,6 +84,7 @@ record ResolvedScenario(
                         "N1",
                         MediaLabProfile.N1,
                         120,
+                        reference,
                         CANONICAL_N1_RATE_RATIO,
                         resolvedRate,
                         config.writeQuantumBytes(),
@@ -94,6 +97,7 @@ record ResolvedScenario(
                     "N4",
                     MediaLabProfile.N4,
                     0,
+                    null,
                     null,
                     null,
                     config.writeQuantumBytes(),
@@ -119,6 +123,7 @@ record ResolvedScenario(
                 profile,
                 firstBodyDelayMs,
                 null,
+                null,
                 aggregateRateBps,
                 writeQuantumBytes,
                 noProgressStartAfterMs,
@@ -142,6 +147,8 @@ record ResolvedScenario(
                 + Json.quote("scenarioId") + ":" + Json.quote(scenarioId) + ","
                 + Json.quote("profileId") + ":" + Json.quote(profile.name()) + ","
                 + Json.quote("firstBodyDelayMs") + ":" + firstBodyDelayMs + ","
+                + Json.quote("referencePlaybackBitrateBps") + ":"
+                + nullableNumber(referencePlaybackBitrateBps) + ","
                 + Json.quote("aggregateRateRatio") + ":" + ratioJson(aggregateRateRatio) + ","
                 + Json.quote("aggregateRateBps") + ":" + nullableNumber(aggregateRateBps) + ","
                 + Json.quote("writeQuantumBytes") + ":" + writeQuantumBytes + ","
