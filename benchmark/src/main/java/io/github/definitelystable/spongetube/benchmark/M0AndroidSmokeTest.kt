@@ -20,10 +20,15 @@ class M0AndroidSmokeTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val benchmarkContext = instrumentation.context
         val device = UiDevice.getInstance(instrumentation)
-        val runId = InstrumentationRegistry.getArguments()
+        val arguments = InstrumentationRegistry.getArguments()
+        val runId = arguments
             .getString(RUN_ID_ARGUMENT)
             ?.takeIf { RUN_ID.matches(it) }
             ?: DEFAULT_RUN_ID
+        val expectedTransport = arguments
+            .getString(EXPECTED_TRANSPORT_ARGUMENT)
+            ?.takeIf { EXPECTED_TRANSPORT.matches(it) }
+            ?: "HTTP_ENGINE"
         val sessionId = "$runId-1"
 
         device.pressHome()
@@ -54,13 +59,13 @@ class M0AndroidSmokeTest {
         )
         assertTrue("DIRECT baseline never reached playing state", playing)
 
-        val httpEngine = device.wait(
-            Until.hasObject(By.textContains("HTTP_ENGINE")),
+        val expectedTransportVisible = device.wait(
+            Until.hasObject(By.textContains(expectedTransport)),
             5_000,
         )
         assertTrue(
-            "API 36 smoke did not resolve recommended transport to HTTP_ENGINE",
-            httpEngine,
+            "recommended transport did not resolve to $expectedTransport",
+            expectedTransportVisible,
         )
 
         device.pressHome()
@@ -82,7 +87,10 @@ class M0AndroidSmokeTest {
 
     private companion object {
         const val RUN_ID_ARGUMENT = "spongetube.runId"
+        const val EXPECTED_TRANSPORT_ARGUMENT =
+            "spongetube.expectedTransport"
         const val DEFAULT_RUN_ID = "android-smoke"
         val RUN_ID = Regex("[A-Za-z0-9._-]+")
+        val EXPECTED_TRANSPORT = Regex("[A-Z0-9_]+")
     }
 }
