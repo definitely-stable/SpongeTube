@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,43 @@ def ffprobe_json(path: pathlib.Path) -> dict:
     return json.loads(output)
 
 
+def normalize_dash_max_segment_duration(path: pathlib.Path) -> str:
+    """Correct FFmpeg's requested-duration MPD claim to the actual timeline maximum."""
+    dash_ns = {"d": "urn:mpeg:dash:schema:mpd:2011"}
+    root = ET.parse(path).getroot()
+
+    max_duration_ms = 0
+    for template in root.findall(".//d:SegmentTemplate", dash_ns):
+        timescale = int(template.attrib["timescale"])
+        for segment in template.findall("d:SegmentTimeline/d:S", dash_ns):
+            duration = int(segment.attrib["d"])
+            duration_ms = (duration * 1000 + timescale - 1) // timescale
+            max_duration_ms = max(max_duration_ms, duration_ms)
+
+    if max_duration_ms <= 0:
+        raise SystemExit("F1 MPD has no SegmentTimeline duration")
+
+    whole_seconds, milliseconds = divmod(max_duration_ms, 1000)
+    normalized = (
+        f"PT{whole_seconds}.0S"
+        if milliseconds == 0
+        else f"PT{whole_seconds}.{milliseconds:03d}S"
+    )
+
+    text = path.read_text(encoding="utf-8")
+    updated, count = re.subn(
+        r'maxSegmentDuration="[^"]+"',
+        f'maxSegmentDuration="{normalized}"',
+        text,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("Expected exactly one MPD maxSegmentDuration attribute")
+
+    path.write_text(updated, encoding="utf-8")
+    return normalized
+
+
 def resource(relative: str, role: str, content_type: str) -> dict:
     path = ROOT / relative
     return {
@@ -61,6 +99,10 @@ def resource(relative: str, role: str, content_type: str) -> dict:
 f0_resources = [
     resource("F0/progressive.mp4", "progressive-av", "video/mp4"),
 ]
+
+normalized_max_segment_duration = normalize_dash_max_segment_duration(
+    ROOT / "F1/manifest.mpd"
+)
 
 f1_resources = [
     resource("F1/manifest.mpd", "dash-manifest", "application/dash+xml"),
@@ -189,6 +231,7 @@ with tempfile.TemporaryDirectory(prefix="spongetube-fixtures-") as temp_dir:
             "mpd": {
                 "type": mpd.attrib.get("type"),
                 "mediaPresentationDuration": mpd.attrib.get("mediaPresentationDuration"),
+                "maxSegmentDuration": mpd.attrib.get("maxSegmentDuration"),
                 "representations": representations,
             },
             "firstVideoSegment": ffprobe_json(video),
@@ -206,4 +249,5 @@ print(json.dumps({
     "F0Bytes": f0_payload,
     "F1Bytes": sum(item["sizeBytes"] for item in f1_resources),
     "referencePlaybackBitrateBps": reference_bitrate,
+    "maxSegmentDuration": normalized_max_segment_duration,
 }, indent=2))
