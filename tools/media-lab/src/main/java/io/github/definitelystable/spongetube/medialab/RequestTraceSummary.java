@@ -118,8 +118,8 @@ final class RequestTraceSummary {
                 .thenComparingLong(Interval::endExclusive));
 
         long total = 0;
-        long currentStart = sorted.getFirst().start();
-        long currentEnd = sorted.getFirst().endExclusive();
+        long currentStart = sorted.get(0).start();
+        long currentEnd = sorted.get(0).endExclusive();
 
         for (int index = 1; index < sorted.size(); index++) {
             Interval next = sorted.get(index);
