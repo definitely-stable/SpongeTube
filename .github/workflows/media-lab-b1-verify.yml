@@ -30,10 +30,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Run B1 tests with committed dependency verification
+      - name: Regenerate verification metadata and run B1 tests
         shell: bash
         run: |
-          ./gradlew :tools:media-lab:test --stacktrace
+          ./gradlew --write-verification-metadata sha256 :tools:media-lab:test --stacktrace
 
       - name: Upload B1 verification artifacts
         if: always()
