@@ -3,6 +3,7 @@ package io.github.definitelystable.spongetube.medialab;
 final class RequestTraceAccumulator {
 
     private final MediaLabConfig config;
+    private final ResolvedScenario scenario;
     private final long requestId;
     private final long handlerStartedAtMonotonicNs;
     private final String method;
@@ -17,16 +18,19 @@ final class RequestTraceAccumulator {
     long plannedResponseBytes;
     long bodyBytesWritten;
     Long firstBodyWriteAtMonotonicNs;
+    long noProgressWaitNs;
     TraceOutcome outcome = TraceOutcome.SERVER_IO_ERROR;
 
     RequestTraceAccumulator(
             MediaLabConfig config,
+            ResolvedScenario scenario,
             long requestId,
             long handlerStartedAtMonotonicNs,
             String method,
             String path,
             String rangeHeader) {
         this.config = config;
+        this.scenario = scenario;
         this.requestId = requestId;
         this.handlerStartedAtMonotonicNs = handlerStartedAtMonotonicNs;
         this.method = method;
@@ -34,10 +38,14 @@ final class RequestTraceAccumulator {
         this.rangeHeader = rangeHeader;
     }
 
-    void markFirstBodyWrite() {
+    void markFirstBodyWrite(long atMonotonicNs) {
         if (firstBodyWriteAtMonotonicNs == null) {
-            firstBodyWriteAtMonotonicNs = System.nanoTime();
+            firstBodyWriteAtMonotonicNs = atMonotonicNs;
         }
+    }
+
+    void addNoProgressWaitNanos(long waitNanos) {
+        noProgressWaitNs = Math.addExact(noProgressWaitNs, Math.max(0L, waitNanos));
     }
 
     RequestTrace complete(long completedAtMonotonicNs) {
@@ -54,6 +62,8 @@ final class RequestTraceAccumulator {
                 fixtureId,
                 resourceId,
                 config.profile().name(),
+                scenario.scenarioId(),
+                scenario.scenarioHash(),
                 method,
                 path,
                 rangeHeader,
@@ -67,8 +77,8 @@ final class RequestTraceAccumulator {
                 completedAtMonotonicNs,
                 firstWriteDelayMs,
                 handlerDurationMs,
-                null,
-                0,
+                scenario.aggregateRateBps(),
+                noProgressWaitNs / 1_000_000L,
                 outcome);
     }
 }
