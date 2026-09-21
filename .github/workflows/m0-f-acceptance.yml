@@ -53,11 +53,18 @@ jobs:
           ./gradlew --dependency-verification=strict --configuration-cache \
             :app:assembleBenchmark \
             :benchmark:assembleBenchmark \
-            :tools:media-lab:installDist
+            :tools:media-lab:installDist \
+            :tools:media-lab:test
           python3 -m unittest discover \
             -s scripts/measurement/tests \
             -p 'test_*.py' \
             -v
+
+          mkdir -p build/m0-acceptance/lab-tests
+          cp -R tools/media-lab/build/test-results/test/. \
+            build/m0-acceptance/lab-tests/
+          grep -R "media-lab postGateDrainBytes=" \
+            build/m0-acceptance/lab-tests/
 
       - name: Prepare API 36 emulator
         shell: bash
