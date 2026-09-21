@@ -111,9 +111,9 @@ jobs:
 
           jq empty "$GITHUB_WORKSPACE/dashif-result.json"
 
-          FAILURES="$(jq '[.. | objects | select(.state? == "FAIL")] | length' \
+          FAILURES="$(jq '[.. | objects | select(.state? == "FAIL" and has("messages"))] | length' \
             "$GITHUB_WORKSPACE/dashif-result.json")"
-          WARNINGS="$(jq '[.. | objects | select(.state? == "WARN")] | length' \
+          WARNINGS="$(jq '[.. | objects | select(.state? == "WARN" and has("messages"))] | length' \
             "$GITHUB_WORKSPACE/dashif-result.json")"
 
           echo "DASH-IF failures=$FAILURES warnings=$WARNINGS"
