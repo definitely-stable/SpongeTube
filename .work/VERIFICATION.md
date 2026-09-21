@@ -16,6 +16,8 @@ A SpongeTube performance claim is accepted only when:
 
 Numeric product targets start as provisional and become release gates only after baseline runs on representative devices.
 
+Emulator results may validate deterministic correctness and API compatibility, but emulator timing/throughput/power numbers are not accepted as representative device-performance evidence. A performance conclusion becomes Validated only after a documented physical-device run.
+
 ## 2. Benchmark subjects
 
 Compare three modes where possible:
@@ -34,15 +36,17 @@ vs
 packed extent prototype
 ```
 
-For transport experiments:
+For transport experiments, start from:
 
 ```text
-OkHttp
+Media3 recommended platform path (HttpEngine where supported)
 vs
-Cronet
+Media3 portable DefaultHttpDataSource fallback
 ```
 
-Never claim transport superiority from synthetic request throughput alone; include playback continuity and energy/resource impact.
+Additional candidates such as OkHttp or Cronet are introduced only when a measured M2 question justifies them.
+
+Never claim transport superiority from synthetic request throughput alone; include playback continuity, compatibility and device/resource impact.
 
 ## 3. Deterministic test origin
 
@@ -249,7 +253,22 @@ The suite must not hammer the provider. Request budgets and backoff are part of 
 
 A compatibility regression is an adapter issue unless Sponge Core invariants also fail.
 
-## 10. CI tiers
+## 10. M0 baseline contract
+
+Before Sponge Core exists, M0 establishes two non-Sponge reference paths:
+
+```text
+A. Direct Media3 playback
+B. Media3 CacheDataSource + SimpleCache
+```
+
+Both use the same deterministic fixtures and network profiles. Do not tune Media3 buffering to make the later Sponge comparison easier.
+
+M0 must produce a versioned machine-readable result containing build, device/runtime, fixture, network profile, baseline mode, transport, metrics and errors. The exact schema is defined in `.work/milestones/M0.md`.
+
+M0 implements N0, N1 and canonical N4 first. The broader N2/N3/N5–N11 matrix remains specified here for M2 unless an earlier implementation is required to prove the harness.
+
+## 11. CI tiers
 
 ```text
 PR
@@ -271,7 +290,7 @@ Release candidate
   process-kill/reboot recovery
 ```
 
-## 11. Evidence format
+## 12. Evidence format
 
 Each accepted architecture/performance decision gets a short file:
 
@@ -297,7 +316,7 @@ Known limitations
 
 No statement such as "Cronet is faster", "packed storage is better" or "20-minute reserve is optimal" is canonical without such evidence.
 
-## 12. Tooling baseline
+## 13. Tooling baseline
 
 Candidates:
 
