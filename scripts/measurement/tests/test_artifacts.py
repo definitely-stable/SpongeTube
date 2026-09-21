@@ -14,6 +14,50 @@ import artifacts
 
 class ArtifactContractTest(unittest.TestCase):
 
+    def write_run_manifest(
+        self,
+        root: pathlib.Path,
+        session_id: str,
+        scenario_hash: str,
+        run_id: str = "run-1",
+    ) -> pathlib.Path:
+        path = root / "run-manifest.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "runId": run_id,
+                    "sessionId": session_id,
+                    "scenario": {
+                        "scenarioId": "N0",
+                        "scenarioHash": scenario_hash,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def playback_summary(
+        self,
+        session_id: str,
+        status: str = "COMPLETE",
+    ) -> dict:
+        return {
+            "schemaVersion": 1,
+            "sessionId": session_id,
+            "status": status,
+            "ttffNs": 100,
+            "stallCount": 0,
+            "stallTotalNs": 0,
+            "progressIntentNs": 1_000,
+            "sessionWallNs": 1_200,
+            "rebufferRatio": 0.0,
+            "seekToFrame": [],
+            "playbackErrorCodes": [],
+            "issues": [],
+        }
+
     def test_manifest_binds_fixture_hash_and_clock_domains(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
@@ -110,17 +154,10 @@ class ArtifactContractTest(unittest.TestCase):
             playback.write_text(
                 json.dumps(
                     {
-                        "schemaVersion": 1,
-                        "sessionId": "session-1",
-                        "status": "COMPLETE",
-                        "ttffNs": 100,
-                        "stallCount": 0,
-                        "stallTotalNs": 0,
+                        **self.playback_summary("session-1"),
                         "seekToFrame": [
                             {"operationId": 1, "durationNs": 50}
                         ],
-                        "playbackErrorCodes": [],
-                        "issues": [],
                     }
                 ),
                 encoding="utf-8",
@@ -142,12 +179,18 @@ class ArtifactContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            run_manifest = self.write_run_manifest(
+                root,
+                "session-1",
+                "c" * 64,
+            )
             args = argparse.Namespace(
                 run_id="run-1",
                 session_id="session-1",
                 scenario_hash="c" * 64,
                 playback_summary=str(playback),
                 network_summary=str(network),
+                run_manifest=str(run_manifest),
                 lab_calibration=None,
                 limitation=[],
             )
@@ -157,6 +200,11 @@ class ArtifactContractTest(unittest.TestCase):
             self.assertEqual("COMPLETE", result["status"])
             self.assertEqual("session-1", result["sessionId"])
             self.assertEqual("c" * 64, result["scenarioHash"])
+            self.assertEqual(
+                artifacts.file_sha256(run_manifest),
+                result["manifestSha256"],
+            )
+            self.assertEqual(0.0, result["playback"]["rebufferRatio"])
             self.assertEqual([50], result["playback"]["seekToFrameNs"])
             self.assertEqual(100, result["network"]["duplicateRangeBytes"])
 
@@ -168,17 +216,7 @@ class ArtifactContractTest(unittest.TestCase):
 
             playback.write_text(
                 json.dumps(
-                    {
-                        "schemaVersion": 1,
-                        "sessionId": "android-session",
-                        "status": "COMPLETE",
-                        "ttffNs": 100,
-                        "stallCount": 0,
-                        "stallTotalNs": 0,
-                        "seekToFrame": [],
-                        "playbackErrorCodes": [],
-                        "issues": [],
-                    }
+                    self.playback_summary("android-session")
                 ),
                 encoding="utf-8",
             )
@@ -199,12 +237,18 @@ class ArtifactContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            run_manifest = self.write_run_manifest(
+                root,
+                "android-session",
+                "c" * 64,
+            )
             args = argparse.Namespace(
                 run_id="run-1",
                 session_id="android-session",
                 scenario_hash="c" * 64,
                 playback_summary=str(playback),
                 network_summary=str(network),
+                run_manifest=str(run_manifest),
                 lab_calibration=None,
                 limitation=[],
             )
@@ -221,17 +265,7 @@ class ArtifactContractTest(unittest.TestCase):
 
             playback.write_text(
                 json.dumps(
-                    {
-                        "schemaVersion": 1,
-                        "sessionId": "session-1",
-                        "status": "COMPLETE",
-                        "ttffNs": 100,
-                        "stallCount": 0,
-                        "stallTotalNs": 0,
-                        "seekToFrame": [],
-                        "playbackErrorCodes": [],
-                        "issues": [],
-                    }
+                    self.playback_summary("session-1")
                 ),
                 encoding="utf-8",
             )
@@ -269,12 +303,18 @@ class ArtifactContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            run_manifest = self.write_run_manifest(
+                root,
+                "session-1",
+                "c" * 64,
+            )
             args = argparse.Namespace(
                 run_id="run-1",
                 session_id="session-1",
                 scenario_hash="c" * 64,
                 playback_summary=str(playback),
                 network_summary=str(network),
+                run_manifest=str(run_manifest),
                 lab_calibration=str(calibration),
                 limitation=[],
             )
@@ -294,17 +334,7 @@ class ArtifactContractTest(unittest.TestCase):
 
             playback.write_text(
                 json.dumps(
-                    {
-                        "schemaVersion": 1,
-                        "sessionId": "session-1",
-                        "status": "COMPLETE",
-                        "ttffNs": 100,
-                        "stallCount": 0,
-                        "stallTotalNs": 0,
-                        "seekToFrame": [],
-                        "playbackErrorCodes": [],
-                        "issues": [],
-                    }
+                    self.playback_summary("session-1")
                 ),
                 encoding="utf-8",
             )
@@ -335,12 +365,18 @@ class ArtifactContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            run_manifest = self.write_run_manifest(
+                root,
+                "session-1",
+                "c" * 64,
+            )
             args = argparse.Namespace(
                 run_id="run-1",
                 session_id="session-1",
                 scenario_hash="c" * 64,
                 playback_summary=str(playback),
                 network_summary=str(network),
+                run_manifest=str(run_manifest),
                 lab_calibration=str(calibration),
                 limitation=[],
             )
@@ -353,10 +389,14 @@ class ArtifactContractTest(unittest.TestCase):
             run_id="run-1",
             session_id="session-1",
             scenario_hash="c" * 64,
+            manifest_sha256="d" * 64,
             status="COMPLETE",
             ttff_ns=100,
             stall_count=1,
             stall_total_ns=20,
+            progress_intent_ns=100,
+            session_wall_ns=200,
+            rebuffer_ratio=0.2,
             seek_to_frame_ns=["30"],
             playback_error_code=[],
             request_count=4,
@@ -377,10 +417,14 @@ class ArtifactContractTest(unittest.TestCase):
             run_id="run-1",
             session_id="session-1",
             scenario_hash="c" * 64,
+            manifest_sha256="d" * 64,
             status="PARTIAL",
             ttff_ns=None,
             stall_count=0,
             stall_total_ns=0,
+            progress_intent_ns=None,
+            session_wall_ns=None,
+            rebuffer_ratio=None,
             seek_to_frame_ns=[],
             playback_error_code=[],
             request_count=0,
