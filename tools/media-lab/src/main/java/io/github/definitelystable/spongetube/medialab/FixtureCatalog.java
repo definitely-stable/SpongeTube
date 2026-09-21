@@ -34,6 +34,11 @@ final class FixtureCatalog {
 
         Map<String, FixtureResource> resources = new HashMap<>();
         var manifest = FixtureManifest.tryLoad(realRoot);
+        if (manifest.isPresent()) {
+            // A canonical fixture root must never be served with stale or mutated bytes.
+            // Ad-hoc test roots without manifest.json retain the lightweight catalog path.
+            FixtureManifestVerifier.verify(realRoot);
+        }
 
         try (Stream<Path> fixtureDirs = Files.list(realRoot)) {
             for (Path fixtureDir : fixtureDirs.sorted().toList()) {
