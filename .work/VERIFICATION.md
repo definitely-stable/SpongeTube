@@ -1,304 +1,599 @@
-# SpongeTube Verification & Benchmark Plan v0.1
+# SpongeTube Verification & Benchmark Plan v0.2
 
 Status: **Provisional**
 Date: **2026-09-21**
 
 ## 1. Rule: architecture must be falsifiable
 
-A SpongeTube performance claim is accepted only when:
+A SpongeTube performance or resilience claim is accepted only when:
 
-1. the scenario is reproducible;
-2. the baseline is named;
+1. the scenario is reproducible and versioned;
+2. the compared baseline/mode is named;
 3. the metric definition is explicit;
-4. raw result artifacts are retained by CI;
-5. a short evidence summary is committed under `.work/evidence/`;
-6. regressions have a declared threshold.
+4. the measurement layer is appropriate for the claim;
+5. raw result artifacts are retained;
+6. a concise evidence summary is committed under `.work/evidence/`;
+7. uncertainty and known limitations are reported;
+8. a regression threshold is introduced only after pilot evidence supports it.
 
-Numeric product targets start as provisional and become release gates only after baseline runs on representative devices.
+Configured impairment is not automatically measured impairment. Emulator correctness is not representative device performance. Live YouTube compatibility is not a deterministic benchmark.
 
-Emulator results may validate deterministic correctness and API compatibility, but emulator timing/throughput/power numbers are not accepted as representative device-performance evidence. A performance conclusion becomes Validated only after a documented physical-device run.
+Numeric product targets start as Provisional and become release gates only after repeatable evidence exists on representative physical devices.
 
-## 2. Benchmark subjects
+## 2. Laboratory architecture: one responsibility per layer
 
-Compare three modes where possible:
-
-```text
-A. Direct Media3 playback
-B. Media3 bounded cache baseline
-C. Sponge Smart Buffer
-```
-
-For storage experiments, compare:
+SpongeTube intentionally does not build one universal "network emulator".
 
 ```text
-SimpleCache / loose extents
-vs
-packed extent prototype
+L0  Deterministic model tests
+    fake clocks / fake data / property and state-machine tests
+
+L1  Sponge Media Lab origin
+    HTTP semantics / fixtures / Range / deterministic delivery N0/N1/N4
+
+L2  Transport-fault layer (M2)
+    connection timeout / reset / truncation / slow close
+    candidate: Toxiproxy or a smaller evidence-backed equivalent
+
+L3  Packet/network layer (M2)
+    RTT / jitter / loss / burst loss / reorder / duplicate / corruption
+    candidate: scoped Linux tc/netem
+
+L4  Android playback harness
+    DIRECT / STANDARD_CACHE / later SPONGE
+
+L5  Device performance layer
+    Macrobenchmark / Perfetto / physical-device matrix
+
+L6  Real-provider compatibility
+    bounded YouTube probes; no deterministic performance conclusions
 ```
 
-For transport experiments, start from:
+A failure should be attributable to the lowest layer that can reproduce it.
+
+M0 implements L0/L1/L4/L5 foundations. M2 introduces L2/L3 and Android route/VPN semantics.
+
+## 3. Deterministic Media Lab boundary
+
+M0 Media Lab provides deterministic **application-layer media delivery**:
+
+- fixed fixture bytes;
+- deterministic HTTP Range behavior;
+- deterministic first-body delay;
+- session-global aggregate body pacing;
+- session-global no-progress windows;
+- structured request/session traces.
+
+It does not claim to emulate:
+
+- RTT;
+- packet loss/reorder/corruption;
+- TCP congestion control;
+- QUIC/HTTP/3 behavior;
+- VPN route switching;
+- Android default-network replacement.
+
+The Media Lab uses physically independent data and control listeners/executors. A media blackout must not prevent host orchestration/health/config requests from being scheduled.
+
+Android uses `adb reverse` only for deterministic media-delivery tests. `adb reverse` changes the path and therefore **must not** be used as evidence for VPN/default-route behavior. N7 and equivalent route-policy tests require a path that actually traverses Android's selected network.
+
+## 4. Fault model
+
+Each scenario is composed from independent fault planes instead of growing an unbounded list of monolithic profile IDs.
+
+### 4.1 Delivery plane
+
+Owned by Media Lab.
+
+Examples:
+
+- first-body delay;
+- aggregate media-body rate;
+- scheduled no-progress window;
+- deterministic burst schedule where later required.
+
+### 4.2 Transport plane
+
+Owned by an M2 proxy/fault injector outside Media Lab.
+
+Examples:
+
+- connection timeout;
+- reset;
+- connection close/truncation;
+- slow close;
+- connection-level data limit.
+
+A Toxiproxy-style mechanism is a candidate because its control plane is separate from proxied traffic and faults operate at the TCP stream boundary.
+
+### 4.3 Packet/network plane
+
+Owned by an M2 scoped network emulator.
+
+Examples:
+
+- RTT/jitter;
+- random or burst loss;
+- reorder;
+- duplication;
+- corruption;
+- rate/slot behavior.
+
+If `tc/netem` is selected, stochastic profiles record the explicit random seed. Do not shape the host loopback globally when that would also perturb ADB/control traffic; use a scoped interface/namespace/path or another isolated mechanism.
+
+### 4.4 Provider plane
+
+Owned by deterministic HTTP/provider simulation.
+
+Examples:
+
+- 403 after defined request/time boundary;
+- 429 + Retry-After;
+- descriptor/signed-URL expiry;
+- refresh succeeds/fails;
+- bounded provider-request budget.
+
+Provider wall-clock semantics use a separate virtual wall clock where needed. They do not reuse the monotonic clock used for durations/deadlines.
+
+### 4.5 Android route plane
+
+Owned by Android integration tests.
+
+Examples:
+
+- validated network disappears;
+- default network changes;
+- VPN default route disappears/reappears;
+- privacy policy prevents silent direct-network fallback.
+
+These scenarios cannot be proven by host-only proxying or `adb reverse`.
+
+### 4.6 Storage plane
+
+Owned by cache/storage harness.
+
+Examples:
+
+- quota pressure;
+- slow writes;
+- process death during commit;
+- eviction pressure;
+- recovery after incomplete temporary state.
+
+## 5. Initial scenario matrix
+
+The IDs remain useful shorthand, but `plane` is normative.
+
+| ID | Plane | Scenario | Milestone |
+|---|---|---|---|
+| N0 | Delivery | CONTROL: no artificial delay, unlimited rate, no no-progress window | M0 |
+| N1 | Delivery | aggregate A/V pacing = 0.50 × committed F1 reference playback bitrate + 120 ms first-body delay | M0 |
+| N2 | Network | high latency/jitter; exact values resolved in scenario artifact | M2 |
+| N3 | Delivery/Network experiment | burst/blackout pattern; plane selected explicitly per experiment | M2 |
+| N4 | Delivery | canonical 120 s session-wide media-body no-progress window | M0 |
+| N5 | Network | lossy/burst-loss profile with explicit seed | M2 |
+| N6 | Transport/Route | connection reset or default-network replacement; these are separate variants | M2 |
+| N7 | Android route | VPN-like default-route disappearance/reappearance | M2 |
+| N8 | Provider | deterministic 403 | M2 |
+| N9 | Provider | deterministic 429 + Retry-After | M2 |
+| N10 | Provider | expired descriptor/fetch mapping; refresh path exercised | M2 |
+| N11 | Storage | quota/slow-write/storage-pressure profile | M2 |
+
+The old shorthand "N0 = 50 Mbps / 20 ms RTT" is removed: M0 N0 is a control with no artificial network semantics.
+
+## 6. Scenario identity and reproducibility
+
+A profile label is not enough to identify a benchmark.
+
+Every resolved scenario has a canonical machine-readable representation containing, as applicable:
 
 ```text
-Media3 recommended platform path (HttpEngine where supported)
-vs
-Media3 portable DefaultHttpDataSource fallback
+schemaVersion
+scenarioId
+plane
+firstBodyDelayMs
+aggregateRateRatio
+resolvedAggregateRateBps
+writeQuantumBytes
+noProgressStartAfterMs
+noProgressDurationMs
+transportFaults
+networkFaults
+providerFaults
+storageFaults
+randomSeed
 ```
 
-Additional candidates such as OkHttp or Cronet are introduced only when a measured M2 question justifies them.
+`scenarioHash = SHA-256(canonical resolved scenario bytes)`.
 
-Never claim transport superiority from synthetic request throughput alone; include playback continuity, compatibility and device/resource impact.
+Fixture identity is independent and includes the committed fixture manifest/payload hashes.
 
-## 3. Deterministic test origin
+Two runs are directly comparable only when the variables that should remain controlled have matching identities. If a scenario/fixture/transport/device state changes intentionally, the report names it as the experimental variable.
 
-Performance benchmarks must not depend on live YouTube behavior.
+Future random scenarios always persist their seed.
 
-Provide a controlled VOD origin containing:
+## 7. Benchmark subjects
 
-- fixed AVC/VP9/AV1 fixtures where practical;
-- separate audio/video tracks;
-- deterministic DASH/HLS/progressive fixtures;
-- byte-range support;
-- forced 403 after configurable request count/time;
-- descriptor-expiry simulation;
-- delayed response and connection-reset injection.
+Compare three playback modes when they exist:
 
-M0's built-in Media Lab provides deterministic **application-layer delivery impairment** for N0/N1/N4. It must not be described as faithful RTT/packet-loss/TCP/QUIC/VPN emulation. Transport/network-level impairment such as loss, route reset and VPN behavior belongs to M2, where Toxiproxy, Linux `tc/netem` or another evidence-backed mechanism can be selected.
+```text
+A. DIRECT
+   Media3 -> standard transport -> Media Lab
 
-Real YouTube tests are **compatibility probes**, not deterministic performance benchmarks.
+B. STANDARD_CACHE
+   Media3 -> CacheDataSource/SimpleCache -> same transport -> Media Lab
 
-## 4. Network profile matrix
+C. SPONGE
+   Media3 PlaybackBridge -> Sponge Core -> same controlled source
+```
 
-Initial reproducible profiles:
+For B, cache state is part of identity:
 
-| ID | Profile | Shape |
-|---|---|---|
-| N0 | Good Wi-Fi | 50 Mbps, 20 ms RTT, no loss |
-| N1 | Slow application delivery | 0.50 × F1 committed reference playback bitrate as aggregate A/V pacing + 120 ms configured first-body delay (not RTT) |
-| N2 | High latency | 8 Mbps, 450 ms RTT, jitter |
-| N3 | Burst/blackout | 8 Mbps for 15 s, 0 for 30 s, repeat |
-| N4 | Long no-progress window | healthy delivery → session-wide fixture-body progress stops for 120 s → delivery resumes |
-| N5 | Lossy | 5 Mbps, 150 ms RTT, 2% loss |
-| N6 | Route reset | active connection reset/default-network replacement |
-| N7 | VPN flap | VPN-like default route disappears/reappears in test harness |
-| N8 | Provider reject | 403 after configured point |
-| N9 | Rate limited | 429 + Retry-After |
-| N10 | Expired descriptor | old fetch mapping rejected; refresh succeeds |
-| N11 | Storage pressure | limited quota / artificial slow writes |
+- NONE for Direct;
+- COLD after explicit reset;
+- WARM with defined retained coverage.
 
-Numbers are initial benchmark fixtures, not claims about real networks.
+Do not tune Media3 buffer constants to make C look better.
 
-## 5. Correctness gates
+Transport experiments start from:
 
-These are hard invariants and do not wait for performance tuning.
+- recommended platform path (HttpEngine where runtime support exists);
+- DefaultHttpDataSource portable fallback.
+
+OkHttp/Cronet Embedded or another backend is added only for a measured M2 question.
+
+## 8. Correctness gates
+
+Correctness is pass/fail and does not require statistical significance.
 
 ### Fetch ownership
 
-- same FetchKey must not be fetched twice concurrently;
-- player joining an in-flight prefetch must not restart the request;
-- cancellation of one consumer must not cancel remaining consumers.
+- the same FetchKey is not fetched twice concurrently;
+- playback joining an in-flight prefetch does not restart the request;
+- cancellation of one consumer does not cancel remaining consumers.
 
-### Coverage correctness
+### Coverage
 
 - PlayableCoverage is the intersection of required track coverage;
-- cache identity is stable across source URL refresh;
-- quality representations are never mixed as if they were one track;
-- seek uses timeline/range mapping, not hardcoded segment duration.
+- refreshed source URLs do not change stable cache identity;
+- different quality representations are not merged as one track;
+- seeks use timeline/range mapping rather than hard-coded segment duration.
 
 ### Failure recovery
 
-- valid persisted coverage remains after 403, URL expiry or route change;
-- process kill during fetch leaves either a valid committed extent or recoverable temporary state;
-- storage/database crash ordering cannot delete the only valid media copy;
-- network restoration resumes missing coverage without redownloading committed extents.
+- valid persisted coverage survives 403/expiry/route change;
+- process death during a fetch leaves valid committed data or recoverable temporary state;
+- network restoration fetches only missing coverage.
 
-### VPN behavior
+### VPN/default route
 
-- active VPN is respected as the system default route;
-- unexpected VPN disappearance cannot silently trigger a direct-network fetch under the default privacy policy;
-- UI/recovery state is deterministic.
+- the active VPN is respected as Android's system-default route;
+- unexpected VPN loss does not silently trigger direct-network media fetch under the default privacy policy;
+- recovery state is deterministic and observable.
 
-## 6. Primary metrics
+### Media Lab correctness
 
-### Playback
+- Range contract is RFC-correct for the supported subset;
+- N1 bandwidth is session-global across simultaneous A/V;
+- N4 is session-global across in-flight and newly opened media requests;
+- data-plane blockage cannot starve the independent control listener;
+- fixture hashes and structural/conformance evidence match the committed fixture set.
 
-- time to first frame (TTFF), p50/p95;
-- stall count per playback hour;
-- total stall duration per playback hour;
+## 9. Metric groups
+
+### 9.1 Lab accuracy
+
+Before accepting player comparisons, measure the harness itself:
+
+- observedRateBps;
+- rateErrorPct;
+- observedFirstBodyDelayMs;
+- firstBodyDelayErrorMs;
+- observedNoProgressDurationMs;
+- noProgressDurationErrorMs;
+- maxSchedulerSlipMs;
+- host-path post-gate socket-drain characterization.
+
+No fixed error tolerance is invented before pilot runs characterize runner/host jitter.
+
+### 9.2 Playback
+
+- TTFF;
+- stall count;
+- total stall duration;
 - rebuffer ratio;
 - seek-to-frame latency;
-- recovery latency after route restoration.
+- recovery-to-media latency;
+- recovery-to-playback latency.
 
-### Resilience
+Custom SpongeTube event definitions remain normative. Media3 PlaybackStats is recorded as a cross-check where its semantics map cleanly; disagreement is an instrumentation signal, not something to average away.
+
+### 9.3 Resilience
 
 - playable reserve seconds;
-- probability of surviving a defined outage without stall;
-- reserve growth rate;
-- descriptor-refresh recovery success;
-- route-switch continuity rate.
+- reserve at outage start;
+- outage duration;
+- survival margin = reserveAtOutageStart - outageDuration;
+- outage survived without stall;
+- route-switch continuity;
+- descriptor-refresh recovery success.
 
-### Network efficiency
+### 9.4 Network efficiency
 
-- unique media bytes fetched;
-- duplicate-fetch bytes / unique bytes;
+- network media bytes;
+- unique media coverage bytes;
+- duplicate range bytes;
 - request count;
-- 403/429 retry amplification;
+- retry amplification;
+- fetch amplification = networkMediaBytes / uniqueCoverageBytes;
+- prefetch usefulness;
 - wasted-prefetch ratio.
 
-Wasted prefetch is data fetched but never consumed or pinned before eviction. The definition must be time-bounded in each benchmark report.
+Wasted prefetch is time-bounded: bytes fetched speculatively but neither consumed nor explicitly retained before the benchmark's defined terminal/eviction boundary.
 
-### Storage
+### 9.5 Storage
 
 - unique media bytes persisted;
-- bytes written to storage / unique media bytes (write amplification);
+- write amplification;
 - file count;
-- DB operations per media minute;
-- fsync cost;
-- cache recovery time after process death;
+- DB/index operations per media minute;
+- fsync cost where measurable;
+- recovery time after process death;
 - eviction latency.
 
-### Device impact
+### 9.6 Device impact
 
 - CPU time;
-- memory high-water mark;
-- GC pressure;
-- battery/energy delta vs baseline where measurable;
+- RSS/PSS/high-water memory where available;
+- GC time/pressure;
+- disk I/O;
+- battery/energy delta where measurement quality permits;
 - thermal status transitions;
-- disk I/O saturation.
+- dropped frames/audio underruns where relevant.
 
-## 7. Provisional success hypotheses
+## 10. Clock domains and correlation
 
-These are hypotheses for M1/M2, not release promises:
+Host Media Lab monotonic time and Android monotonic time are separate domains.
 
-- duplicate-fetch ratio should converge to approximately zero;
-- if PlayableReserve is greater than an injected outage duration, the outage should cause zero playback stalls;
-- Sponge mode should materially reduce stall time in N3/N4 compared with direct Media3;
-- route change should not discard persisted coverage;
-- Smart mode should use materially less waste than unconditional full-prefetch;
-- packed storage is adopted only if it shows measurable benefit over the simpler backend.
+Never subtract them directly.
 
-## 8. Benchmark layers
+Cross-domain joining uses stable identifiers:
 
-### Unit/property tests
+- sessionId;
+- requestId;
+- scenarioHash;
+- fixture/resource/range identity.
 
-Run on every PR:
+Media Lab response headers expose lab-only correlation IDs. B2 adds session transition events.
 
-- Coverage interval algebra;
-- FetchKey equality;
-- single-flight state machine;
-- deadline scheduling;
-- reserve policy;
-- retry budget;
-- retention/eviction;
-- crash-recovery transitions.
+A future explicit clock-synchronization experiment may estimate offsets for diagnostics, but benchmark correctness must not depend on an assumed synchronized clock.
 
-### JVM/microbenchmarks
+## 11. Run manifest and artifact contract
 
-Run on PR or nightly depending on cost:
+Every automated benchmark run produces a versioned `run-manifest.json` before results are interpreted.
 
-- CoverageIndex operations;
-- scheduler queue operations;
-- DB/index operations;
-- packed/loose extent lookup;
-- policy calculations.
+Minimum identity:
 
-### Android instrumentation
+```json
+{
+  "schemaVersion": 1,
+  "runId": "...",
+  "gitCommit": "...",
+  "fixture": {
+    "id": "F1",
+    "manifestSha256": "..."
+  },
+  "scenario": {
+    "id": "N4",
+    "sha256": "..."
+  },
+  "playback": {
+    "mode": "DIRECT",
+    "transport": "RECOMMENDED_PLATFORM",
+    "cacheState": "NONE"
+  },
+  "device": {},
+  "runtime": {},
+  "orderSeed": 12345
+}
+```
 
-Run on representative emulator/API matrix:
+Recommended artifact layout:
 
-- Media3 integration;
-- DataSource/PlaybackBridge;
-- process recreation;
-- storage behavior;
-- foreground/background transitions.
+```text
+run/
+  manifest.json
+  result.json
 
-### Macrobenchmark/Perfetto
+  server/
+    scenario.json
+    requests.jsonl
+    events.jsonl
+    summary.json
 
-Nightly/release:
+  android/
+    playback-events.jsonl
+    logcat.txt
 
-- startup;
-- video-open-to-first-frame;
-- seek;
-- scroll/feed responsiveness when added;
-- CPU/memory/frame timing;
-- I/O traces.
+  perfetto/
+    trace.pftrace
+    summary.pb
 
-### Physical device suite
+  calibration/
+    result.json
+```
 
-Required before release candidate:
+Large traces stay in CI/artifact storage. Only concise evidence summaries and small canonical fixtures belong in Git.
 
-At minimum include:
+## 12. Benchmark protocol
 
-- low/mid Android device;
-- modern mid/high device with hardware AV1;
-- one device with aggressive OEM background management if available.
+### 12.1 Separate correctness from performance
 
-The exact device list is evidence work, not frozen here.
+Correctness runs answer yes/no invariant questions.
 
-## 9. Real YouTube compatibility suite
+Performance runs estimate distributions and differences. One successful run is not a performance result.
+
+### 12.2 Experimental order
+
+Avoid running all A samples, then all B samples.
+
+Use interleaved/block-randomized ordering with a persisted seed, for example balanced ABC/BCA/CAB blocks or an equivalent design appropriate to the number of modes.
+
+Cache-state runs remain explicit; COLD and WARM are not mixed in one statistical population.
+
+### 12.3 Warmup and compilation
+
+The benchmark identity records:
+
+- build variant;
+- debuggable/profileable state;
+- minification where relevant;
+- Android Macrobenchmark CompilationMode;
+- Baseline Profile presence/state;
+- startup mode where applicable.
+
+A/B/C comparisons use the same compilation state unless compilation is itself the experimental variable.
+
+### 12.4 Repetitions and statistics
+
+Pilot runs determine required repetitions and expected variance.
+
+For small samples report:
+
+- every raw observation;
+- median;
+- min/max;
+- IQR where meaningful.
+
+Do not present p95 as meaningful for a tiny sample.
+
+For mature repeated comparisons prefer paired deltas/effect size with an uncertainty interval. A regression gate is introduced only after baseline variance is understood.
+
+Do not silently discard outliers. Mark a run invalid only for a predeclared reason and retain its raw artifact.
+
+### 12.5 Thermal/order contamination
+
+Record thermal state before and after physical-device performance blocks.
+
+If a device enters a materially different thermal regime, mark the run validity explicitly (for example `THERMALLY_CONTAMINATED`) rather than deleting it from history.
+
+## 13. Android Macrobenchmark and Perfetto
+
+Macrobenchmark controls app start/process/compilation state and records repeatable device traces. It is used for production-like Android performance, not as a replacement for media-specific events.
+
+Perfetto raw traces are retained for root-cause analysis.
+
+M0-D introduces a versioned Perfetto TraceSummary spec for stable machine-readable extraction where supported, for example:
+
+- process CPU time;
+- memory summary;
+- I/O;
+- GC time;
+- selected custom trace-section durations.
+
+TraceSummary-derived fields are versioned and stored in `result.json`/Perfetto summary artifacts. A metric is not made a hard gate until its collection is stable across representative devices/runners.
+
+## 14. Fixture validation
+
+Committed fixtures are validated at multiple levels:
+
+1. SHA-256 byte identity;
+2. manifest/size/bitrate consistency;
+3. container/stream structural inspection;
+4. DASH/CMAF conformance for F1 when its media or MPD changes.
+
+Normal PR CI does not rerun heavyweight DASH conformance when bytes are unchanged.
+
+F1 remains exactly one selected video + one selected audio representation to remove adaptation variance from M0.
+
+Additional diagnostic fixture variants are added only when they isolate a real ambiguity; breadth alone is not a reason to grow the binary corpus.
+
+## 15. Physical-device evidence
+
+Emulators are valid for deterministic correctness/API compatibility. They are not representative performance evidence.
+
+A performance conclusion becomes Validated only after a documented physical-device run.
+
+Record at minimum:
+
+- device model;
+- SoC where available;
+- API/build fingerprint;
+- codec capability relevant to the fixture;
+- battery percentage;
+- charging state;
+- thermal state before/after;
+- free storage/storage state;
+- build/compilation state;
+- fixture/scenario hashes;
+- run-order seed.
+
+At least one low/mid device is required before release-oriented conclusions; a fast flagship alone can hide scheduling/I/O/memory problems.
+
+## 16. Real YouTube compatibility suite
 
 Run separately from deterministic benchmarks.
 
 Track:
 
-- resolve success rate;
+- resolve success;
 - VOD playback start success;
 - available representations;
 - separate A/V behavior;
-- 403 recovery;
+- 403/provider rejection;
 - descriptor refresh;
 - provider error distribution;
-- extractor version/client profile.
+- extractor/client profile/version.
 
-The suite must not hammer the provider. Request budgets and backoff are part of the test.
+Use bounded request budgets/backoff. Do not hammer the provider.
 
-A compatibility regression is an adapter issue unless Sponge Core invariants also fail.
+A provider compatibility result does not establish media-engine performance.
 
-## 10. M0 baseline contract
-
-Before Sponge Core exists, M0 establishes two non-Sponge reference paths:
-
-```text
-A. Direct Media3 playback
-B. Media3 CacheDataSource + SimpleCache
-```
-
-Both use the same deterministic fixtures and network profiles. Do not tune Media3 buffering to make the later Sponge comparison easier.
-
-M0 must produce a versioned machine-readable result containing build, device/runtime, fixture, network profile, baseline mode, transport, metrics and errors. The exact schema is defined in `.work/milestones/M0.md`.
-
-M0 implements N0, N1 and canonical N4 first. The broader N2/N3/N5–N11 matrix remains specified here for M2 unless an earlier implementation is required to prove the harness.
-
-Before any M0 A/B comparison, the Media Lab profile itself must be calibrated and its observed pacing/no-progress interval compared with the configured values.
-
-## 11. CI tiers
+## 17. CI tiers
 
 ```text
 PR
-  compile/lint
-  unit/property tests
-  deterministic engine tests
-  selected microbench regression checks
+  build/lint
+  unit/property/state-machine tests
+  Media Lab deterministic correctness
+  fixture hash/manifest validation
+  selected microbench checks only after stable baselines exist
 
 Nightly
-  Android emulator matrix (API 23 / 34 / 36; optional API 37 preview compatibility)
-  M0 impairment profiles N0 / N1 / canonical N4
-  Macrobenchmark/Perfetto
-  real-provider compatibility smoke only after the YouTube adapter milestone exists
+  Android API compatibility matrix
+  N0/N1/N4 deterministic playback
+  Macrobenchmark/Perfetto capture
+  broader reliability repetitions
 
-Release candidate
-  physical-device matrix
-  battery/thermal runs
-  long-duration interruption tests
-  process-kill/reboot recovery
+M2 network nightly
+  scoped transport/network fault matrix
+  seeded stochastic profiles
+  route tests on an appropriate Android network path
+
+Release/evidence
+  physical-device blocks
+  battery/thermal observations
+  long no-progress/process-kill/reboot recovery
 ```
 
-## 12. Evidence format
+A flaky emulator/network facility is not promoted to a required gate until representative runs show the infrastructure itself is stable.
 
-Each accepted architecture/performance decision gets a short file:
+## 18. Provisional success hypotheses
 
-```text
-.work/evidence/YYYY-MM-DD-<topic>.md
-```
+These remain hypotheses until evidence exists:
+
+- duplicate-fetch ratio converges close to zero;
+- an outage shorter than playable reserve produces zero playback stalls;
+- Sponge reduces stall time in N3/N4 versus Direct without unacceptable waste;
+- route changes do not discard persisted media coverage;
+- Smart mode materially reduces wasted prefetch versus unconditional full download;
+- a more complex storage backend is adopted only if it produces a measured benefit over the simpler backend.
+
+## 19. Evidence format
+
+Each accepted architecture/performance decision gets:
+
+`.work/evidence/YYYY-MM-DD-<topic>.md`
 
 Required fields:
 
@@ -306,30 +601,44 @@ Required fields:
 Question
 Hypothesis
 Build/commit
+Run manifest/artifact reference
 Device/API
-Fixture
-Network profile
-Baseline
+Fixture identity
+Scenario identity
+Playback baseline/mode
+Procedure
+Raw observations
+Summary/statistical treatment
 Result
-Raw artifact link/hash
 Decision
 Known limitations
 ```
 
-No statement such as "Cronet is faster", "packed storage is better" or "20-minute reserve is optimal" is canonical without such evidence.
+Claims such as "Cronet is faster", "packed storage is better" or "20-minute reserve is optimal" are never canonical without scenario-specific evidence.
 
-## 13. Tooling baseline
+## 20. Tooling boundary
 
-Candidates:
+Current/future candidates:
 
-- AndroidX Benchmark 1.5.x;
-- Macrobenchmark;
-- Perfetto;
-- JUnit/property-based tests;
-- Android emulator;
-- physical device runs;
-- deterministic local media origin;
-- Toxiproxy and/or `tc/netem`;
-- CI artifacts with machine-readable JSON/CSV summaries.
+- JUnit/property/state-machine tests;
+- Media3 test utilities/FakeClock principles;
+- deterministic Sponge Media Lab;
+- AndroidX Benchmark/Macrobenchmark;
+- Perfetto + Trace Summarization;
+- physical Android devices;
+- DASH-IF Conformance for fixture-change validation;
+- Toxiproxy or an equivalent transport-fault layer in M2;
+- scoped Linux `tc/netem` or an equivalent packet/network layer in M2.
 
-Benchmark tooling itself is version-pinned in code when implementation begins.
+Tool selection is evidence-driven. Do not add a dependency merely because it is popular.
+
+## 21. Reference basis
+
+- Media3 FakeClock: https://developer.android.com/reference/androidx/media3/test/utils/FakeClock
+- Media3 analytics/PlaybackStats: https://developer.android.com/reference/androidx/media3/exoplayer/analytics/package-summary
+- Android Macrobenchmark: https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
+- Perfetto Trace Summarization: https://perfetto.dev/docs/analysis/trace-summary
+- GStreamer Validate scenarios: https://gstreamer.freedesktop.org/documentation/gst-devtools/gst-validate-scenarios.html
+- DASH-IF Conformance: https://github.com/Dash-Industry-Forum/DASH-IF-Conformance
+- Toxiproxy: https://github.com/Shopify/toxiproxy
+- Linux tc-netem: https://man7.org/linux/man-pages/man8/tc-netem.8.html
