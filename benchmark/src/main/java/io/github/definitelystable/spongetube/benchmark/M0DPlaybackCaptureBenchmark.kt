@@ -50,6 +50,12 @@ class M0DPlaybackCaptureBenchmark {
         },
     ) {
         val runId = "m0d-macro-${iteration ?: 0}"
+        val sessionId = "$runId-1"
+        val sourceDir =
+            "/sdcard/Android/data/$TARGET_PACKAGE/files/m0-measurement/$sessionId"
+        val stagingDir = "$STAGING_ROOT/$sessionId"
+
+        device.executeShellCommand("rm -rf '$stagingDir'")
 
         startActivityAndWait { intent ->
             intent.putExtra("spongetube.runId", runId)
@@ -80,9 +86,40 @@ class M0DPlaybackCaptureBenchmark {
 
         pressHome()
         device.waitForIdle()
+
+        val sourceListing = device.executeShellCommand(
+            "ls -1 '$sourceDir' 2>&1",
+        )
+        assertTrue(
+            "Target evidence was not finalized before benchmark teardown: $sourceListing",
+            sourceListing.contains("playback-events.jsonl") &&
+                sourceListing.contains("playback-summary.json") &&
+                sourceListing.contains("playback-stats-cross-check.json"),
+        )
+
+        device.executeShellCommand("mkdir -p '$stagingDir'")
+        val copyOutput = device.executeShellCommand(
+            "cp -R '$sourceDir/.' '$stagingDir/' 2>&1",
+        )
+        assertTrue(
+            "Failed to stage M0-D evidence before target uninstall: $copyOutput",
+            copyOutput.isBlank(),
+        )
+
+        val stagedListing = device.executeShellCommand(
+            "ls -1 '$stagingDir' 2>&1",
+        )
+        assertTrue(
+            "Staged evidence is incomplete: $stagedListing",
+            stagedListing.contains("playback-events.jsonl") &&
+                stagedListing.contains("playback-summary.json") &&
+                stagedListing.contains("playback-stats-cross-check.json"),
+        )
     }
 
     private companion object {
         const val PREPARE_TRACE = "SpongeTube:M0:prepare"
+        const val TARGET_PACKAGE = "io.github.definitelystable.spongetube"
+        const val STAGING_ROOT = "/sdcard/spongetube-m0"
     }
 }
