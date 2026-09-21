@@ -4,7 +4,7 @@ final class RequestTraceAccumulator {
 
     private final MediaLabConfig config;
     private final long requestId;
-    private final long acceptedAtMonotonicNs;
+    private final long handlerStartedAtMonotonicNs;
     private final String method;
     private final String path;
     private final String rangeHeader;
@@ -22,13 +22,13 @@ final class RequestTraceAccumulator {
     RequestTraceAccumulator(
             MediaLabConfig config,
             long requestId,
-            long acceptedAtMonotonicNs,
+            long handlerStartedAtMonotonicNs,
             String method,
             String path,
             String rangeHeader) {
         this.config = config;
         this.requestId = requestId;
-        this.acceptedAtMonotonicNs = acceptedAtMonotonicNs;
+        this.handlerStartedAtMonotonicNs = handlerStartedAtMonotonicNs;
         this.method = method;
         this.path = path;
         this.rangeHeader = rangeHeader;
@@ -43,9 +43,9 @@ final class RequestTraceAccumulator {
     RequestTrace complete(long completedAtMonotonicNs) {
         Long firstWriteDelayMs = firstBodyWriteAtMonotonicNs == null
                 ? null
-                : Math.max(0L, (firstBodyWriteAtMonotonicNs - acceptedAtMonotonicNs) / 1_000_000L);
+                : Math.max(0L, (firstBodyWriteAtMonotonicNs - handlerStartedAtMonotonicNs) / 1_000_000L);
         long handlerDurationMs =
-                Math.max(0L, (completedAtMonotonicNs - acceptedAtMonotonicNs) / 1_000_000L);
+                Math.max(0L, (completedAtMonotonicNs - handlerStartedAtMonotonicNs) / 1_000_000L);
 
         return new RequestTrace(
                 1,
@@ -62,7 +62,7 @@ final class RequestTraceAccumulator {
                 status,
                 plannedResponseBytes,
                 bodyBytesWritten,
-                acceptedAtMonotonicNs,
+                handlerStartedAtMonotonicNs,
                 firstBodyWriteAtMonotonicNs,
                 completedAtMonotonicNs,
                 firstWriteDelayMs,
