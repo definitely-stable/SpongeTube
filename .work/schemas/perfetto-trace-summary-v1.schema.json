@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.local/schemas/perfetto-trace-summary-v1.schema.json",
+  "title": "SpongeTube Perfetto Trace Summary v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "rawTraceSha256",
+    "rawTraceBytes",
+    "process",
+    "customSections",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["COMPLETE", "PARTIAL"] },
+    "rawTraceSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rawTraceBytes": { "type": "integer", "minimum": 1 },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpuTimeMs",
+        "maxRssBytes",
+        "ioReadBytes",
+        "ioWriteBytes",
+        "gcTimeMs"
+      ],
+      "properties": {
+        "cpuTimeMs": { "type": ["number", "null"], "minimum": 0 },
+        "maxRssBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "ioReadBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "ioWriteBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "gcTimeMs": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "customSections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prepare", "seek", "rebuffer"],
+      "properties": {
+        "prepare": { "$ref": "#/$defs/sectionSummary" },
+        "seek": { "$ref": "#/$defs/sectionSummary" },
+        "rebuffer": { "$ref": "#/$defs/sectionSummary" }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "sectionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceName", "count", "totalDurationMs"],
+      "properties": {
+        "traceName": { "type": "string", "minLength": 1 },
+        "count": { "type": ["integer", "null"], "minimum": 0 },
+        "totalDurationMs": { "type": ["number", "null"], "minimum": 0 }
+      }
+    }
+  }
+}

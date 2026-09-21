@@ -272,6 +272,8 @@ class MediaLabServerTest {
         String calibration = Files.readString(config.calibrationPath());
         assertTrue(calibration.contains("\"scenarioHash\""));
         assertTrue(traceLines.stream().allMatch(line -> line.startsWith("{") && line.endsWith("}")));
+        assertTrue(traceLines.stream().anyMatch(line -> line.contains("\"plane\":\"control\"")));
+        assertTrue(traceLines.stream().anyMatch(line -> line.contains("\"plane\":\"data\"")));
         assertTrue(traceLines.stream().anyMatch(line ->
                 line.contains("\"status\":200")
                         && line.contains("\"resolvedRangeStart\":0")

@@ -30,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.ui.PlayerView
 import io.github.definitelystable.spongetube.playback.baseline.BaselineCacheState
 import io.github.definitelystable.spongetube.playback.baseline.BaselineMode
@@ -37,7 +38,9 @@ import io.github.definitelystable.spongetube.playback.baseline.BaselinePlayback
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackIdentity
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackSession
 import io.github.definitelystable.spongetube.playback.baseline.BaselinePlaybackSpec
+import io.github.definitelystable.spongetube.measurement.PlaybackMeasurementSession
 import io.github.definitelystable.spongetube.playback.baseline.BaselineTransport
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
@@ -52,11 +55,22 @@ class MainActivity : ComponentActivity() {
     private val requestGeneration = AtomicLong(0)
 
     private var activeSession: BaselinePlaybackSession? = null
+    private var activeMeasurement: PlaybackMeasurementSession? = null
+    private lateinit var activityRunId: String
+    private var autoPlayForMeasurement: Boolean = false
     private var labState by mutableStateOf(BaselineLabState())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        activityRunId = intent.getStringExtra(EXTRA_RUN_ID)
+            ?.takeIf { it.matches(RUN_ID_PATTERN) }
+            ?: UUID.randomUUID().toString()
+        autoPlayForMeasurement = intent.getBooleanExtra(
+            EXTRA_AUTO_PLAY,
+            false,
+        )
 
         setContent {
             BaselineLabShell(
@@ -72,8 +86,7 @@ class MainActivity : ComponentActivity() {
     ) {
         val generation = requestGeneration.incrementAndGet()
 
-        activeSession?.close()
-        activeSession = null
+        closeActivePlayback()
 
         val spec = selection.toSpec(transport)
         labState = BaselineLabState(
@@ -97,24 +110,55 @@ class MainActivity : ComponentActivity() {
 
                 preparedResult.fold(
                     onSuccess = { prepared ->
+                        var createdSession: BaselinePlaybackSession? = null
+                        var createdMeasurement: PlaybackMeasurementSession? = null
                         try {
+                            val playbackStatsListener = PlaybackStatsListener(
+                                false,
+                                null,
+                            )
                             val session = BaselinePlayback.createSession(
                                 context = this,
                                 prepared = prepared,
+                                analyticsListeners = listOf(playbackStatsListener),
                             )
+                            createdSession = session
+
+                            val measurement = PlaybackMeasurementSession.create(
+                                context = applicationContext,
+                                delegate = session.player,
+                                runId = activityRunId,
+                                generation = generation,
+                                playbackStatsListener = playbackStatsListener,
+                            )
+                            createdMeasurement = measurement
+
                             activeSession = session
-                            attachPlayerListener(session, generation)
+                            activeMeasurement = measurement
+                            attachPlayerListener(
+                                player = measurement.player,
+                                session = session,
+                                generation = generation,
+                            )
 
                             labState = labState.copy(
                                 phase = "Preparing Media3",
                                 identity = session.identity,
-                                player = session.player,
+                                player = measurement.player,
                                 cacheBytes = session.cacheBytesNow(),
+                                measurementArtifact =
+                                    measurement.artifactFile.absolutePath,
                                 error = null,
                             )
 
-                            session.player.prepare()
+                            if (autoPlayForMeasurement) {
+                                measurement.player.play()
+                            }
+                            measurement.recordPrepareStarted()
+                            measurement.player.prepare()
                         } catch (throwable: Throwable) {
+                            createdMeasurement?.close()
+                            createdSession?.close()
                             prepared.close()
                             showFailure("Player creation failed", throwable)
                         }
@@ -128,10 +172,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun attachPlayerListener(
+        player: Player,
         session: BaselinePlaybackSession,
         generation: Long,
     ) {
-        session.player.addListener(object : Player.Listener {
+        player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (generation != requestGeneration.get()) {
                     return
@@ -193,8 +238,7 @@ class MainActivity : ComponentActivity() {
 
     private fun releaseForegroundPlayer(phase: String) {
         requestGeneration.incrementAndGet()
-        activeSession?.close()
-        activeSession = null
+        closeActivePlayback()
 
         labState = labState.copy(
             phase = phase,
@@ -204,16 +248,25 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    override fun onDestroy() {
-        requestGeneration.incrementAndGet()
+    private fun closeActivePlayback() {
+        activeMeasurement?.close()
+        activeMeasurement = null
         activeSession?.close()
         activeSession = null
+    }
+
+    override fun onDestroy() {
+        requestGeneration.incrementAndGet()
+        closeActivePlayback()
         prepareExecutor.shutdownNow()
         super.onDestroy()
     }
 
     private companion object {
         const val F1_URI = "http://localhost:18080/fixtures/F1/manifest.mpd"
+        const val EXTRA_RUN_ID = "spongetube.runId"
+        const val EXTRA_AUTO_PLAY = "spongetube.autoPlay"
+        val RUN_ID_PATTERN = Regex("[A-Za-z0-9._-]+")
 
         fun playbackStateName(state: Int): String = when (state) {
             Player.STATE_IDLE -> "Idle"
@@ -266,6 +319,7 @@ private data class BaselineLabState(
     val player: Player? = null,
     val isPlaying: Boolean = false,
     val cacheBytes: Long = 0,
+    val measurementArtifact: String? = null,
     val error: String? = null,
 )
 
@@ -391,6 +445,13 @@ private fun BaselineLabShell(
                     text = "Standard cache: ${state.cacheBytes} bytes",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+
+                state.measurementArtifact?.let { artifact ->
+                    Text(
+                        text = "Events: $artifact",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
 
                 state.error?.let { error ->
                     Text(

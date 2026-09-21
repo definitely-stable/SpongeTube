@@ -73,11 +73,16 @@ jobs:
         run: |
           test -s gradle/verification-metadata.xml
 
+      - name: Verify measurement artifact contracts
+        shell: bash
+        run: |
+          python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py' -v
+
       - name: Verify build and configuration cache
         shell: bash
         run: |
-          ./gradlew --configuration-cache check assembleDebug
-          ./gradlew --configuration-cache check assembleDebug
+          ./gradlew --configuration-cache check assembleDebug :benchmark:assembleBenchmark
+          ./gradlew --configuration-cache check assembleDebug :benchmark:assembleBenchmark
 
       - name: Upload failure artifacts
         if: failure()
@@ -87,6 +92,8 @@ jobs:
           path: |
             gradle/verification-metadata.xml
             app/build/reports/
+            benchmark/build/reports/
+            benchmark/build/outputs/
             tools/media-lab/build/reports/
             tools/media-lab/build/test-results/
           if-no-files-found: warn
