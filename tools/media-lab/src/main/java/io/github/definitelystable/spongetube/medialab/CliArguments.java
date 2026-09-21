@@ -36,7 +36,14 @@ final class CliArguments {
 
         for (String key : values.keySet()) {
             if (!switch (key) {
-                case "fixture-root", "trace", "session-id", "profile", "port", "workers" -> true;
+                case "fixture-root",
+                        "trace",
+                        "session-id",
+                        "profile",
+                        "data-port",
+                        "data-workers",
+                        "control-port",
+                        "control-workers" -> true;
                 default -> false;
             }) {
                 throw new IllegalArgumentException("Unknown option: --" + key);
@@ -47,8 +54,10 @@ final class CliArguments {
         String trace = required(values, "trace");
         String sessionId = required(values, "session-id");
 
-        int port = parseInt(values.getOrDefault("port", "0"), "port");
-        int workers = parseInt(values.getOrDefault("workers", "8"), "workers");
+        int dataPort = parseInt(values.getOrDefault("data-port", "0"), "data-port");
+        int dataWorkers = parseInt(values.getOrDefault("data-workers", "8"), "data-workers");
+        int controlPort = parseInt(values.getOrDefault("control-port", "0"), "control-port");
+        int controlWorkers = parseInt(values.getOrDefault("control-workers", "2"), "control-workers");
         MediaLabProfile profile = MediaLabProfile.parse(values.getOrDefault("profile", "N0"));
 
         return new MediaLabConfig(
@@ -56,8 +65,10 @@ final class CliArguments {
                 Path.of(trace),
                 sessionId,
                 profile,
-                port,
-                workers);
+                dataPort,
+                dataWorkers,
+                controlPort,
+                controlWorkers);
     }
 
     static String usage() {
@@ -68,9 +79,12 @@ final class CliArguments {
                     --trace=<path> \
                     --session-id=<id> \
                     [--profile=N0] \
-                    [--port=0] \
-                    [--workers=8]
+                    [--data-port=0] \
+                    [--data-workers=8] \
+                    [--control-port=0] \
+                    [--control-workers=2]
 
+                Data and control listeners are separate loopback-only servers.
                 M0-B1 supports profile N0 only. N1/N4 arrive in M0-B2.
                 """;
     }
