@@ -31,6 +31,7 @@ class JsonLineTraceWriterTest {
         assertTrue(lines.get(0).startsWith("{"));
         assertTrue(lines.get(0).endsWith("}"));
         assertTrue(lines.get(0).contains("a\\\"b\\\\c.bin"));
+        assertTrue(lines.get(0).contains("\"plane\":\"data\""));
     }
 
     @Test
@@ -73,9 +74,10 @@ class JsonLineTraceWriterTest {
 
     private static RequestTrace trace(long requestId, String path) {
         return new RequestTrace(
-                1,
+                2,
                 "session",
                 requestId,
+                "data",
                 "F0",
                 "sample.bin",
                 "N0",
