@@ -15,8 +15,10 @@ class PlaybackMeasurementSession private constructor(
     val sessionId: String,
     val player: Player,
     val artifactFile: File,
+    val summaryFile: File,
     private val recorder: PlaybackEventRecorder,
     private val sink: JsonlPlaybackEventFileSink,
+    private val capturedEvents: MutableList<PlaybackEvent>,
     private val listener: Player.Listener,
     private val state: MeasurementPlayerState,
 ) : Closeable {
@@ -36,6 +38,13 @@ class PlaybackMeasurementSession private constructor(
         state.closeOpenTraceSections()
         recorder.record(PlaybackEventType.SESSION_ENDED)
         sink.close()
+
+        val metrics = PlaybackMetricReducer.reduce(capturedEvents.toList())
+        PlaybackMetricsArtifactWriter.write(
+            file = summaryFile,
+            sessionId = sessionId,
+            metrics = metrics,
+        )
     }
 
     companion object {
@@ -53,11 +62,17 @@ class PlaybackMeasurementSession private constructor(
             val sessionId = "$runId-$generation"
             val root = context.getExternalFilesDir("m0-measurement")
                 ?: File(context.filesDir, "m0-measurement")
-            val artifactFile = File(root, "$sessionId/playback-events.jsonl")
+            val artifactDirectory = File(root, sessionId)
+            val artifactFile = File(artifactDirectory, "playback-events.jsonl")
+            val summaryFile = File(artifactDirectory, "playback-summary.json")
             val sink = JsonlPlaybackEventFileSink.createNew(artifactFile)
+            val capturedEvents = mutableListOf<PlaybackEvent>()
             val recorder = PlaybackEventRecorder(
                 sessionId = sessionId,
-                sink = sink,
+                sink = PlaybackEventSink { event ->
+                    sink.append(event)
+                    capturedEvents += event
+                },
             )
 
             PlaybackTraceSections.enableForMeasurement()
@@ -78,8 +93,10 @@ class PlaybackMeasurementSession private constructor(
                 sessionId = sessionId,
                 player = measuredPlayer,
                 artifactFile = artifactFile,
+                summaryFile = summaryFile,
                 recorder = recorder,
                 sink = sink,
+                capturedEvents = capturedEvents,
                 listener = listener,
                 state = measurementState,
             )
