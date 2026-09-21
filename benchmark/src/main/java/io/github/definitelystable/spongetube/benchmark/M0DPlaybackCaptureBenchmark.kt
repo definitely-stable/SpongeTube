@@ -108,7 +108,9 @@ class M0DPlaybackCaptureBenchmark {
                     benchmarkContext.contentResolver
                         .openInputStream(uri)
                         ?.use { input ->
-                            target.outputStream().use(input::copyTo)
+                            target.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
                         }
                         ?: error("provider returned null stream for $artifactName")
                     check(target.length() > 0L) {
