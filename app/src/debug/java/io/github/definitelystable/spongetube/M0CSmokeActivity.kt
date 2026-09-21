@@ -66,14 +66,14 @@ class M0CSmokeActivity : Activity() {
                 mediaUri = F1_URI,
                 mode = BaselineMode.STANDARD_CACHE,
                 cacheState = BaselineCacheState.COLD,
-                transport = BaselineTransport.DEFAULT_HTTP,
+                transport = BaselineTransport.RECOMMENDED_PLATFORM,
             )
 
             SmokePhase.CACHE_WARM -> BaselinePlaybackSpec(
                 mediaUri = F1_URI,
                 mode = BaselineMode.STANDARD_CACHE,
                 cacheState = BaselineCacheState.WARM,
-                transport = BaselineTransport.DEFAULT_HTTP,
+                transport = BaselineTransport.RECOMMENDED_PLATFORM,
             )
 
             SmokePhase.OFFLINE_ERROR -> BaselinePlaybackSpec(
@@ -230,7 +230,10 @@ class M0CSmokeActivity : Activity() {
                 return@postDelayed
             }
 
-            pass("cacheBytes=$bytes positionMs=$position")
+            pass(
+                "effective=${current.identity.effectiveTransport} " +
+                    "cacheBytes=$bytes positionMs=$position",
+            )
         }, CACHE_FILL_MS)
     }
 
@@ -262,7 +265,8 @@ class M0CSmokeActivity : Activity() {
             }
 
             pass(
-                "cacheBytesAtPreparation=${current.cacheBytesAtPreparation} " +
+                "effective=${current.identity.effectiveTransport} " +
+                    "cacheBytesAtPreparation=${current.cacheBytesAtPreparation} " +
                     "positionMs=$position",
             )
         }, WARM_PLAY_MS)
