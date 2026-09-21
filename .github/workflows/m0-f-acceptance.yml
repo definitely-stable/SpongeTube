@@ -369,10 +369,25 @@ jobs:
             fi
           }
 
-          for profile in N0 N1 N4; do
-            run_case "$profile" DIRECT
-            run_case "$profile" CACHE_COLD
-            run_case "$profile" CACHE_WARM
+          # M0 is correctness-only. Keep one committed, repeatable case order.
+          # CACHE_WARM immediately follows its matching COLD case by contract.
+          CASE_ORDER=(
+            "N0 DIRECT"
+            "N0 CACHE_COLD"
+            "N0 CACHE_WARM"
+            "N1 DIRECT"
+            "N1 CACHE_COLD"
+            "N1 CACHE_WARM"
+            "N4 DIRECT"
+            "N4 CACHE_COLD"
+            "N4 CACHE_WARM"
+          )
+
+          printf '%s\n' "${CASE_ORDER[@]}" > build/m0-acceptance/case-order.txt
+
+          for entry in "${CASE_ORDER[@]}"; do
+            read -r profile baseline <<< "$entry"
+            run_case "$profile" "$baseline"
           done
 
           find build/m0-acceptance/cases -name result.json -print -exec jq -c '{
