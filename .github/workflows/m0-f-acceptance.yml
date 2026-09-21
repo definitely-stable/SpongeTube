@@ -253,9 +253,14 @@ jobs:
               --expected-scenario-id="$profile" \
               --expected-scenario-hash="$scenario_hash"
 
-            jq -e --arg session "$session_id" '
+            jq -e \
+              --arg session "$session_id" \
+              --arg profile "$profile" \
+              --arg scenarioHash "$scenario_hash" '
               .schemaVersion == 1 and
               .sessionId == $session and
+              .scenarioId == $profile and
+              .scenarioHash == $scenarioHash and
               .requestCount >= 0 and
               .httpErrorCount == 0
             ' "$root/server/network-summary.json"
