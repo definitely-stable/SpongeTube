@@ -46,10 +46,13 @@ class ResolvedScenarioTest {
                 "test", MediaLabProfile.N1, 120, 1_000_000L, 8192, null, null);
         ResolvedScenario same = ResolvedScenario.testScenario(
                 "test", MediaLabProfile.N1, 120, 1_000_000L, 8192, null, null);
-        ResolvedScenario changed = ResolvedScenario.testScenario(
+        ResolvedScenario changedRate = ResolvedScenario.testScenario(
                 "test", MediaLabProfile.N1, 120, 900_000L, 8192, null, null);
+        ResolvedScenario changedQuantum = ResolvedScenario.testScenario(
+                "test", MediaLabProfile.N1, 120, 1_000_000L, 4096, null, null);
 
         assertEquals(first.scenarioHash(), same.scenarioHash());
-        assertNotEquals(first.scenarioHash(), changed.scenarioHash());
+        assertNotEquals(first.scenarioHash(), changedRate.scenarioHash());
+        assertNotEquals(first.scenarioHash(), changedQuantum.scenarioHash());
     }
 }
