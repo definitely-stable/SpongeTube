@@ -1,27 +1,20 @@
-name: Bootstrap Verify
+name: Verify
 
 on:
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - ".work/**"
   push:
     branches: [ main ]
-    paths-ignore:
-      - "**/*.md"
-      - ".work/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: bootstrap-verify-${{ github.workflow }}-${{ github.ref }}
+  group: verify-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  bootstrap-verify:
-    # Pin the runner while M0 evidence is being established. ubuntu-latest is
-    # scheduled to migrate to Ubuntu 26.04 in late 2026.
+  verify:
+    name: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -41,54 +34,47 @@ jobs:
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-provider: basic
-          # PRs consume the trusted default-branch cache. Only a push to main
-          # is allowed to refresh it, avoiding PR-scoped cache churn/poisoning.
           cache-read-only: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
       - name: Verify Android API 36 baseline
         shell: bash
         run: |
+          set -euo pipefail
+
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
           PLATFORM_JAR="$SDK_ROOT/platforms/android-36/android.jar"
           AAPT2="$SDK_ROOT/build-tools/36.0.0/aapt2"
 
           if [[ -f "$PLATFORM_JAR" && -x "$AAPT2" ]]; then
-            echo "Android API 36 and Build Tools 36.0.0 are already present on the runner image."
             exit 0
           fi
 
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found at $SDKMANAGER"
-            find "$SDK_ROOT/cmdline-tools" -maxdepth 4 -type f -name sdkmanager -print || true
-            exit 1
-          fi
-
-          echo "Required Android SDK packages are missing; installing fallback packages."
+          test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Require committed dependency verification metadata
+      - name: Verify dependency and measurement contracts
         shell: bash
         run: |
+          set -euo pipefail
           test -s gradle/verification-metadata.xml
-
-      - name: Verify measurement artifact contracts
-        shell: bash
-        run: |
+          test -n "$(grep '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties | cut -d= -f2)"
           python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py' -v
 
       - name: Verify build and configuration cache
         shell: bash
         run: |
-          ./gradlew --configuration-cache check assembleDebug :benchmark:assembleBenchmark
-          ./gradlew --configuration-cache check assembleDebug :benchmark:assembleBenchmark
+          set -euo pipefail
+          TASKS=(check assembleDebug :benchmark:assembleBenchmark)
+          ./gradlew --dependency-verification=strict --configuration-cache "${TASKS[@]}"
+          ./gradlew --dependency-verification=strict --configuration-cache "${TASKS[@]}"
 
-      - name: Upload failure artifacts
+      - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: bootstrap-verify
+          name: verify-failure
           path: |
             gradle/verification-metadata.xml
             app/build/reports/
@@ -97,3 +83,4 @@ jobs:
             tools/media-lab/build/reports/
             tools/media-lab/build/test-results/
           if-no-files-found: warn
+          retention-days: 7
