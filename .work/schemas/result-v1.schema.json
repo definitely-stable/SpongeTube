@@ -7,6 +7,8 @@
   "required": [
     "schemaVersion",
     "runId",
+    "sessionId",
+    "scenarioHash",
     "status",
     "playback",
     "network",
@@ -15,6 +17,11 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "status": {
       "enum": ["COMPLETE", "PARTIAL", "INVALID"]
     },
