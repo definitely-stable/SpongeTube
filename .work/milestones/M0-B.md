@@ -327,7 +327,7 @@ Tests use fake time; no unit test waits 120 real seconds.
 
 Server duration math uses System.nanoTime() or injected monotonic clock.
 
-Later Android timestamps belong to a different clock domain. Host and Android monotonic timestamps must never be subtracted directly.
+Later Android timestamps belong to a different clock domain. Host and Android monotonic timestamps must never be subtracted directly. `handlerStartedAtMonotonicNs` is the JDK handler-entry timestamp; the lab does not claim access to the underlying socket-accept timestamp.
 
 ## 14. Request trace schema v1
 
@@ -346,7 +346,7 @@ Required fields:
 - status
 - plannedResponseBytes
 - bodyBytesWritten
-- acceptedAtMonotonicNs
+- handlerStartedAtMonotonicNs
 - firstBodyWriteAtMonotonicNs
 - completedAtMonotonicNs
 - serverFirstBodyWriteDelayMs
