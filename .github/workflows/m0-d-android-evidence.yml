@@ -163,9 +163,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          PACKAGE="io.github.definitelystable.spongetube"
           SESSION_ID="m0d-macro-0-1"
-          DEVICE_DIR="/sdcard/Android/data/$PACKAGE/files/m0-measurement/$SESSION_ID"
+          DEVICE_DIR="/sdcard/spongetube-m0/$SESSION_ID"
 
           adb shell ls -la "$DEVICE_DIR"
           adb pull "$DEVICE_DIR/." build/m0-d/android/
