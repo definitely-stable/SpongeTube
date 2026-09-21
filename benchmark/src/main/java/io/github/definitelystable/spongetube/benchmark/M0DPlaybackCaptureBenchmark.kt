@@ -1,0 +1,55 @@
+package io.github.definitelystable.spongetube.benchmark
+
+import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.StartupMode
+import androidx.benchmark.macro.StartupTimingMetric
+import androidx.benchmark.macro.junit4.MacrobenchmarkRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@LargeTest
+@RunWith(AndroidJUnit4::class)
+class M0DPlaybackCaptureBenchmark {
+
+    @get:Rule
+    val benchmarkRule = MacrobenchmarkRule()
+
+    @Test
+    fun directN0CorrectnessCapture() = benchmarkRule.measureRepeated(
+        packageName = BenchmarkToolchainContract.TARGET_PACKAGE,
+        metrics = listOf(StartupTimingMetric()),
+        compilationMode = CompilationMode.None(),
+        startupMode = StartupMode.COLD,
+        iterations = 1,
+        setupBlock = {
+            pressHome()
+        },
+    ) {
+        val runId = "m0d-macro-${iteration ?: 0}"
+
+        startActivityAndWait { intent ->
+            intent.putExtra("spongetube.runId", runId)
+            intent.putExtra("spongetube.autoPlay", true)
+        }
+
+        val loadButton = device.wait(
+            Until.findObject(By.text("Load canonical F1")),
+            10_000,
+        )
+        assertNotNull("M0-D load button was not found", loadButton)
+        loadButton.click()
+
+        val playing = device.wait(
+            Until.hasObject(By.textContains("playing")),
+            20_000,
+        )
+        assertTrue("DIRECT baseline never reached playing state", playing)
+    }
+}
