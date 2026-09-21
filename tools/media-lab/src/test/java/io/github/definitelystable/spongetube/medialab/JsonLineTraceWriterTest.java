@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.medialab;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -30,6 +31,14 @@ class JsonLineTraceWriterTest {
         assertTrue(lines.get(0).startsWith("{"));
         assertTrue(lines.get(0).endsWith("}"));
         assertTrue(lines.get(0).contains("a\\\"b\\\\c.bin"));
+    }
+
+    @Test
+    void refusesToAppendToExistingTraceFromAnotherSession() throws Exception {
+        Path trace = Files.writeString(temp.resolve("trace.jsonl"), "existing");
+
+        assertThrows(java.nio.file.FileAlreadyExistsException.class,
+                () -> new JsonLineTraceWriter(trace));
     }
 
     @Test
