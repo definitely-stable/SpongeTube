@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -172,6 +173,33 @@ class MainActivity : ComponentActivity() {
             phase = prefix,
             player = null,
             error = throwable.message ?: throwable::class.java.simpleName,
+            cacheBytes = BaselinePlayback.standardCacheBytes(),
+        )
+    }
+
+    override fun onPause() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.M) {
+            releaseForegroundPlayer("Paused · reload F1 to continue")
+        }
+        super.onPause()
+    }
+
+    override fun onStop() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            releaseForegroundPlayer("Stopped · reload F1 to continue")
+        }
+        super.onStop()
+    }
+
+    private fun releaseForegroundPlayer(phase: String) {
+        requestGeneration.incrementAndGet()
+        activeSession?.close()
+        activeSession = null
+
+        labState = labState.copy(
+            phase = phase,
+            player = null,
+            isPlaying = false,
             cacheBytes = BaselinePlayback.standardCacheBytes(),
         )
     }
