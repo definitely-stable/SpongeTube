@@ -92,6 +92,7 @@ object PlaybackMetricReducer {
 
         var rebufferOpen = false
         var countedStallStartedAt: Long? = null
+        var currentRebufferCountedNs = 0L
         var stallCount = 0
         var stallTotalNs = 0L
 
@@ -99,14 +100,29 @@ object PlaybackMetricReducer {
         val seekSamples = linkedMapOf<Long, SeekToFrameSample>()
         val playbackErrors = mutableListOf<String>()
 
-        fun closeCountedStall(atNs: Long) {
+        fun pauseCountedStall(atNs: Long) {
             val start = countedStallStartedAt ?: return
             require(atNs >= start) {
                 "validated monotonic stream produced a negative stall duration"
             }
-            stallCount += 1
-            stallTotalNs = Math.addExact(stallTotalNs, atNs - start)
+            currentRebufferCountedNs = Math.addExact(
+                currentRebufferCountedNs,
+                atNs - start,
+            )
             countedStallStartedAt = null
+        }
+
+        fun finishRebuffer(atNs: Long) {
+            pauseCountedStall(atNs)
+            if (currentRebufferCountedNs > 0L) {
+                stallCount += 1
+                stallTotalNs = Math.addExact(
+                    stallTotalNs,
+                    currentRebufferCountedNs,
+                )
+            }
+            currentRebufferCountedNs = 0L
+            rebufferOpen = false
         }
 
         fun maybeStartCountedStall(atNs: Long) {
@@ -136,7 +152,7 @@ object PlaybackMetricReducer {
                     if (playIntent) {
                         maybeStartCountedStall(event.atElapsedRealtimeNs)
                     } else {
-                        closeCountedStall(event.atElapsedRealtimeNs)
+                        pauseCountedStall(event.atElapsedRealtimeNs)
                     }
                 }
 
@@ -153,7 +169,7 @@ object PlaybackMetricReducer {
                 }
 
                 PlaybackEventType.SEEK_STARTED -> {
-                    closeCountedStall(event.atElapsedRealtimeNs)
+                    pauseCountedStall(event.atElapsedRealtimeNs)
                     val operationId = checkNotNull(event.operationId)
 
                     if (activeSeekOperationId != null) {
@@ -231,20 +247,23 @@ object PlaybackMetricReducer {
                                 "sequence=${event.sequence}",
                             )
                         } else {
-                            closeCountedStall(event.atElapsedRealtimeNs)
-                            rebufferOpen = false
+                            finishRebuffer(event.atElapsedRealtimeNs)
                         }
                     }
                 }
 
                 PlaybackEventType.PLAYBACK_ERROR -> {
                     playbackErrors += checkNotNull(event.errorCode)
-                    closeCountedStall(event.atElapsedRealtimeNs)
+                    if (rebufferOpen) {
+                        finishRebuffer(event.atElapsedRealtimeNs)
+                    }
                 }
 
                 PlaybackEventType.PLAYBACK_ENDED,
                 PlaybackEventType.SESSION_ENDED,
-                -> closeCountedStall(event.atElapsedRealtimeNs)
+                -> if (rebufferOpen) {
+                    finishRebuffer(event.atElapsedRealtimeNs)
+                }
 
                 else -> Unit
             }
