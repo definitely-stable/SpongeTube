@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Canonical B3 corpus recipe; normal CI verifies committed bytes and never runs this script.
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT_ROOT="${1:-$REPO_ROOT/test-fixtures/media}"
 
