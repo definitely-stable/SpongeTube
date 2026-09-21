@@ -30,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.ui.PlayerView
 import io.github.definitelystable.spongetube.playback.baseline.BaselineCacheState
 import io.github.definitelystable.spongetube.playback.baseline.BaselineMode
@@ -112,9 +113,14 @@ class MainActivity : ComponentActivity() {
                         var createdSession: BaselinePlaybackSession? = null
                         var createdMeasurement: PlaybackMeasurementSession? = null
                         try {
+                            val playbackStatsListener = PlaybackStatsListener(
+                                false,
+                                null,
+                            )
                             val session = BaselinePlayback.createSession(
                                 context = this,
                                 prepared = prepared,
+                                analyticsListeners = listOf(playbackStatsListener),
                             )
                             createdSession = session
 
@@ -123,6 +129,7 @@ class MainActivity : ComponentActivity() {
                                 delegate = session.player,
                                 runId = activityRunId,
                                 generation = generation,
+                                playbackStatsListener = playbackStatsListener,
                             )
                             createdMeasurement = measurement
 
