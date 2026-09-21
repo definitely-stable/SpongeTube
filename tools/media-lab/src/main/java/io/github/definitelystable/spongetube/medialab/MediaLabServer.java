@@ -50,9 +50,16 @@ final class MediaLabServer implements AutoCloseable {
         try {
             InetAddress loopback = InetAddress.getByName("127.0.0.1");
             server = HttpServer.create(new InetSocketAddress(loopback, config.port()), 0);
+            AtomicLong workerIds = new AtomicLong();
             executor = Executors.newFixedThreadPool(
                     config.workers(),
-                    Thread.ofPlatform().name("media-lab-http-", 0).factory());
+                    runnable -> {
+                        Thread thread = new Thread(
+                                runnable,
+                                "media-lab-http-" + workerIds.incrementAndGet());
+                        thread.setDaemon(false);
+                        return thread;
+                    });
 
             MediaLabServer mediaLab = new MediaLabServer(
                     config,
