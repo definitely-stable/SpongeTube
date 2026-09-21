@@ -160,16 +160,17 @@ jobs:
 
           adb logcat -d -v threadtime > build/m0-d/android/logcat.txt
 
-      - name: Pull Android playback evidence
+      - name: Collect Android playback evidence
         shell: bash
         run: |
           set -euo pipefail
 
           SESSION_ID="m0d-macro-0-1"
-          DEVICE_DIR="/sdcard/spongetube-m0/$SESSION_ID"
+          SOURCE_DIR="$(find benchmark/build/outputs/connected_android_test_additional_output \
+            -type d -path "*/m0-d/$SESSION_ID" -print -quit)"
 
-          adb shell ls -la "$DEVICE_DIR"
-          adb pull "$DEVICE_DIR/." build/m0-d/android/
+          test -n "$SOURCE_DIR"
+          cp -R "$SOURCE_DIR/." build/m0-d/android/
 
           test -s build/m0-d/android/playback-events.jsonl
           test -s build/m0-d/android/playback-summary.json
