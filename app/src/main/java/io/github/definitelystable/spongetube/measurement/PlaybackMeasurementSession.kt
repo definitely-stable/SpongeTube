@@ -58,6 +58,15 @@ class PlaybackMeasurementSession private constructor(
                 customMetrics = metrics,
             )
         }
+
+        val completeMarker = File(
+            artifactFile.parentFile,
+            "evidence-complete.marker",
+        )
+        check(completeMarker.createNewFile()) {
+            "evidence completion marker already exists: $completeMarker"
+        }
+        completeMarker.writeText("$sessionId\n")
     }
 
     companion object {
@@ -74,11 +83,7 @@ class PlaybackMeasurementSession private constructor(
             require(generation > 0) { "generation must be > 0" }
 
             val sessionId = "$runId-$generation"
-            val root = context.externalMediaDirs
-                .firstOrNull()
-                ?.let { File(it, "m0-measurement") }
-                ?: context.getExternalFilesDir("m0-measurement")
-                ?: File(context.filesDir, "m0-measurement")
+            val root = File(context.filesDir, "m0-measurement")
             val artifactDirectory = File(root, sessionId)
             val artifactFile = File(artifactDirectory, "playback-events.jsonl")
             val summaryFile = File(artifactDirectory, "playback-summary.json")
