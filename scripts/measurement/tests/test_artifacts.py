@@ -155,6 +155,8 @@ class ArtifactContractTest(unittest.TestCase):
             result = artifacts.build_result_from_files(args)
 
             self.assertEqual("COMPLETE", result["status"])
+            self.assertEqual("session-1", result["sessionId"])
+            self.assertEqual("c" * 64, result["scenarioHash"])
             self.assertEqual([50], result["playback"]["seekToFrameNs"])
             self.assertEqual(100, result["network"]["duplicateRangeBytes"])
 
@@ -349,6 +351,8 @@ class ArtifactContractTest(unittest.TestCase):
     def test_result_enforces_duplicate_byte_identity(self):
         args = argparse.Namespace(
             run_id="run-1",
+            session_id="session-1",
+            scenario_hash="c" * 64,
             status="COMPLETE",
             ttff_ns=100,
             stall_count=1,
@@ -371,6 +375,8 @@ class ArtifactContractTest(unittest.TestCase):
     def test_partial_result_requires_limitation(self):
         args = argparse.Namespace(
             run_id="run-1",
+            session_id="session-1",
+            scenario_hash="c" * 64,
             status="PARTIAL",
             ttff_ns=None,
             stall_count=0,
