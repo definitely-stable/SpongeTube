@@ -50,6 +50,7 @@ Implement first because later traces are not trustworthy without fixed semantics
 Android event schema:
 - SESSION_STARTED
 - PLAY_REQUESTED
+- PLAY_INTENT_CHANGED
 - PREPARE_STARTED
 - PLAYBACK_READY
 - FIRST_FRAME
@@ -72,7 +73,8 @@ Requirements:
 - per-session monotonically increasing sequence;
 - Android `SystemClock.elapsedRealtimeNanos()` only;
 - JSONL output preserves raw events;
-- state reducer rejects impossible/ambiguous intervals instead of silently repairing them.
+- state reducer rejects impossible/ambiguous intervals instead of silently repairing them;
+- PLAY_INTENT_CHANGED is the normative source for excluding paused time from stall duration.
 
 Normative metrics:
 - TTFF = FIRST_FRAME - PLAY_REQUESTED;
@@ -88,6 +90,8 @@ Host trace reducer:
 - UNIQUE_RANGE_BYTES;
 - DUPLICATE_RANGE_BYTES;
 - HTTP_ERROR_COUNT.
+
+NETWORK_BYTES means successful fixture media response-body bytes written by Media Lab. It is not a physical-interface byte counter and excludes protocol/TLS/TCP/IP overhead.
 
 For each resource, actual served coverage is the prefix:
 `[resolvedRangeStart, resolvedRangeStart + bodyBytesWritten)`.
@@ -174,7 +178,7 @@ Add AndroidX Tracing 2.0.2 to trace selected measurement phases.
 
 Macrobenchmark owns process/start/compilation state and raw Perfetto capture.
 
-Version TraceSummary extraction independently from playback metrics.
+Version TraceSummary extraction independently from playback metrics. The correctness smoke may emit a PARTIAL summary when raw Perfetto is retained but numeric TraceProcessor extraction is not yet populated; missing metrics remain null with an explicit limitation and are never fabricated.
 
 Initial stable device/process fields:
 - process CPU time;
