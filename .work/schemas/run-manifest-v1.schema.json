@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.local/schemas/run-manifest-v1.schema.json",
+  "title": "SpongeTube M0 Run Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "createdAtUtc",
+    "gitCommit",
+    "fixture",
+    "scenario",
+    "playback",
+    "build",
+    "device",
+    "toolchain",
+    "orderSeed",
+    "clockDomains"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "createdAtUtc": { "type": "string", "format": "date-time" },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureId", "manifestSha256", "resourceSha256"],
+      "properties": {
+        "fixtureId": { "type": "string", "minLength": 1 },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "resourceSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarioId", "scenarioHash"],
+      "properties": {
+        "scenarioId": { "type": "string", "minLength": 1 },
+        "scenarioHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "playback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "cacheState",
+        "requestedTransport",
+        "effectiveTransport"
+      ],
+      "properties": {
+        "mode": {
+          "enum": ["DIRECT", "STANDARD_CACHE", "SPONGE"]
+        },
+        "cacheState": {
+          "enum": ["NONE", "COLD", "WARM"]
+        },
+        "requestedTransport": {
+          "enum": ["RECOMMENDED_PLATFORM", "DEFAULT_HTTP"]
+        },
+        "effectiveTransport": {
+          "enum": ["HTTP_ENGINE", "DEFAULT_HTTP"]
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildType",
+        "debuggable",
+        "profileable",
+        "minify",
+        "compilationMode",
+        "startupMode"
+      ],
+      "properties": {
+        "buildType": { "type": "string", "minLength": 1 },
+        "debuggable": { "type": "boolean" },
+        "profileable": { "type": "boolean" },
+        "minify": { "type": "boolean" },
+        "compilationMode": { "type": "string", "minLength": 1 },
+        "startupMode": {
+          "enum": ["COLD", "WARM", "HOT", "NOT_APPLICABLE"]
+        }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiLevel", "fingerprint"],
+      "properties": {
+        "apiLevel": { "type": "integer", "minimum": 23 },
+        "fingerprint": { "type": "string", "minLength": 1 },
+        "model": { "type": ["string", "null"] },
+        "abi": { "type": ["string", "null"] }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["media3Version", "benchmarkVersion"],
+      "properties": {
+        "media3Version": { "type": "string", "minLength": 1 },
+        "benchmarkVersion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "orderSeed": { "type": "integer" },
+    "clockDomains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostMonotonic",
+        "androidMonotonic",
+        "crossDomainSubtractionAllowed"
+      ],
+      "properties": {
+        "hostMonotonic": { "const": "MEDIA_LAB_MONOTONIC_NS" },
+        "androidMonotonic": { "const": "SYSTEM_CLOCK_ELAPSED_REALTIME_NS" },
+        "crossDomainSubtractionAllowed": { "const": false }
+      }
+    }
+  }
+}
