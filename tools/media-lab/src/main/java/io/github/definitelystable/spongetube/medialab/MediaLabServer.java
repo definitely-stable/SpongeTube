@@ -191,7 +191,7 @@ final class MediaLabServer implements AutoCloseable {
         trace.resourceId = resource.resourceId();
 
         if (!"GET".equals(method) && !"HEAD".equals(method)) {
-            sendMethodNotAllowed(exchange, trace);
+            sendMethodNotAllowed(exchange, trace, "GET, HEAD");
             return;
         }
 
@@ -317,8 +317,9 @@ final class MediaLabServer implements AutoCloseable {
 
     private static void sendMethodNotAllowed(
             HttpExchange exchange,
-            RequestTraceAccumulator trace) throws IOException {
-        exchange.getResponseHeaders().set("Allow", "GET, HEAD");
+            RequestTraceAccumulator trace,
+            String allow) throws IOException {
+        exchange.getResponseHeaders().set("Allow", allow);
         trace.outcome = TraceOutcome.METHOD_NOT_ALLOWED;
         sendErrorJson(exchange, trace, 405, "method_not_allowed");
         trace.outcome = TraceOutcome.METHOD_NOT_ALLOWED;
