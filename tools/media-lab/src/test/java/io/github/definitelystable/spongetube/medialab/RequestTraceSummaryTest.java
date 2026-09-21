@@ -11,8 +11,8 @@ class RequestTraceSummaryTest {
     @Test
     void disjointAndAdjacentRangesHaveNoDuplicateBytes() {
         MediaNetworkSummary summary = RequestTraceSummary.summarize(List.of(
-                trace(1, "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
-                trace(2, "/fixtures/F1/video.m4s", "F1", "video", 206, 100L, 200L, 100)));
+                trace(1, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
+                trace(2, "data", "/fixtures/F1/video.m4s", "F1", "video", 206, 100L, 200L, 100)));
 
         assertEquals(2, summary.requestCount());
         assertEquals(200, summary.networkBytes());
@@ -47,7 +47,7 @@ class RequestTraceSummaryTest {
     void coverageIsUnionedPerLogicalResource() {
         MediaNetworkSummary summary = RequestTraceSummary.summarize(List.of(
                 trace(1, "/fixtures/F1/video.m4s", "F1", "video", 206, 0L, 100L, 100),
-                trace(2, "/fixtures/F1/audio.m4s", "F1", "audio", 206, 0L, 100L, 100)));
+                trace(2, "data", "/fixtures/F1/audio.m4s", "F1", "audio", 206, 0L, 100L, 100)));
 
         assertEquals(200, summary.networkBytes());
         assertEquals(200, summary.uniqueRangeBytes());
@@ -58,6 +58,7 @@ class RequestTraceSummaryTest {
     void actualWrittenBytesDefineCoverageInsteadOfPlannedRange() {
         RequestTrace partialWrite = trace(
                 1,
+                "data",
                 "/fixtures/F1/video.m4s",
                 "F1",
                 "video",
@@ -77,15 +78,17 @@ class RequestTraceSummaryTest {
     void controlRowsNeverContaminateMediaMetricsAndFixtureErrorsAreCounted() {
         RequestTrace control = trace(
                 1,
-                "/__lab/health",
+                "control",
+                "/fixtures/F1/not-a-control-resource.m4s",
                 null,
                 null,
-                200,
+                404,
                 null,
                 null,
                 50);
         RequestTrace fixtureError = trace(
                 2,
+                "data",
                 "/fixtures/F1/missing.m4s",
                 null,
                 null,
@@ -108,6 +111,7 @@ class RequestTraceSummaryTest {
     void rejectsTraceWhereWrittenBytesExceedResolvedCoverage() {
         RequestTrace invalid = trace(
                 1,
+                "data",
                 "/fixtures/F1/video.m4s",
                 "F1",
                 "video",
@@ -123,6 +127,7 @@ class RequestTraceSummaryTest {
 
     private static RequestTrace trace(
             long requestId,
+            String plane,
             String path,
             String fixtureId,
             String resourceId,
@@ -134,6 +139,7 @@ class RequestTraceSummaryTest {
                 1,
                 "session-1",
                 requestId,
+                plane,
                 fixtureId,
                 resourceId,
                 "N0",
