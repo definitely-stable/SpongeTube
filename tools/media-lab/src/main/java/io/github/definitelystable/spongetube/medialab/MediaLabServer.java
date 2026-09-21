@@ -339,6 +339,13 @@ final class MediaLabServer implements AutoCloseable {
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         trace.status = status;
+        if ("HEAD".equals(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Content-Length", Integer.toString(body.length));
+            trace.plannedResponseBytes = 0;
+            exchange.sendResponseHeaders(status, -1);
+            return;
+        }
+
         trace.plannedResponseBytes = body.length;
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream output = exchange.getResponseBody()) {
