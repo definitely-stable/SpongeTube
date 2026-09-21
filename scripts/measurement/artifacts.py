@@ -373,6 +373,14 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
                 "noProgressDurationErrorMs"
             ),
             "maxSchedulerSlipMs": calibration.get("maxSchedulerSlipMs"),
+            "firstBodyDelaySamplesMs": calibration.get(
+                "firstBodyDelaySamplesMs",
+                [],
+            ),
+            "schedulerSlipSamplesMs": calibration.get(
+                "schedulerSlipSamplesMs",
+                [],
+            ),
         }
 
     seek_samples = playback.get("seekToFrame", [])
