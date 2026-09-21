@@ -39,7 +39,7 @@ class BaselineObservationArtifactWriterTest {
             cacheBytesAtEnd = 1,
         )
 
-        assertThrows(java.nio.file.FileAlreadyExistsException::class.java) {
+        assertThrows(IllegalStateException::class.java) {
             BaselineObservationArtifactWriter.write(
                 file = file,
                 sessionId = "session-1",
