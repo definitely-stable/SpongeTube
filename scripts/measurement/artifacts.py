@@ -190,7 +190,7 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
             "PARTIAL/INVALID results require at least one limitation"
         )
 
-    return {
+    result = {
         "schemaVersion": 1,
         "runId": args.run_id,
         "status": status,
@@ -211,6 +211,20 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
         "labAccuracy": getattr(args, "lab_accuracy", None),
         "limitations": limitations,
     }
+
+    session_id = getattr(args, "session_id", None)
+    scenario_hash = getattr(args, "scenario_hash", None)
+    if session_id is not None:
+        if not session_id:
+            raise ValueError("sessionId must not be blank")
+        result["sessionId"] = session_id
+    if scenario_hash is not None:
+        result["scenarioHash"] = require_sha256(
+            "scenarioHash",
+            scenario_hash,
+        )
+
+    return result
 
 
 def read_json_object(path: pathlib.Path) -> dict[str, Any]:
@@ -295,6 +309,8 @@ def build_result_from_files(args: argparse.Namespace) -> dict[str, Any]:
 
     namespace = argparse.Namespace(
         run_id=args.run_id,
+        session_id=args.session_id,
+        scenario_hash=args.scenario_hash,
         status=playback.get("status"),
         ttff_ns=playback.get("ttffNs"),
         stall_count=playback.get("stallCount"),
@@ -373,6 +389,8 @@ def result_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser("result")
     add_common_output(parser)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--session-id")
+    parser.add_argument("--scenario-hash")
     parser.add_argument("--status", required=True)
     parser.add_argument("--ttff-ns", type=int)
     parser.add_argument("--stall-count", required=True, type=int)
