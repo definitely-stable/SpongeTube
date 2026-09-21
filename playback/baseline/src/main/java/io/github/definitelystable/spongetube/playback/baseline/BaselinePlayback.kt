@@ -141,7 +141,6 @@ class BaselinePlaybackSession internal constructor(
 
     fun cacheBytesNow(): Long = cache?.cache?.cacheSpace ?: 0L
 
-    @MainThread
     override fun close() {
         if (!closed.compareAndSet(false, true)) {
             return
