@@ -18,12 +18,13 @@ class PlaybackMeasurementSession private constructor(
     private val recorder: PlaybackEventRecorder,
     private val sink: JsonlPlaybackEventFileSink,
     private val listener: Player.Listener,
+    private val state: MeasurementPlayerState,
 ) : Closeable {
 
     private val closed = AtomicBoolean(false)
 
     fun recordPrepareStarted() {
-        recorder.record(PlaybackEventType.PREPARE_STARTED)
+        state.recordPrepareStarted()
     }
 
     override fun close() {
@@ -32,6 +33,7 @@ class PlaybackMeasurementSession private constructor(
         }
 
         player.removeListener(listener)
+        state.closeOpenTraceSections()
         recorder.record(PlaybackEventType.SESSION_ENDED)
         sink.close()
     }
@@ -58,9 +60,13 @@ class PlaybackMeasurementSession private constructor(
                 sink = sink,
             )
 
+            PlaybackTraceSections.enableForMeasurement()
             recorder.record(PlaybackEventType.SESSION_STARTED)
 
-            val measurementState = MeasurementPlayerState(recorder)
+            val measurementState = MeasurementPlayerState(
+                recorder = recorder,
+                prepareTraceCookie = generation.toInt(),
+            )
             val measuredPlayer = MeasuredPlayer(
                 delegate = delegate,
                 state = measurementState,
@@ -75,6 +81,7 @@ class PlaybackMeasurementSession private constructor(
                 recorder = recorder,
                 sink = sink,
                 listener = listener,
+                state = measurementState,
             )
         }
     }
@@ -82,6 +89,7 @@ class PlaybackMeasurementSession private constructor(
 
 private class MeasurementPlayerState(
     private val recorder: PlaybackEventRecorder,
+    private val prepareTraceCookie: Int,
 ) {
     private var firstFrameSeen = false
     private var firstReadySeen = false
@@ -91,6 +99,18 @@ private class MeasurementPlayerState(
     private var pendingFrameAfterSeekId: Long? = null
     private var playRequestedRecorded = false
     private var playbackEndedRecorded = false
+    private var prepareTraceOpen = false
+    private var activeSeekTraceCookie: Int? = null
+    private var nextRebufferTraceCookie = 1_000_000
+    private var activeRebufferTraceCookie: Int? = null
+
+    fun recordPrepareStarted() {
+        recorder.record(PlaybackEventType.PREPARE_STARTED)
+        if (!prepareTraceOpen) {
+            prepareTraceOpen = true
+            PlaybackTraceSections.beginPrepare(prepareTraceCookie)
+        }
+    }
 
     fun recordPlayIntent(playWhenReady: Boolean) {
         if (playWhenReady && !playRequestedRecorded) {
@@ -111,6 +131,12 @@ private class MeasurementPlayerState(
             PlaybackEventType.SEEK_STARTED,
             operationId = operationId,
         )
+
+        activeSeekTraceCookie?.let(PlaybackTraceSections::endSeek)
+        val traceCookie = operationId.toInt()
+        activeSeekTraceCookie = traceCookie
+        PlaybackTraceSections.beginSeek(traceCookie)
+
         return operationId
     }
 
@@ -129,6 +155,12 @@ private class MeasurementPlayerState(
                             PlaybackEventType.BUFFERING_STARTED,
                             bufferingReason = currentBufferingReason,
                         )
+
+                        if (currentBufferingReason == BufferingReason.REBUFFER) {
+                            val traceCookie = nextRebufferTraceCookie++
+                            activeRebufferTraceCookie = traceCookie
+                            PlaybackTraceSections.beginRebuffer(traceCookie)
+                        }
                     }
                 }
 
@@ -184,6 +216,7 @@ private class MeasurementPlayerState(
             if (!firstFrameSeen) {
                 firstFrameSeen = true
                 recorder.record(PlaybackEventType.FIRST_FRAME)
+                closePrepareTraceIfOpen()
                 return
             }
 
@@ -193,9 +226,16 @@ private class MeasurementPlayerState(
                 PlaybackEventType.FIRST_FRAME_AFTER_SEEK,
                 operationId = operationId,
             )
+            activeSeekTraceCookie?.let(PlaybackTraceSections::endSeek)
+            activeSeekTraceCookie = null
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            closePrepareTraceIfOpen()
+            closeRebufferTraceIfOpen()
+            activeSeekTraceCookie?.let(PlaybackTraceSections::endSeek)
+            activeSeekTraceCookie = null
+
             recorder.record(
                 PlaybackEventType.PLAYBACK_ERROR,
                 errorCode = error.errorCodeName,
@@ -210,7 +250,34 @@ private class MeasurementPlayerState(
             PlaybackEventType.SEEK_STARTED,
             operationId = operationId,
         )
+
+        activeSeekTraceCookie?.let(PlaybackTraceSections::endSeek)
+        val traceCookie = operationId.toInt()
+        activeSeekTraceCookie = traceCookie
+        PlaybackTraceSections.beginSeek(traceCookie)
+
         return operationId
+    }
+
+    fun closeOpenTraceSections() {
+        closePrepareTraceIfOpen()
+        closeRebufferTraceIfOpen()
+        activeSeekTraceCookie?.let(PlaybackTraceSections::endSeek)
+        activeSeekTraceCookie = null
+    }
+
+    private fun closePrepareTraceIfOpen() {
+        if (!prepareTraceOpen) {
+            return
+        }
+        prepareTraceOpen = false
+        PlaybackTraceSections.endPrepare(prepareTraceCookie)
+    }
+
+    private fun closeRebufferTraceIfOpen() {
+        val traceCookie = activeRebufferTraceCookie ?: return
+        activeRebufferTraceCookie = null
+        PlaybackTraceSections.endRebuffer(traceCookie)
     }
 
     private fun endBufferingIfOpen() {
@@ -220,6 +287,9 @@ private class MeasurementPlayerState(
             PlaybackEventType.BUFFERING_ENDED,
             bufferingReason = reason,
         )
+        if (reason == BufferingReason.REBUFFER) {
+            closeRebufferTraceIfOpen()
+        }
     }
 }
 
