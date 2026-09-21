@@ -230,6 +230,8 @@ jobs:
           jq -e '.schemaVersion == 1' build/m0-d/perfetto/summary.json
           jq -e '.status == "PARTIAL"' build/m0-d/perfetto/summary.json
           jq -e '.rawTraceSha256 | length == 64' build/m0-d/perfetto/summary.json
+          jq -e '.rawTraceBytes > 0' build/m0-d/perfetto/summary.json
+          jq -e '.customSections.prepare.traceName == "SpongeTube:M0:prepare"' build/m0-d/perfetto/summary.json
 
           find benchmark/build/outputs -type f -print             > build/m0-d/perfetto/benchmark-output-files.txt || true
 
