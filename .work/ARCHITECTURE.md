@@ -53,8 +53,10 @@ The central metric is **Playable Reserve**: how much future playback time can co
                        │
                TransportSession
                  /            \
-           Cronet candidate   OkHttp candidate
-                 \            /
+     Recommended platform     Portable fallback
+       (HttpEngine when       (DefaultHttpDataSource)
+         supported)             \
+                 \             /
                   └────┬─────┘
                        ▼
                    ExtentStore
@@ -68,7 +70,7 @@ The central metric is **Playable Reserve**: how much future playback time can co
                     Media3
 ```
 
-Cronet vs OkHttp is deliberately not frozen in v0.1. Cronet has HTTP/3/QUIC and connection-migration capabilities that are attractive for mobile route changes, but the project will benchmark both transport candidates for the actual media workload.
+The transport winner is deliberately not frozen in v0.1. For M0, the recommended platform path uses Media3 HttpEngine where runtime support exists and DefaultHttpDataSource as the portable fallback. OkHttp, Google Play services Cronet and Embedded Cronet remain candidates for later evidence-driven evaluation when they solve a measured problem for the SpongeTube device/network population.
 
 ## 4. Core domain model
 
@@ -368,26 +370,19 @@ No request storm is allowed when the provider is already rejecting or throttling
 
 ## 10. Transport strategy
 
-Two initial candidates remain behind the same interface:
+Transport remains behind a small interface and follows an evidence-first policy.
 
-### Cronet
+### M0 baseline
 
-Reasons to evaluate:
+On supported runtimes, evaluate Media3's HttpEngine integration as the recommended platform transport. It can use the platform networking stack and HTTP/3/QUIC without bundling an embedded networking engine.
 
-- HTTP/3 over QUIC;
-- request prioritization;
-- connection migration on network change;
-- ExoPlayer support.
+Use Media3 DefaultHttpDataSource as the portable baseline/fallback where HttpEngine is unavailable.
 
-### OkHttp
+### Later candidates
 
-Reasons to keep as a candidate/fallback:
+OkHttp, Google Play services Cronet and Embedded Cronet are not rejected. They are deferred until M2 unless M0 demonstrates a blocker. Adding them must solve a measured compatibility, resilience, observability or performance problem that outweighs dependency/APK/runtime cost.
 
-- mature API and tooling;
-- simpler inspection and mocking;
-- broad ecosystem.
-
-No claim that one is faster is accepted without SpongeTube workload benchmarks.
+No transport is declared globally faster or more resilient without SpongeTube workload evidence.
 
 ## 11. ExtentStore and durability
 
@@ -492,17 +487,19 @@ Resource policy must be visible to benchmarks.
 
 As of 2026-09-21:
 
-- target/compile API: 36 for Play-distributed phone app baseline;
-- Kotlin: current stable 2.x selected at bootstrap;
-- UI: Jetpack Compose + Material 3;
+- target/compile API: 36 for the Play-distributed phone/tablet baseline;
+- minimum API: 23 for M0, explicitly Provisional and subject to compatibility evidence;
+- build: AGP 9.4.0 + Gradle 9.6.0 + JDK 17;
+- Kotlin: AGP built-in Kotlin for Android modules; do not override it merely to chase a newer compiler version;
+- UI: Jetpack Compose + Material 3, Compose BOM 2026.09.00 baseline;
 - media: AndroidX Media3 1.11.1 baseline;
-- persistence: Room 2.8.5 baseline for metadata/index;
-- settings: DataStore;
-- concurrency: Kotlin coroutines;
-- benchmark: AndroidX Benchmark/Macrobenchmark + Perfetto;
-- network transport: Cronet and OkHttp behind an interface until measured.
+- persistence: no Room requirement in M0; introduce Room when M1 has a real persistent index;
+- settings: add DataStore when persistent user settings exist;
+- concurrency: Kotlin coroutines when asynchronous engine code begins;
+- benchmark: AndroidX Benchmark 1.5.0 / Macrobenchmark + Perfetto;
+- network: HttpEngine where supported, DefaultHttpDataSource fallback; additional transports are evidence-driven.
 
-Minimum Android API is intentionally not frozen before device/support research.
+Android 17/API 37 is compatibility input while its SDK remains preview; it is not the production target baseline for M0.
 
 ## 17. UI architecture
 
