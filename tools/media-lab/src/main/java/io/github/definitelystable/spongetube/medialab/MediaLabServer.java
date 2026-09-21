@@ -230,6 +230,7 @@ final class MediaLabServer implements AutoCloseable {
                 config,
                 scenario,
                 requestId,
+                controlPlane ? "control" : "data",
                 handlerStartedAt,
                 method,
                 rawPath,
