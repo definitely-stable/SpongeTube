@@ -68,19 +68,34 @@ No mutable HTTP control plane in M0-B.
 
 Fixture root, profile, session id, trace path, port and worker count are immutable for the process lifetime. Restarting the process resets all scenario state.
 
-### 2.6 Port model
+### 2.6 Data/control plane isolation
 
-The host binds 127.0.0.1:0 by default and prints its selected port in a machine-readable READY record.
+The Media Lab exposes two independent IPv4-loopback listeners with independent bounded executors:
 
-The orchestrator maps a stable Android port:
+    DataServer
+      127.0.0.1:<dynamic-data-port>
+      /fixtures/...
 
-    adb -s <serial> reverse tcp:18080 tcp:<hostPort>
+    ControlServer
+      127.0.0.1:<dynamic-control-port>
+      /__lab/health
+      /__lab/config
 
-App/test URL:
+Both ports default to 0 and are reported in the machine-readable READY record.
+
+This is a correctness property, not only an optimization. B2 N4 may deliberately block every media-body worker; health/config must still be schedulable because the control plane does not share the data executor.
+
+The orchestrator maps only the data listener to Android:
+
+    adb -s <serial> reverse tcp:18080 tcp:<dataPort>
+
+App/test media URL:
 
     http://localhost:18080/
 
-This works for both emulator and USB-connected physical devices.
+The control listener remains host-local and is used by the orchestrator/CI only.
+
+`adb reverse` is valid for deterministic media-delivery tests on emulator and USB-connected devices. It is **not** evidence for Android VPN/default-route semantics because it changes the network path. M2 route/VPN scenarios must use a test path that actually traverses Android's selected default network.
 
 ### 2.7 Cleartext is lab/debug only
 
@@ -131,7 +146,7 @@ tools:media-lab is a host JVM application:
 - Gradle application plugin;
 - JDK jdk.httpserver;
 - no third-party runtime dependency;
-- JUnit 6.1.2 for tests;
+- JUnit 6.1.3 for tests;
 - JDK HttpClient for server integration tests.
 
 It has no Android or Media3 dependency.
@@ -145,24 +160,36 @@ Suggested CLI:
       --profile=N0|N1|N4
       --session-id=<id>
       --trace=<path>
-      --port=0
-      --workers=8
+      --data-port=0
+      --data-workers=8
+      --control-port=0
+      --control-workers=2
 
 Invalid configuration fails before bind.
 
-The first stdout record is machine-readable READY JSON containing schemaVersion, host, selected port, sessionId and profileId. Human logs go to stderr.
+Both listeners are bound before the trace file is created. If either bind fails, startup fails without leaving an empty trace artifact.
+
+The first stdout record is machine-readable READY JSON containing at least schemaVersion, host, dataPort, controlPort, sessionId, profileId and effective worker counts. Human logs go to stderr.
 
 ## 6. Server execution model
 
 Bind:
-- IPv4 loopback only;
-- never 0.0.0.0 by default.
+- two IPv4-loopback listeners only;
+- never 0.0.0.0 by default;
+- data and control ports are distinct when explicitly configured.
 
-Executor:
+Data executor:
 - explicit fixed/bounded worker pool;
 - provisional workers = 8;
-- enough for concurrent A/V plus control traffic;
-- effective value appears in startup config.
+- owns fixture delivery only.
+
+Control executor:
+- separate explicit fixed/bounded worker pool;
+- provisional workers = 2;
+- owns health/config only;
+- must never execute fixture-body impairment waits.
+
+Effective values appear in startup/config output.
 
 Responses:
 - fixed content length whenever known;
@@ -170,21 +197,23 @@ Responses:
 - all exchange streams closed;
 - client disconnect recorded explicitly.
 
+The B2 responsiveness gate is stronger than "control code bypasses impairment": with canonical F1 A/V concurrency, N4 must be able to occupy/block data workers while a control request still completes promptly on the independent listener/executor.
+
 ## 7. HTTP surface
 
-Control endpoints:
+Control listener only:
 
     GET /__lab/health
     GET /__lab/config
 
-Control endpoints are never subject to N1/N4 body impairment.
-
-Fixture endpoints:
+Data listener only:
 
     GET  /fixtures/<fixture-id>/<resource>
     HEAD /fixtures/<fixture-id>/<resource>
 
-Other methods:
+The opposite-plane path is 404. Control endpoints are never subject to N1/N4 body impairment.
+
+Other fixture methods:
 
     405 Method Not Allowed
     Allow: GET, HEAD
@@ -193,6 +222,12 @@ Fixture headers include:
 - Accept-Ranges: bytes
 - Cache-Control: no-store
 - exact Content-Length
+- X-Sponge-Lab-Session
+- X-Sponge-Lab-Request
+- X-Sponge-Lab-Profile
+- X-Sponge-Lab-Plane
+
+The lab-only correlation headers allow the Android measurement harness to join a client observation to a host request without subtracting timestamps from different monotonic clock domains.
 
 No dynamic gzip compression.
 
@@ -217,6 +252,10 @@ A suffix larger than the whole resource selects the whole representation as a pa
 Valid but unsatisfiable range:
 - 416 Range Not Satisfiable
 - Content-Range: bytes */completeLength
+
+Examples include a first byte position at or beyond a non-empty representation length and suffix length zero.
+
+An integer range whose last position is lower than its first position (for example `bytes=20-10`) is **invalid syntax**, not valid-but-unsatisfiable. M0-B deterministically ignores it and returns the normal 200 representation.
 
 Malformed or multiple-range syntax is not implemented as multipart. The lab deterministically ignores unsupported/malformed Range and returns the normal 200 representation. It must not misuse 416 merely because multipart support is absent.
 
@@ -323,7 +362,11 @@ Tests use fake time; no unit test waits 120 real seconds.
 
 Server duration math uses System.nanoTime() or injected monotonic clock.
 
-Later Android timestamps belong to a different clock domain. Host and Android monotonic timestamps must never be subtracted directly.
+Later Android timestamps belong to a different clock domain. Host and Android monotonic timestamps must never be subtracted directly. `handlerStartedAtMonotonicNs` is the JDK handler-entry timestamp; the lab does not claim access to the underlying socket-accept timestamp.
+
+B2 deterministic impairment tests use an injected monotonic clock/sleeper, following the same principle as Media3's FakeClock: timed state transitions are advanced explicitly instead of making PR tests sleep in real time.
+
+A future provider-expiry simulator may add a separate VirtualWallClock for signed-URL/descriptor expiry and Retry-After semantics. It must never replace or be mixed with the monotonic clock used for durations, pacing and deadlines.
 
 ## 14. Request trace schema v1
 
@@ -342,7 +385,7 @@ Required fields:
 - status
 - plannedResponseBytes
 - bodyBytesWritten
-- acceptedAtMonotonicNs
+- handlerStartedAtMonotonicNs
 - firstBodyWriteAtMonotonicNs
 - completedAtMonotonicNs
 - serverFirstBodyWriteDelayMs
@@ -363,6 +406,41 @@ Outcomes include:
 bodyBytesWritten means writes completed by the handler, not exact remote-NIC wire bytes.
 
 JSON escaping is unit-tested. Appends are serialized/thread-safe and each complete record is flushed as one line.
+
+### 14.1 Session event trace
+
+B2 adds a small session-event stream beside per-request JSONL records. It records scenario-level transitions that cannot be reconstructed reliably from completed request rows alone:
+
+- SESSION_STARTED
+- N1_RATE_RESOLVED
+- FIRST_MEDIA_PROGRESS
+- NO_PROGRESS_WINDOW_SCHEDULED
+- NO_PROGRESS_WINDOW_ENTERED
+- NO_PROGRESS_WINDOW_EXITED
+- SESSION_COMPLETED
+
+Each event carries schemaVersion, sessionId, scenarioId/scenarioHash once available, a host-monotonic timestamp and event-specific fields.
+
+### 14.2 Resolved scenario identity
+
+A profile label such as N1 is not sufficient benchmark identity. B2 resolves immutable inputs into a canonical ResolvedScenario containing at least:
+
+- schemaVersion
+- scenarioId
+- profileId
+- firstBodyDelayMs
+- aggregateRateRatio where applicable
+- resolved aggregateRateBps
+- writeQuantumBytes
+- noProgressStartAfterMs
+- noProgressDurationMs
+- random seed when a future stochastic layer is used
+
+`scenarioHash = SHA-256(canonical resolved scenario bytes)`.
+
+The fixture identity remains separately hashed. A run is comparable only when the relevant scenario/fixture identities match, or the report explicitly treats the difference as the variable under test.
+
+The B2 scenario hash is returned in config/startup evidence and later in `X-Sponge-Lab-Scenario`.
 
 ## 15. Fixture strategy
 
@@ -453,6 +531,18 @@ Per resource:
 checksums.sha256 independently lists canonical payload checksums.
 
 The runtime server does not need to add a full JSON library merely to serve these files.
+
+### Fixture validation levels
+
+B3 treats a frozen fixture as more than a byte blob:
+
+1. byte identity — committed SHA-256;
+2. structural metadata — ffprobe (and another container-level inspector only if a concrete ambiguity remains);
+3. DASH/CMAF conformance — DASH-IF Conformance on fixture-generation/change workflows.
+
+Normal PR CI verifies hashes/manifest consistency and does not rerun heavyweight conformance when fixture bytes are unchanged. A PR that changes F1 media or its MPD must attach conformance evidence.
+
+F2/F3 diagnostic packaging variants are deliberately deferred until a real ambiguity appears (for example, segmented-vs-range-addressable behavior). They are not added to the initial 40 MiB corpus merely for breadth.
 
 ## 18. Catalog safety
 
@@ -557,18 +647,34 @@ CI verifies fixture bytes; it does not regenerate them.
 
 ## 22. Calibration boundary
 
-M0-B proves that the server follows its configured schedule.
+M0-B proves that the server follows its configured schedule. A configured value is not accepted as an observed value merely because the code requested it.
 
-M0-F later calibrates observed real-time behavior before using the lab for acceptance comparisons.
+M0-F later calibrates real-time behavior before using the lab for acceptance comparisons.
 
 Expose enough evidence for calibration:
 - configured delay/rate/no-progress;
-- server write timings;
-- body bytes written.
+- observed server write timings;
+- body bytes written;
+- resolved scenario identity;
+- session transition events.
+
+Derived harness-accuracy metrics include:
+
+    observedRateBps
+    rateErrorPct
+    observedFirstBodyDelayMs
+    firstBodyDelayErrorMs
+    observedNoProgressDurationMs
+    noProgressDurationErrorMs
+    maxSchedulerSlipMs
+
+No permanent pass/fail percentage is invented before pilot runs characterize host/CI jitter. Initial calibration evidence reports raw error distributions; a tolerance becomes a gate only after evidence supports it.
+
+Socket/kernel buffering means "server stopped writing" is not identical to "client instantly received zero additional bytes". B2 includes a short real-socket calibration that characterizes bounded post-gate drain/leakage on the host path and records the limitation. Android acceptance reports app-visible no-progress separately rather than pretending host and device clocks are synchronized.
 
 Never label a configured N1 value as measured real network throughput.
 
-Record both `referencePlaybackBitrateBps`, `aggregateRateRatio` and resolved `aggregateRateBps` in scenario/startup evidence so future comparisons remain interpretable.
+Record `referencePlaybackBitrateBps`, `aggregateRateRatio`, resolved `aggregateRateBps`, scenarioHash and fixture identity in run evidence so future comparisons remain interpretable.
 
 ## 23. Delivery plan
 
@@ -583,16 +689,17 @@ Deliver:
 - tools:media-lab module;
 - Java application/test toolchain;
 - CLI/process contract;
-- loopback/port 0;
-- explicit executor/shutdown;
+- independent data/control loopback listeners on port 0;
+- independent bounded executors and clean shutdown;
 - fixture catalog;
 - GET/HEAD;
 - Range contract;
-- health/config;
+- host-only health/config;
+- lab request/session/profile/plane correlation headers;
 - JSONL trace foundation;
-- host tests.
+- host tests including partial-bind cleanup and plane isolation.
 
-No long-form committed fixture yet.
+No impairment engine and no long-form committed fixture yet.
 
 ### B2 — impairment engine
 
@@ -600,13 +707,16 @@ Title:
 test(media-lab): add deterministic impairment profiles
 
 Deliver:
-- injected clock/sleeper;
+- injected monotonic clock/sleeper;
 - shared GlobalBandwidthGovernor;
 - shared NoProgressGate;
-- N0/N1/N4 immutable specs with N1 resolved from a ratio against fixture reference bitrate;
+- N0/N1/N4 immutable ResolvedScenario specs with canonical scenarioHash;
+- N1 resolved from a ratio against fixture reference bitrate;
 - provisional 8 KiB quantum;
+- session event trace;
+- configured-vs-observed calibration summary;
 - fake-clock tests;
-- short socket-level smoke.
+- short socket-level smoke including control responsiveness and post-gate drain characterization.
 
 ### B3 — canonical fixtures and Android bridge
 
@@ -620,8 +730,11 @@ Deliver:
 - manifest.json;
 - checksums.sha256;
 - fixture verification;
+- ffprobe structural evidence;
+- DASH-IF conformance evidence when DASH fixture bytes/MPD are introduced or changed;
 - actual size/bitrate metadata;
 - adb reverse helper/docs;
+- explicit statement that adb reverse is not used to validate VPN/default-route semantics;
 - debug/lab-only localhost cleartext support needed by M0-C;
 - end-to-end host smoke using committed fixtures.
 
@@ -663,14 +776,30 @@ Mitigation: debug/lab source-set only.
 R12: fixture bytes permanently bloat Git.
 Mitigation: reviewed initial budget around 40 MiB.
 
+R13: N4 media waits consume the same executor as health/config and make the control plane appear dead.
+Mitigation: physically separate data/control listeners and executors; B2 tests canonical F1 saturation plus control responsiveness.
+
+R14: a profile label such as N1 hides resolved parameters and makes historical benchmark runs incomparable.
+Mitigation: canonical ResolvedScenario + scenarioHash; fixture identity remains separately hashed.
+
+R15: configured impairment is mistaken for delivered impairment.
+Mitigation: calibration records configured-vs-observed error and scheduler slip before benchmark conclusions are accepted.
+
+R16: Android and host events are correlated by timestamps from unrelated monotonic clocks.
+Mitigation: stable request/session correlation headers and IDs; never subtract cross-domain timestamps.
+
+R17: a byte-identical but malformed DASH fixture poisons playback conclusions.
+Mitigation: fixture generation/change workflow includes structural inspection and DASH-IF conformance evidence.
+
 ## 25. Definition of Done
 
 M0-B/#5 is complete only when:
 - [ ] tools:media-lab is the only new Gradle module.
 - [ ] no third-party runtime dependency is used by the lab.
-- [ ] server binds loopback only and supports port 0.
-- [ ] READY/config output is machine-readable.
-- [ ] explicit executor and clean shutdown are tested.
+- [ ] data and control servers bind loopback only and support independent port 0 allocation.
+- [ ] READY/config output is machine-readable and reports both ports/worker counts.
+- [ ] data/control executors are independent; partial bind failures leave no trace artifact.
+- [ ] clean shutdown is tested.
 - [ ] only cataloged resources are served.
 - [ ] GET/HEAD/404/405 are tested.
 - [ ] 206 single-range semantics are tested.
@@ -682,9 +811,14 @@ M0-B/#5 is complete only when:
 - [ ] N4 duration is 120000 ms.
 - [ ] unit tests never wait 120 real seconds.
 - [ ] trace schema v1 is committed and thread-safe.
+- [ ] lab response correlation headers expose session/request/profile/plane; B2 adds scenarioHash.
+- [ ] B2 emits session-level scenario transition events.
+- [ ] resolved scenario identity is canonical and hashed.
+- [ ] configured-vs-observed delivery calibration is retained before M0-F comparisons.
 - [ ] F0 is committed, hashed and Range-tested.
 - [ ] F1 contains exactly one video and one audio representation.
 - [ ] F1 records provenance, actual bytes and actual bitrate.
+- [ ] F1 DASH structure/conformance evidence exists for the committed bytes/MPD.
 - [ ] fixture checksums are part of check.
 - [ ] fixture size remains within reviewed budget.
 - [ ] adb reverse path is documented for emulator and physical device.
@@ -704,4 +838,11 @@ M0-B/#5 is complete only when:
 - FFmpeg filters: https://ffmpeg.org/ffmpeg-filters.html
 - FFmpeg formats/DASH: https://ffmpeg.org/ffmpeg-formats.html
 - FFmpeg releases: https://ffmpeg.org/download.html
-- JUnit 6.1.2 release notes: https://docs.junit.org/6.1.2/release-notes.html
+- JUnit 6.1.3 release notes: https://docs.junit.org/6.1.3/release-notes.html
+- Media3 FakeClock: https://developer.android.com/reference/androidx/media3/test/utils/FakeClock
+- GStreamer Validate scenarios: https://gstreamer.freedesktop.org/documentation/gst-devtools/gst-validate-scenarios.html
+- DASH-IF Conformance: https://github.com/Dash-Industry-Forum/DASH-IF-Conformance
+- Toxiproxy (future M2 transport-fault layer): https://github.com/Shopify/toxiproxy
+- Linux tc-netem (future M2 packet/network layer): https://man7.org/linux/man-pages/man8/tc-netem.8.html
+- Android Macrobenchmark: https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
+- Perfetto Trace Summarization: https://perfetto.dev/docs/analysis/trace-summary
