@@ -1,9 +1,8 @@
 name: B3 Generate Canonical Fixtures
 
 on:
-  push:
-    branches:
-      - test/5-canonical-media-fixtures
+  pull_request:
+    branches: [ main ]
     paths:
       - ".github/workflows/b3-generate-fixtures.yml"
       - "scripts/media-lab/generate-fixtures.sh"
@@ -13,11 +12,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: b3-generate-canonical-fixtures
+  group: b3-generate-canonical-fixtures-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   generate:
+    if: github.head_ref == 'test/5-canonical-media-fixtures'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -25,6 +25,7 @@ jobs:
       - name: Checkout fixture branch
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: test/5-canonical-media-fixtures
           fetch-depth: 0
 
       - name: Install FFmpeg build dependencies
@@ -74,7 +75,6 @@ jobs:
 
           make -j"$(nproc)"
           make install
-
           echo "$RUNNER_TEMP/ffmpeg-install/bin" >> "$GITHUB_PATH"
 
       - name: Generate canonical fixtures
@@ -87,6 +87,14 @@ jobs:
         shell: bash
         run: |
           ./gradlew --configuration-cache :tools:media-lab:test
+
+      - name: Upload generated corpus
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b3-canonical-fixtures
+          path: test-fixtures/media/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Commit generated corpus to B3 branch
         shell: bash
