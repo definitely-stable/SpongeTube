@@ -103,7 +103,7 @@ final class RequestTraceSummary {
     private static boolean isSuccessfulMediaBody(RequestTrace trace) {
         return trace.fixtureId() != null
                 && trace.resourceId() != null
-                && ("GET".equals(trace.method()) || "HEAD".equals(trace.method()))
+                && "GET".equals(trace.method())
                 && (trace.status() == 200 || trace.status() == 206);
     }
 
