@@ -76,8 +76,8 @@ jobs:
       - name: Verify build and configuration cache
         shell: bash
         run: |
-          ./gradlew --configuration-cache check assembleDebug
-          ./gradlew --configuration-cache check assembleDebug
+          ./gradlew --configuration-cache check assembleDebug :benchmark:assembleBenchmark
+          ./gradlew --configuration-cache check assembleDebug :benchmark:assembleBenchmark
 
       - name: Upload failure artifacts
         if: failure()
@@ -87,6 +87,8 @@ jobs:
           path: |
             gradle/verification-metadata.xml
             app/build/reports/
+            benchmark/build/reports/
+            benchmark/build/outputs/
             tools/media-lab/build/reports/
             tools/media-lab/build/test-results/
           if-no-files-found: warn
