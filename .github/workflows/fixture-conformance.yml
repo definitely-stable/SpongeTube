@@ -42,7 +42,7 @@ jobs:
         with:
           php-version: "8.4"
           extensions: curl, mbstring, sqlite3, xml
-          tools: composer:2.9.8@sha256:59b2c50e10cafa0d8efc19ede9a326d782f096c674a26baf98cf042ce23de890
+          tools: none
 
       - name: Set up JDK 21 for DASH-IF validators
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
@@ -55,6 +55,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gpac jq
+
+      - name: Install verified Composer 2.10.3
+        shell: bash
+        run: |
+          curl --fail --show-error --silent --location \
+            https://getcomposer.org/download/2.10.3/composer.phar \
+            --output "$RUNNER_TEMP/composer.phar"
+          echo "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6  $RUNNER_TEMP/composer.phar" \
+            | sha256sum --check --strict
 
       - name: Prepare DASH-IF application
         shell: bash
@@ -70,15 +79,16 @@ jobs:
           sed -i 's/^OTEL_TRACES_EXPORTER=.*/OTEL_TRACES_EXPORTER=null/' .env
 
           touch database/database.sqlite
-          composer install --no-interaction --prefer-dist --no-progress --no-dev
+          php "$RUNNER_TEMP/composer.phar" install \
+            --no-interaction --prefer-dist --no-progress --no-dev
           php artisan key:generate --force
           php artisan migrate --force
 
           php -v
-          composer --version
+          php "$RUNNER_TEMP/composer.phar" --version
           java -version
           echo "dashifCommit=$(git rev-parse HEAD)"
-          echo "mp4box=$(MP4Box -version 2>&1 | head -1)"
+          echo "gpacPackage=$(dpkg-query -W -f='\${Version}' gpac)"
 
       - name: Serve canonical F1
         shell: bash
