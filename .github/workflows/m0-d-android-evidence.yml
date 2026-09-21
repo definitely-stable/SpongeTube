@@ -172,9 +172,13 @@ jobs:
 
           test -s build/m0-d/android/playback-events.jsonl
           test -s build/m0-d/android/playback-summary.json
+          test -s build/m0-d/android/playback-stats-cross-check.json
 
           jq -e '.schemaVersion == 1' build/m0-d/android/playback-summary.json
+          jq -e '.schemaVersion == 1' build/m0-d/android/playback-stats-cross-check.json
+          jq -e '.semanticRole == "MEDIA3_CROSS_CHECK"' build/m0-d/android/playback-stats-cross-check.json
           jq -e '.sessionId == "m0d-macro-0-1"' build/m0-d/android/playback-summary.json
+          jq -e '.sessionId == "m0d-macro-0-1"' build/m0-d/android/playback-stats-cross-check.json
           jq -e '.status == "COMPLETE"' build/m0-d/android/playback-summary.json
           jq -e '.ttffNs >= 0' build/m0-d/android/playback-summary.json
 
