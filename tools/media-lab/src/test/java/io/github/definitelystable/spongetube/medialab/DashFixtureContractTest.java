@@ -25,6 +25,7 @@ class DashFixtureContractTest {
         assertEquals("MPD", mpd.getLocalName());
         assertEquals("static", mpd.getAttribute("type"));
         assertEquals("PT3M0.0S", mpd.getAttribute("mediaPresentationDuration"));
+        assertEquals("PT10.006S", mpd.getAttribute("maxSegmentDuration"));
 
         NodeList adaptationSets = document.getElementsByTagNameNS(DASH_NS, "AdaptationSet");
         assertEquals(2, adaptationSets.getLength());
