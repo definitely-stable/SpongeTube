@@ -3,6 +3,7 @@ package io.github.definitelystable.spongetube.medialab;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -23,24 +24,22 @@ class MediaLabServerTest {
     @TempDir
     Path temp;
 
-
     @Test
-    void bindFailureDoesNotCreateTraceFile() throws Exception {
-        Path fixtureRoot = Files.createDirectory(temp.resolve("bind-fixtures"));
+    void dataBindFailureDoesNotCreateTraceFile() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("data-bind-fixtures"));
         Files.createDirectory(fixtureRoot.resolve("F0"));
-        Path tracePath = temp.resolve("bind-failure.jsonl");
+        Path tracePath = temp.resolve("data-bind-failure.jsonl");
 
-        int occupiedPort;
         try (ServerSocket occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
-            occupiedPort = occupied.getLocalPort();
-
             MediaLabConfig config = new MediaLabConfig(
                     fixtureRoot,
                     tracePath,
-                    "bind-failure",
+                    "data-bind-failure",
                     MediaLabProfile.N0,
-                    occupiedPort,
-                    2);
+                    occupied.getLocalPort(),
+                    2,
+                    0,
+                    1);
 
             assertThrows(java.net.BindException.class, () -> MediaLabServer.create(config));
         }
@@ -48,9 +47,31 @@ class MediaLabServerTest {
         assertFalse(Files.exists(tracePath));
     }
 
+    @Test
+    void controlBindFailureDoesNotCreateTraceFile() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("control-bind-fixtures"));
+        Files.createDirectory(fixtureRoot.resolve("F0"));
+        Path tracePath = temp.resolve("control-bind-failure.jsonl");
+
+        try (ServerSocket occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            MediaLabConfig config = new MediaLabConfig(
+                    fixtureRoot,
+                    tracePath,
+                    "control-bind-failure",
+                    MediaLabProfile.N0,
+                    0,
+                    2,
+                    occupied.getLocalPort(),
+                    1);
+
+            assertThrows(java.net.BindException.class, () -> MediaLabServer.create(config));
+        }
+
+        assertFalse(Files.exists(tracePath));
+    }
 
     @Test
-    void servesControlAndFixtureHttpContractAndWritesTrace() throws Exception {
+    void separatesControlAndDataPlanesAndWritesCorrelatedTrace() throws Exception {
         Path fixtureRoot = Files.createDirectory(temp.resolve("fixtures"));
         Path fixture = Files.createDirectory(fixtureRoot.resolve("F0"));
 
@@ -67,39 +88,70 @@ class MediaLabServerTest {
                 "integration-1",
                 MediaLabProfile.N0,
                 0,
-                4);
+                4,
+                0,
+                2);
 
         HttpClient client = HttpClient.newHttpClient();
 
         try (MediaLabServer server = MediaLabServer.create(config)) {
             server.start();
-            assertTrue(server.port() > 0);
-            assertTrue(server.readyJson().contains("\"MEDIA_LAB_READY\""));
 
-            URI base = URI.create("http://127.0.0.1:" + server.port());
+            assertTrue(server.dataPort() > 0);
+            assertTrue(server.controlPort() > 0);
+            assertNotEquals(server.dataPort(), server.controlPort());
+            assertTrue(server.readyJson().contains("\"schemaVersion\":2"));
+            assertTrue(server.readyJson().contains("\"MEDIA_LAB_READY\""));
+            assertTrue(server.readyJson().contains("\"dataPort\":" + server.dataPort()));
+            assertTrue(server.readyJson().contains("\"controlPort\":" + server.controlPort()));
+
+            URI dataBase = URI.create("http://127.0.0.1:" + server.dataPort());
+            URI controlBase = URI.create("http://127.0.0.1:" + server.controlPort());
 
             HttpResponse<String> health = sendText(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/__lab/health")).GET().build());
+                    HttpRequest.newBuilder(controlBase.resolve("/__lab/health")).GET().build());
             assertEquals(200, health.statusCode());
             assertTrue(health.body().contains("\"status\":\"ok\""));
+            assertEquals(
+                    "control",
+                    health.headers().firstValue("X-Sponge-Lab-Plane").orElseThrow());
+            assertEquals(
+                    "integration-1",
+                    health.headers().firstValue("X-Sponge-Lab-Session").orElseThrow());
 
             HttpResponse<String> configResponse = sendText(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/__lab/config")).GET().build());
+                    HttpRequest.newBuilder(controlBase.resolve("/__lab/config")).GET().build());
             assertEquals(200, configResponse.statusCode());
             assertTrue(configResponse.body().contains("\"profileId\":\"N0\""));
+            assertTrue(configResponse.body().contains("\"dataPort\":" + server.dataPort()));
+            assertTrue(configResponse.body().contains("\"controlPort\":" + server.controlPort()));
+
+            HttpResponse<String> dataHealth = sendText(
+                    client,
+                    HttpRequest.newBuilder(dataBase.resolve("/__lab/health")).GET().build());
+            assertEquals(404, dataHealth.statusCode());
+
+            HttpResponse<String> controlFixture = sendText(
+                    client,
+                    HttpRequest.newBuilder(controlBase.resolve("/fixtures/F0/sample.bin")).GET().build());
+            assertEquals(404, controlFixture.statusCode());
 
             HttpResponse<byte[]> full = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin")).GET().build());
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin")).GET().build());
             assertEquals(200, full.statusCode());
             assertArrayEquals(source, full.body());
             assertEquals("bytes", full.headers().firstValue("Accept-Ranges").orElseThrow());
+            assertEquals("data", full.headers().firstValue("X-Sponge-Lab-Plane").orElseThrow());
+            assertEquals("N0", full.headers().firstValue("X-Sponge-Lab-Profile").orElseThrow());
+            assertTrue(Long.parseLong(
+                    full.headers().firstValue("X-Sponge-Lab-Request").orElseThrow()) > 0);
 
             HttpResponse<byte[]> partial = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .header("Range", "bytes=10-19")
                             .GET()
                             .build());
@@ -111,7 +163,7 @@ class MediaLabServerTest {
 
             HttpResponse<byte[]> suffix = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .header("Range", "bytes=-4")
                             .GET()
                             .build());
@@ -120,7 +172,7 @@ class MediaLabServerTest {
 
             HttpResponse<byte[]> unsatisfiable = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .header("Range", "bytes=256-300")
                             .GET()
                             .build());
@@ -131,7 +183,7 @@ class MediaLabServerTest {
 
             HttpResponse<byte[]> malformed = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .header("Range", "bytes=bad")
                             .GET()
                             .build());
@@ -140,7 +192,7 @@ class MediaLabServerTest {
 
             HttpResponse<byte[]> multiple = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .header("Range", "bytes=0-1,4-5")
                             .GET()
                             .build());
@@ -149,7 +201,7 @@ class MediaLabServerTest {
 
             HttpResponse<byte[]> head = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .method("HEAD", HttpRequest.BodyPublishers.noBody())
                             .build());
             assertEquals(200, head.statusCode());
@@ -158,12 +210,12 @@ class MediaLabServerTest {
 
             HttpResponse<String> missing = sendText(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/missing.bin")).GET().build());
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/missing.bin")).GET().build());
             assertEquals(404, missing.statusCode());
 
             HttpResponse<byte[]> missingHead = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/missing.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/missing.bin"))
                             .method("HEAD", HttpRequest.BodyPublishers.noBody())
                             .build());
             assertEquals(404, missingHead.statusCode());
@@ -172,7 +224,7 @@ class MediaLabServerTest {
 
             HttpResponse<byte[]> controlHead = sendBytes(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/__lab/health"))
+                    HttpRequest.newBuilder(controlBase.resolve("/__lab/health"))
                             .method("HEAD", HttpRequest.BodyPublishers.noBody())
                             .build());
             assertEquals(405, controlHead.statusCode());
@@ -182,7 +234,7 @@ class MediaLabServerTest {
             HttpResponse<String> traversal = sendText(
                     client,
                     HttpRequest.newBuilder(
-                                    URI.create("http://127.0.0.1:" + server.port()
+                                    URI.create("http://127.0.0.1:" + server.dataPort()
                                             + "/fixtures/F0/%252e%252e/secret"))
                             .GET()
                             .build());
@@ -190,7 +242,7 @@ class MediaLabServerTest {
 
             HttpResponse<String> methodNotAllowed = sendText(
                     client,
-                    HttpRequest.newBuilder(base.resolve("/fixtures/F0/sample.bin"))
+                    HttpRequest.newBuilder(dataBase.resolve("/fixtures/F0/sample.bin"))
                             .POST(HttpRequest.BodyPublishers.noBody())
                             .build());
             assertEquals(405, methodNotAllowed.statusCode());
@@ -198,7 +250,7 @@ class MediaLabServerTest {
         }
 
         List<String> traceLines = Files.readAllLines(tracePath);
-        assertEquals(14, traceLines.size());
+        assertEquals(16, traceLines.size());
         assertTrue(traceLines.stream().allMatch(line -> line.startsWith("{") && line.endsWith("}")));
         assertTrue(traceLines.stream().anyMatch(line ->
                 line.contains("\"status\":200")
