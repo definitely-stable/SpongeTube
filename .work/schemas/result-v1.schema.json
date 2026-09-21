@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.local/schemas/result-v1.schema.json",
+  "title": "SpongeTube M0 Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "status",
+    "playback",
+    "network",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["COMPLETE", "PARTIAL", "INVALID"]
+    },
+    "playback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ttffNs",
+        "stallCount",
+        "stallTotalNs",
+        "seekToFrameNs",
+        "playbackErrorCodes"
+      ],
+      "properties": {
+        "ttffNs": { "type": ["integer", "null"], "minimum": 0 },
+        "stallCount": { "type": "integer", "minimum": 0 },
+        "stallTotalNs": { "type": "integer", "minimum": 0 },
+        "seekToFrameNs": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "playbackErrorCodes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestCount",
+        "networkBytes",
+        "uniqueRangeBytes",
+        "duplicateRangeBytes",
+        "httpErrorCount"
+      ],
+      "properties": {
+        "requestCount": { "type": "integer", "minimum": 0 },
+        "networkBytes": { "type": "integer", "minimum": 0 },
+        "uniqueRangeBytes": { "type": "integer", "minimum": 0 },
+        "duplicateRangeBytes": { "type": "integer", "minimum": 0 },
+        "httpErrorCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "labAccuracy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "observedRateBps": { "type": ["integer", "null"], "minimum": 0 },
+        "rateErrorPct": { "type": ["number", "null"] },
+        "observedFirstBodyDelayMs": { "type": ["number", "null"], "minimum": 0 },
+        "firstBodyDelayErrorMs": { "type": ["number", "null"] },
+        "observedNoProgressDurationMs": { "type": ["number", "null"], "minimum": 0 },
+        "noProgressDurationErrorMs": { "type": ["number", "null"] },
+        "maxSchedulerSlipMs": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}
