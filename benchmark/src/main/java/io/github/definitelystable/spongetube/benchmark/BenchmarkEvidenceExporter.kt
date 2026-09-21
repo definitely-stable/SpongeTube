@@ -85,6 +85,7 @@ internal object BenchmarkEvidenceExporter {
         "playback-events.jsonl",
         "playback-summary.json",
         "playback-stats-cross-check.json",
+        "baseline-observations.json",
     )
     private const val FINALIZE_ATTEMPTS = 100
     private const val FINALIZE_POLL_MS = 100L
