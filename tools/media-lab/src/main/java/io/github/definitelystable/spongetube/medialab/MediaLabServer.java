@@ -256,9 +256,6 @@ final class MediaLabServer implements AutoCloseable {
             exchange.close();
             try {
                 RequestTrace completed = trace.complete(clock.nowNanos());
-                if (trace.fixtureId != null && completed.serverFirstBodyWriteDelayMs() != null) {
-                    calibration.observeFirstBodyDelay(completed.serverFirstBodyWriteDelayMs());
-                }
                 requestTraceWriter.append(completed);
             } catch (IOException traceFailure) {
                 System.err.println("media-lab trace failure: " + traceFailure.getMessage());
