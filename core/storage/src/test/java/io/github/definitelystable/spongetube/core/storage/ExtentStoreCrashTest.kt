@@ -207,6 +207,67 @@ class ExtentStoreCrashTest {
     }
 
     @Test
+    fun closeIsRejectedWhileStructuredWriteOwnsTheStore() = runBlocking {
+        val root = File(tempDir, "close-admission")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "active-write".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        val owner = async {
+            store.writeExtent(spec("active", bytes)) {
+                entered.complete(Unit)
+                release.await()
+                write(bytes)
+            }
+        }
+
+        entered.await()
+
+        expectThrows<ExtentConflictException> {
+            store.close()
+        }
+
+        release.complete(Unit)
+        owner.await()
+        store.close()
+    }
+
+    @Test
+    fun noOriginDigestUsesDigestOfExactlyReceivedBytes() = runBlocking {
+        val root = File(tempDir, "received-digest")
+        val metadata = FakeExtentMetadataStore()
+        val first = "hello ".encodeToByteArray()
+        val second = "world".encodeToByteArray()
+        val all = first + second
+        val store = openStore(root, metadata)
+        val spec = spec(
+            id = "received-digest",
+            bytes = all,
+            includeExpectedSha256 = false,
+        )
+
+        val committed = store.writeExtent(spec) {
+            write(first)
+            write(second)
+        }
+
+        assertEquals(all.size.toLong(), committed.length)
+        assertEquals(sha256(all), committed.sha256)
+        assertEquals(
+            committed.sha256,
+            Sha256.digest(
+                ExtentPathLayout(root).finalFile(
+                    committed.extentId,
+                    HostDurabilityOps,
+                ),
+            ),
+        )
+        store.close()
+    }
+
+    @Test
     fun concurrentSameExtentHasExactlyOneWriterOwner() = runBlocking {
         val root = File(tempDir, "single-writer")
         val metadata = FakeExtentMetadataStore()
