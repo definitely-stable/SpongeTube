@@ -1,4 +1,4 @@
-"""Small deterministic validator for the JSON-Schema subset used by M1 evidence contracts.
+"""Small deterministic validator for the JSON-Schema subset used by M1 evidence.
 
 This is intentionally not a general JSON Schema implementation. It supports only the
 keywords used by the checked-in M1 schemas so Verify can reject accidental contract
@@ -33,13 +33,51 @@ def _matches_type(value: Any, type_name: str) -> bool:
     raise SchemaContractError(f"unsupported schema type: {type_name}")
 
 
+def _json_equal(left: Any, right: Any) -> bool:
+    """JSON-semantic equality for the subset used by contract const/enum values."""
+
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+
+    left_number = isinstance(left, (int, float)) and not isinstance(left, bool)
+    right_number = isinstance(right, (int, float)) and not isinstance(right, bool)
+    if left_number or right_number:
+        return left_number and right_number and left == right
+
+    if left is None or right is None:
+        return left is right
+
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+
+    if isinstance(left, list) or isinstance(right, list):
+        return (
+            isinstance(left, list)
+            and isinstance(right, list)
+            and len(left) == len(right)
+            and all(_json_equal(a, b) for a, b in zip(left, right))
+        )
+
+    if isinstance(left, dict) or isinstance(right, dict):
+        return (
+            isinstance(left, dict)
+            and isinstance(right, dict)
+            and left.keys() == right.keys()
+            and all(_json_equal(left[key], right[key]) for key in left)
+        )
+
+    return left == right and type(left) is type(right)
+
+
 def validate_instance(schema: dict[str, Any], value: Any, path: str = "$") -> None:
-    if "const" in schema and value != schema["const"]:
+    if "const" in schema and not _json_equal(value, schema["const"]):
         raise SchemaContractError(
             f"{path}: expected const {schema['const']!r}, got {value!r}"
         )
 
-    if "enum" in schema and value not in schema["enum"]:
+    if "enum" in schema and not any(
+        _json_equal(value, candidate) for candidate in schema["enum"]
+    ):
         raise SchemaContractError(
             f"{path}: {value!r} is not in enum {schema['enum']!r}"
         )
