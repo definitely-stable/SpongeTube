@@ -52,9 +52,10 @@ class M1SchemaContractTest(unittest.TestCase):
                     schema["$schema"],
                 )
                 self.assertEqual(
-                    1,
+                    example["schemaVersion"],
                     schema["properties"]["schemaVersion"]["const"],
                 )
+                self.assertIn(example["schemaVersion"], (1, 2))
                 validate_instance(schema, example)
 
     def test_validator_rejects_missing_required_property(self):
@@ -87,6 +88,23 @@ class M1SchemaContractTest(unittest.TestCase):
         )
         broken = copy.deepcopy(example)
         broken["fixtureSha256"] = "not-a-sha256"
+
+        with self.assertRaises(SchemaContractError):
+            validate_instance(schema, broken)
+
+    def test_asset_scoped_v2_requires_media_asset_id(self):
+        schema = json.loads(
+            (SCHEMAS / "coverage-snapshot-v2.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        example = json.loads(
+            (EXAMPLES / "coverage-snapshot-v2.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        broken = copy.deepcopy(example)
+        del broken["mediaAssetId"]
 
         with self.assertRaises(SchemaContractError):
             validate_instance(schema, broken)
