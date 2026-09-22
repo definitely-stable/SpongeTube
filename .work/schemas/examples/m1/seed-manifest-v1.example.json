@@ -21,7 +21,8 @@
       "mediaEndUs": null,
       "dependencyExtentIds": [],
       "length": 1024,
-      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "fixtureResourcePath": "F1/init-0.m4s"
     },
     {
       "extentId": "a-init",
@@ -31,7 +32,8 @@
       "mediaEndUs": null,
       "dependencyExtentIds": [],
       "length": 1024,
-      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "fixtureResourcePath": "F1/init-1.m4s"
     },
     {
       "extentId": "v-0",
@@ -43,7 +45,8 @@
         "v-init"
       ],
       "length": 700000,
-      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "fixtureResourcePath": "F1/segment-0-00001.m4s"
     },
     {
       "extentId": "a-0",
@@ -55,7 +58,8 @@
         "a-init"
       ],
       "length": 80000,
-      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "fixtureResourcePath": "F1/segment-1-00001.m4s"
     }
   ],
   "perTrackCoverage": {
@@ -78,5 +82,10 @@
       "endUs": 10000000
     }
   ],
-  "actualReserveUs": 10000000
+  "actualReserveUs": 10000000,
+  "mediaAssetId": "fixture:F1",
+  "seedClass": "POSITIVE",
+  "playheadUs": 0,
+  "negativeCase": null,
+  "rejectedAttempts": []
 }
