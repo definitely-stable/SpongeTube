@@ -9,7 +9,14 @@ value class MediaAssetId(val value: String) {
         require(value.length <= 256) { "media asset id must be <= 256 characters" }
     }
 
+    val isLegacyUnscoped: Boolean
+        get() = value == LEGACY_UNSCOPED_VALUE
+
     override fun toString(): String = value
+
+    companion object {
+        const val LEGACY_UNSCOPED_VALUE = "__legacy_unscoped__"
+    }
 }
 
 @JvmInline
@@ -51,6 +58,9 @@ data class ExtentSpec(
     val expectedSha256: Sha256Digest? = null,
 ) {
     init {
+        require(!mediaAssetId.isLegacyUnscoped) {
+            "legacy unscoped media asset id is reserved for migration"
+        }
         require(trackId.isNotBlank()) { "trackId must not be blank" }
         require(representationId.isNotBlank()) { "representationId must not be blank" }
         require(expectedLength > 0) { "expectedLength must be > 0" }
