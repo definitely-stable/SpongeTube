@@ -79,12 +79,13 @@ jobs:
             m0e-api36 \
             build/android-smoke/device
 
-      - name: Run M1 storage integration
+      - name: Run M1 storage and coverage integration
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew --dependency-verification=strict \
-            :core:storage:connectedDebugAndroidTest
+            :core:storage:connectedDebugAndroidTest \
+            :core:engine:connectedDebugAndroidTest
 
       - name: Run N0 and N1 smoke scenarios
         shell: bash
