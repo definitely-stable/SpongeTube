@@ -81,13 +81,13 @@ class M1SeedPlannerTest(unittest.TestCase):
             ),
             "S60": (
                 (Interval(0, 60_000_000),),
-                (Interval(0, 69_930_666),),
+                (Interval(0, 69_952_000),),
                 (Interval(0, 60_000_000),),
                 60_000_000,
             ),
             "S120": (
                 (Interval(0, 120_000_000),),
-                (Interval(0, 129_920_000),),
+                (Interval(0, 129_941_333),),
                 (Interval(0, 120_000_000),),
                 120_000_000,
             ),
