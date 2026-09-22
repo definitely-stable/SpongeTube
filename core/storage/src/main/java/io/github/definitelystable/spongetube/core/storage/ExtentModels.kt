@@ -163,12 +163,16 @@ open class ExtentStoreException(
 class ExtentIntegrityException(
     val extentId: ExtentId,
     val expectedLength: Long,
-    val actualLength: Long,
+    val receivedLength: Long,
+    val persistedLength: Long,
     val expectedSha256: Sha256Digest?,
-    val actualSha256: Sha256Digest,
+    val receivedSha256: Sha256Digest,
+    val persistedSha256: Sha256Digest,
 ) : ExtentStoreException(
     "Extent $extentId failed integrity verification: " +
-        "length $actualLength/$expectedLength, sha256 $actualSha256/" +
+        "length received=$receivedLength persisted=$persistedLength " +
+        "expected=$expectedLength; sha256 received=$receivedSha256 " +
+        "persisted=$persistedSha256 origin=" +
         (expectedSha256?.toString() ?: "<not-provided>"),
 )
 
