@@ -1,7 +1,6 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import java.io.File
-import java.security.MessageDigest
 
 internal class ExtentPathLayout(
     private val rootDirectory: File,
@@ -87,7 +86,5 @@ internal class ExtentPathLayout(
         }
 
     private fun storageKey(extentId: ExtentId): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(extentId.value.toByteArray(Charsets.UTF_8))
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+        Sha256.digestUtf8(extentId.value).hex
 }
