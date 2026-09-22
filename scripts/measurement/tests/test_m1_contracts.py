@@ -14,7 +14,7 @@ from m1_oracle import (
     intersect_required,
     normalize_intervals,
     oracle_snapshot,
-    reconstruct_published_coverage,
+    reconstruct_committed_coverage,
 )
 from schema_subset import SchemaContractError, validate_instance
 
@@ -29,6 +29,8 @@ CONTRACTS = {
     "extent-events-v1.schema.json": "extent-event-v1.example.json",
     "fetch-events-v1.schema.json": "fetch-event-v1.example.json",
     "recovery-summary-v1.schema.json": "recovery-summary-v1.example.json",
+    "committed-extents-v1.schema.json": "committed-extents-v1.example.json",
+    "verified-extent-files-v1.schema.json": "verified-extent-files-v1.example.json",
 }
 
 
@@ -86,6 +88,23 @@ class M1SchemaContractTest(unittest.TestCase):
         with self.assertRaises(SchemaContractError):
             validate_instance(schema, broken)
 
+    def test_validator_rejects_boolean_for_integer_const(self):
+        schema = json.loads(
+            (SCHEMAS / "m1-run-manifest-v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        example = json.loads(
+            (EXAMPLES / "m1-run-manifest-v1.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        broken = copy.deepcopy(example)
+        broken["schemaVersion"] = True
+
+        with self.assertRaises(SchemaContractError):
+            validate_instance(schema, broken)
+
 
 class M1CoverageOracleTest(unittest.TestCase):
     def test_normalize_merges_overlap_and_adjacency(self):
@@ -127,21 +146,14 @@ class M1CoverageOracleTest(unittest.TestCase):
             durable_reserve_us(45_000_000, playable),
         )
 
-    def test_oracle_rejects_non_playable_extent_states(self):
-        events = [
-            self.extent(1, "v-init", "video", "v1", None, None),
-            self.extent(2, "a-init", "audio", "a1", None, None),
-            self.extent(
-                3, "v-good", "video", "v1", 0, 30, deps=["v-init"]
-            ),
-            self.extent(
-                4, "a-good", "audio", "a1", 0, 30, deps=["a-init"]
-            ),
-            self.extent(
-                5, "v-wrong", "video", "v2", 30, 60, deps=["v-init"]
-            ),
-            self.extent(
-                6,
+    def test_oracle_rejects_non_playable_committed_rows(self):
+        rows = [
+            self.row("v-init", "video", "v1", None, None),
+            self.row("a-init", "audio", "a1", None, None),
+            self.row("v-good", "video", "v1", 0, 30, deps=["v-init"]),
+            self.row("a-good", "audio", "a1", 0, 30, deps=["a-init"]),
+            self.row("v-wrong", "video", "v2", 30, 60, deps=["v-init"]),
+            self.row(
                 "a-corrupt",
                 "audio",
                 "a1",
@@ -149,8 +161,7 @@ class M1CoverageOracleTest(unittest.TestCase):
                 60,
                 integrity="CORRUPT",
             ),
-            self.extent(
-                7,
+            self.row(
                 "v-missing-dep",
                 "video",
                 "v1",
@@ -158,31 +169,24 @@ class M1CoverageOracleTest(unittest.TestCase):
                 60,
                 deps=["never-published"],
             ),
-            self.extent(
-                8,
+            self.row(
                 "a-unpublished",
                 "audio",
                 "a1",
                 30,
                 60,
-                state="DURABLE",
+                state="QUARANTINED",
             ),
         ]
-
-        verified = {
-            "v-init",
-            "a-init",
-            "v-good",
-            "a-good",
-            "v-wrong",
-            "a-corrupt",
-            "v-missing-dep",
-            "a-unpublished",
+        files = {
+            row["extentId"]: self.file_fact(row)
+            for row in rows
         }
-        coverage = reconstruct_published_coverage(
-            events,
+
+        coverage = reconstruct_committed_coverage(
+            rows,
             {"video": "v1", "audio": "a1"},
-            verified,
+            files,
         )
         self.assertEqual(
             (Interval(0, 30),),
@@ -193,18 +197,52 @@ class M1CoverageOracleTest(unittest.TestCase):
             coverage["audio"],
         )
 
-    def test_latest_quarantine_removes_previous_publication(self):
-        events = [
-            self.extent(1, "v-init", "video", "v1", None, None),
-            self.extent(2, "a-init", "audio", "a1", None, None),
-            self.extent(
-                3, "v-1", "video", "v1", 0, 30, deps=["v-init"]
-            ),
-            self.extent(
-                4, "a-1", "audio", "a1", 0, 30, deps=["a-init"]
-            ),
-            self.extent(
-                5,
+    def test_published_event_without_committed_row_is_not_coverage(self):
+        # A lifecycle event may have been emitted immediately before a crash.
+        phantom_published_event = {
+            "extentId": "v-phantom",
+            "state": "PUBLISHED",
+            "integrityState": "VALID",
+        }
+        self.assertEqual("PUBLISHED", phantom_published_event["state"])
+
+        row = self.row("v-phantom", "video", "v1", 0, 30)
+        snapshot = oracle_snapshot(
+            committed_rows=[],
+            required_representations={"video": "v1"},
+            verified_files={"v-phantom": self.file_fact(row)},
+            playhead_us=0,
+        )
+
+        self.assertEqual([], snapshot["playableIntervals"])
+        self.assertEqual(0, snapshot["durableReserveUs"])
+
+    def test_committed_row_requires_matching_verified_file(self):
+        rows = [
+            self.row("v-init", "video", "v1", None, None),
+            self.row("v-1", "video", "v1", 0, 30, deps=["v-init"]),
+        ]
+        files = {
+            row["extentId"]: self.file_fact(row)
+            for row in rows
+        }
+        files["v-1"] = {
+            **files["v-1"],
+            "sha256": "f" * 64,
+        }
+
+        coverage = reconstruct_committed_coverage(
+            rows,
+            {"video": "v1"},
+            files,
+        )
+        self.assertEqual((), coverage["video"])
+
+    def test_quarantined_committed_row_is_not_coverage(self):
+        rows = [
+            self.row("v-init", "video", "v1", None, None),
+            self.row("a-init", "audio", "a1", None, None),
+            self.row(
                 "v-1",
                 "video",
                 "v1",
@@ -214,19 +252,31 @@ class M1CoverageOracleTest(unittest.TestCase):
                 state="QUARANTINED",
                 integrity="CORRUPT",
             ),
+            self.row(
+                "a-1",
+                "audio",
+                "a1",
+                0,
+                30,
+                deps=["a-init"],
+            ),
         ]
+        files = {
+            row["extentId"]: self.file_fact(row)
+            for row in rows
+        }
+
         snapshot = oracle_snapshot(
-            events,
+            rows,
             {"video": "v1", "audio": "a1"},
-            {"v-init", "a-init", "v-1", "a-1"},
+            files,
             0,
         )
         self.assertEqual([], snapshot["playableIntervals"])
         self.assertEqual(0, snapshot["durableReserveUs"])
 
     @staticmethod
-    def extent(
-        sequence,
+    def row(
         extent_id,
         track_id,
         representation_id,
@@ -237,8 +287,8 @@ class M1CoverageOracleTest(unittest.TestCase):
         state="PUBLISHED",
         integrity="VALID",
     ):
+        sha256 = (extent_id.encode("utf-8").hex() + "0" * 64)[:64]
         return {
-            "eventSequence": sequence,
             "extentId": extent_id,
             "state": state,
             "integrityState": integrity,
@@ -247,6 +297,19 @@ class M1CoverageOracleTest(unittest.TestCase):
             "mediaStartUs": start,
             "mediaEndUs": end,
             "dependencyExtentIds": deps or [],
+            "length": 1024,
+            "sha256": sha256,
+            "storagePath": f"filesDir/sponge/extents/{extent_id}",
+        }
+
+    @staticmethod
+    def file_fact(row):
+        return {
+            "extentId": row["extentId"],
+            "exists": True,
+            "length": row["length"],
+            "sha256": row["sha256"],
+            "storagePath": row["storagePath"],
         }
 
 
