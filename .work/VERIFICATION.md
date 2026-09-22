@@ -679,7 +679,9 @@ Canonical positive targets for F1:
 - \`S60\`: at least 60 s;
 - \`S120\`: at least 120 s.
 
-A seed builder selects complete required-track units necessary to reach the target. The committed seed manifest records exact extents, per-track intervals, representation identities, initialization dependencies, actual playable intervals and manifest hash.
+A seed builder resolves the committed F1 DASH SegmentTimeline and selects complete required-track units necessary to reach the target. It must not infer coverage from a nominal segment duration, byte count or provider segment count. The committed seed manifest records MediaAssetId, exact fixture resource identities, extents, per-track intervals, representation identities, initialization dependencies, actual playable intervals and manifest hash.
+
+Canonical S0 contains the required initialization dependencies but no media-time extents, proving that init/index bytes alone create zero playable reserve.
 
 Boundary/negative seeds are also required:
 
@@ -746,7 +748,7 @@ Evidence separates:
 | M1-ACC-13 | N4R-EXHAUST | same | any stall is consistent with actual reserve exhaustion; no coverage overclaim |
 | M1-ACC-14 | N4R-RESTORE | same + recovery events | missing coverage publishes after restore and playback resumes |
 | M1-ACC-15 | HTTP partial continuation variants | request/response range evidence | incompatible range/full-body/identity responses are never appended as valid continuation |
-| M1-ACC-16 | runtime CoverageIndex snapshot | committed metadata snapshot + independently verified files + offline reconstruction | interval sets and reserve semantics match exactly |
+| M1-ACC-16 | runtime CoverageIndex snapshot | committed metadata snapshot + independently verified files + offline reconstruction | MediaAsset-scoped interval sets and reserve semantics match exactly; lifecycle events are not authority |
 
 Deterministic correctness gates normally require one successful canonical execution plus targeted unit/state-machine coverage. No arbitrary performance repetition count is encoded into correctness acceptance.
 
