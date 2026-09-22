@@ -450,15 +450,15 @@ private object HostDurabilityOps : ExtentDurabilityOps {
         output.close()
     }
 
-    override fun renameAtomically(
+    override fun installAtomicallyNoReplace(
         source: File,
         destination: File,
-    ) {
+    ) = synchronized(this) {
         check(!destination.exists()) {
             "destination already exists"
         }
         check(source.renameTo(destination)) {
-            "failed to rename test extent"
+            "failed to install test extent"
         }
     }
 
