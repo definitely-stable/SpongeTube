@@ -15,11 +15,17 @@ internal class RoomExtentMetadataStore private constructor(
         storagePath: String,
     ) {
         dao.assertWritable(
-            candidate = spec.toEntity(
-                storagePath = storagePath,
-                publishedAtEpochMs = 0L,
-            ),
-            dependencyIds = spec.dependencyExtentIds
+            candidate = spec.toPreflight(storagePath),
+        )
+    }
+
+    override suspend fun assertPublishable(extent: StoredExtent) {
+        val entity = extent.toEntity(
+            publishedAtEpochMs = 0L,
+        )
+        dao.assertPublishable(
+            entity = entity,
+            dependencyIds = extent.dependencyExtentIds
                 .map(ExtentId::value)
                 .sorted(),
         )
@@ -83,11 +89,10 @@ internal class RoomExtentMetadataStore private constructor(
     }
 }
 
-private fun ExtentSpec.toEntity(
+private fun ExtentSpec.toPreflight(
     storagePath: String,
-    publishedAtEpochMs: Long,
-): ExtentEntity =
-    ExtentEntity(
+): ExtentWritePreflight =
+    ExtentWritePreflight(
         extentId = extentId.value,
         trackId = trackId,
         representationId = representationId,
@@ -95,13 +100,12 @@ private fun ExtentSpec.toEntity(
         mediaEndUs = mediaEndUs,
         byteStart = byteStart,
         byteEndExclusive = byteEndExclusive,
+        dependencyIds = dependencyExtentIds
+            .map(ExtentId::value)
+            .sorted(),
         length = expectedLength,
-        sha256 = expectedSha256.hex,
+        expectedSha256 = expectedSha256?.hex,
         storagePath = storagePath,
-        publicationState = ExtentPublicationState.PUBLISHED.name,
-        integrityState = ExtentIntegrityState.VALID.name,
-        quarantineReason = null,
-        publishedAtEpochMs = publishedAtEpochMs,
     )
 
 private fun StoredExtent.toEntity(
