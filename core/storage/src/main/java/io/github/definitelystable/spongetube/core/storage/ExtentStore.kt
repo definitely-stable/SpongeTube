@@ -162,6 +162,11 @@ class ExtentStore private constructor(
         }
     }
 
+    internal suspend fun assertPublishable(extent: StoredExtent) {
+        ensureOpen()
+        metadataStore.assertPublishable(extent)
+    }
+
     internal suspend fun publish(extent: StoredExtent) {
         ensureOpen()
         metadataStore.publish(extent)
