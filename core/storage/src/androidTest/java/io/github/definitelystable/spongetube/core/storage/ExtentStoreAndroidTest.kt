@@ -4,11 +4,11 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
-import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,22 +38,17 @@ class ExtentStoreAndroidTest {
     @Test
     fun committedExtentSurvivesCloseAndStartupRecovery() = runBlocking {
         val bytes = "android-persisted-extent".encodeToByteArray()
-        val first = ExtentStore.openAndroidForTest(
-            context = context,
-            rootDirectory = root,
-            databaseFile = databaseFile,
-        )
-        val writer = first.openWriter(spec("persisted", bytes))
-        writer.write(bytes)
-        val committed = writer.commit()
+        val spec = spec("persisted", bytes)
+        val first = openStore()
+
+        val committed = first.writeExtent(spec) {
+            write(bytes)
+        }
+
         assertEquals(1, first.committedExtents().size)
         first.close()
 
-        val reopened = ExtentStore.openAndroidForTest(
-            context = context,
-            rootDirectory = root,
-            databaseFile = databaseFile,
-        )
+        val reopened = openStore()
         assertEquals(
             1,
             reopened.initialRecoveryReport.verifiedPublishedExtents,
@@ -68,25 +63,40 @@ class ExtentStoreAndroidTest {
     @Test
     fun corruptPublishedFileIsQuarantinedBeforeExposure() = runBlocking {
         val bytes = "valid-before-corruption".encodeToByteArray()
-        val first = ExtentStore.openAndroidForTest(
-            context = context,
-            rootDirectory = root,
-            databaseFile = databaseFile,
-        )
-        val writer = first.openWriter(spec("corrupt", bytes))
-        writer.write(bytes)
-        val committed = writer.commit()
+        val spec = spec("corrupt", bytes)
+        val first = openStore()
+        val committed = first.writeExtent(spec) {
+            write(bytes)
+        }
         first.close()
 
-        File(root, committed.storagePath).writeBytes(
+        extentFile(committed.extentId).writeBytes(
             "corrupted".encodeToByteArray(),
         )
 
-        val reopened = ExtentStore.openAndroidForTest(
-            context = context,
-            rootDirectory = root,
-            databaseFile = databaseFile,
+        val reopened = openStore()
+        assertEquals(
+            1,
+            reopened.initialRecoveryReport.quarantinedExtents,
         )
+        assertTrue(reopened.committedExtents().isEmpty())
+        assertFalse(extentFile(committed.extentId).exists())
+        reopened.close()
+    }
+
+    @Test
+    fun missingPublishedFileIsQuarantinedBeforeExposure() = runBlocking {
+        val bytes = "valid-before-delete".encodeToByteArray()
+        val spec = spec("missing", bytes)
+        val first = openStore()
+        val committed = first.writeExtent(spec) {
+            write(bytes)
+        }
+        first.close()
+
+        assertTrue(extentFile(committed.extentId).delete())
+
+        val reopened = openStore()
         assertEquals(
             1,
             reopened.initialRecoveryReport.quarantinedExtents,
@@ -96,32 +106,101 @@ class ExtentStoreAndroidTest {
     }
 
     @Test
-    fun missingPublishedFileIsQuarantinedBeforeExposure() = runBlocking {
-        val bytes = "valid-before-delete".encodeToByteArray()
-        val first = ExtentStore.openAndroidForTest(
+    fun quarantinedExtentCanBeRepairedOnlyWithSameImmutableIdentity() =
+        runBlocking {
+            val bytes = "repairable-extent".encodeToByteArray()
+            val originalSpec = spec("repairable", bytes)
+            val first = openStore()
+            val original = first.writeExtent(originalSpec) {
+                write(bytes)
+            }
+            first.close()
+
+            extentFile(original.extentId).writeBytes(
+                "bad".encodeToByteArray(),
+            )
+
+            val recovering = openStore()
+            assertEquals(
+                1,
+                recovering.initialRecoveryReport.quarantinedExtents,
+            )
+            assertTrue(recovering.committedExtents().isEmpty())
+            assertFalse(extentFile(original.extentId).exists())
+
+            val repaired = recovering.writeExtent(originalSpec) {
+                write(bytes)
+            }
+            assertEquals(original.extentId, repaired.extentId)
+            assertEquals(1, recovering.committedExtents().size)
+            recovering.close()
+
+            val verified = openStore()
+            assertEquals(
+                1,
+                verified.initialRecoveryReport.verifiedPublishedExtents,
+            )
+            assertEquals(
+                listOf(original.extentId),
+                verified.committedExtents().map(CommittedExtent::extentId),
+            )
+            verified.close()
+        }
+
+    @Test
+    fun quarantinedExtentRejectsIdentityMutationBeforeCreatingTempFile() =
+        runBlocking {
+            val originalBytes = "immutable-a".encodeToByteArray()
+            val changedBytes = "immutable-b".encodeToByteArray()
+            val originalSpec = spec("stable-id", originalBytes)
+            val first = openStore()
+            val original = first.writeExtent(originalSpec) {
+                write(originalBytes)
+            }
+            first.close()
+
+            extentFile(original.extentId).writeBytes(
+                "bad".encodeToByteArray(),
+            )
+
+            val recovering = openStore()
+            assertEquals(
+                1,
+                recovering.initialRecoveryReport.quarantinedExtents,
+            )
+
+            expectThrows<ExtentConflictException> {
+                recovering.writeExtent(
+                    spec("stable-id", changedBytes),
+                ) {
+                    write(changedBytes)
+                }
+            }
+
+            assertTrue(recovering.committedExtents().isEmpty())
+            assertFalse(hasPartFiles())
+            assertFalse(extentFile(original.extentId).exists())
+            recovering.close()
+        }
+
+    private suspend fun openStore(): ExtentStore =
+        ExtentStore.openAndroidForTest(
             context = context,
             rootDirectory = root,
             databaseFile = databaseFile,
         )
-        val writer = first.openWriter(spec("missing", bytes))
-        writer.write(bytes)
-        val committed = writer.commit()
-        first.close()
 
-        assertTrue(File(root, committed.storagePath).delete())
+    private fun extentFile(extentId: ExtentId): File =
+        File(
+            root,
+            ExtentPathLayout(root).finalRelativePath(extentId),
+        )
 
-        val reopened = ExtentStore.openAndroidForTest(
-            context = context,
-            rootDirectory = root,
-            databaseFile = databaseFile,
-        )
-        assertEquals(
-            1,
-            reopened.initialRecoveryReport.quarantinedExtents,
-        )
-        assertTrue(reopened.committedExtents().isEmpty())
-        reopened.close()
-    }
+    private fun hasPartFiles(): Boolean =
+        root.exists() &&
+            root.walkTopDown().any {
+                it.isFile && it.name.endsWith(".part")
+            }
 
     private fun spec(
         id: String,
@@ -136,15 +215,25 @@ class ExtentStoreAndroidTest {
             byteStart = 0,
             byteEndExclusive = bytes.size.toLong(),
             expectedLength = bytes.size.toLong(),
-            expectedSha256 = sha256(bytes),
+            expectedSha256 = Sha256.digest(bytes),
         )
+}
 
-    private fun sha256(bytes: ByteArray): Sha256Digest =
-        Sha256Digest(
-            MessageDigest.getInstance("SHA-256")
-                .digest(bytes)
-                .joinToString(separator = "") {
-                    "%02x".format(it)
-                },
+private suspend inline fun <reified T : Throwable> expectThrows(
+    crossinline block: suspend () -> Unit,
+): T {
+    try {
+        block()
+    } catch (error: Throwable) {
+        if (error is T) {
+            return error
+        }
+        throw AssertionError(
+            "expected " + T::class.java.name +
+                ", got " + error::class.java.name,
+            error,
         )
+    }
+
+    throw AssertionError("expected " + T::class.java.name)
 }
