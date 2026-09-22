@@ -6,9 +6,6 @@
   "required": [
     "schemaVersion",
     "seedId",
-    "playheadUs",
-    "seedClass",
-    "mediaAssetId",
     "fixtureId",
     "fixtureSha256",
     "requiredTrackIds",
@@ -61,7 +58,6 @@
         "type": "object",
         "required": [
           "extentId",
-          "fixtureResourcePath",
           "trackId",
           "representationId",
           "mediaStartUs",
@@ -111,10 +107,6 @@
           "sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
-          },
-          "fixtureResourcePath": {
-            "type": "string",
-            "minLength": 1
           }
         },
         "additionalProperties": false
@@ -168,55 +160,6 @@
     "actualReserveUs": {
       "type": "integer",
       "minimum": 0
-    },
-    "mediaAssetId": {
-      "type": "string",
-      "minLength": 1
-    },
-    "seedClass": {
-      "enum": [
-        "POSITIVE",
-        "NEGATIVE"
-      ]
-    },
-    "playheadUs": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "negativeCase": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "enum": [
-        "VIDEO_HOLE",
-        "AUDIO_HOLE",
-        "MISSING_INIT",
-        "PARTIAL_TAIL",
-        "WRONG_REPRESENTATION",
-        null
-      ]
-    },
-    "rejectedAttempts": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "extentId",
-          "reason"
-        ],
-        "properties": {
-          "extentId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "additionalProperties": true
-      }
     }
   },
   "additionalProperties": false
