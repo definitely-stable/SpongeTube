@@ -52,30 +52,25 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
         }
     }
 
-    override fun installAtomicallyNoReplace(
+    override fun installAtomically(
         source: File,
         destination: File,
     ) {
         val parent = requireNotNull(destination.parentFile) {
             "extent destination must have a parent directory"
         }
-        var installed = false
+
+        if (destination.exists()) {
+            throw ExtentConflictException(
+                "extent destination already exists: " +
+                    destination.absolutePath,
+            )
+        }
 
         try {
-            Os.link(source.absolutePath, destination.absolutePath)
-            installed = true
-            syncDirectory(parent)
-
-            Os.remove(source.absolutePath)
+            Os.rename(source.absolutePath, destination.absolutePath)
             syncDirectory(parent)
         } catch (error: ErrnoException) {
-            if (!installed && error.errno == OsConstants.EEXIST) {
-                throw ExtentConflictException(
-                    "extent destination already exists: " +
-                        destination.absolutePath,
-                )
-            }
-
             throw ExtentStoreException(
                 "failed to atomically install immutable extent file " +
                     "${source.absolutePath} -> ${destination.absolutePath}",
