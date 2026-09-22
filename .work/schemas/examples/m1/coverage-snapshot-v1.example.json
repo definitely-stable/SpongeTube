@@ -34,6 +34,5 @@
   ],
   "durablePlayableEndUs": 30000000,
   "durableReserveUs": 25000000,
-  "playerBufferedAheadUs": 8000000,
-  "mediaAssetId": "fixture:F1"
+  "playerBufferedAheadUs": 8000000
 }
