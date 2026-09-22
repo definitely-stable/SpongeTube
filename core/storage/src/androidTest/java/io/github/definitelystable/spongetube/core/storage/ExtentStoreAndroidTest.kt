@@ -1,8 +1,8 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -22,7 +22,7 @@ class ExtentStoreAndroidTest {
 
     @Before
     fun setUp() {
-        context = ApplicationProvider.getApplicationContext()
+        context = InstrumentationRegistry.getInstrumentation().targetContext
         root = File(
             context.filesDir,
             "m1b-test-" + UUID.randomUUID().toString(),
