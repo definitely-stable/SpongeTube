@@ -36,6 +36,36 @@ class ExtentStoreAndroidTest {
     }
 
     @Test
+    fun atomicInstallNeverReplacesExistingFinal() = runBlocking {
+        val directory = File(root, "no-clobber")
+        AndroidExtentDurabilityOps.ensureDirectory(directory)
+
+        val first = File(directory, "first.part")
+        val second = File(directory, "second.part")
+        val destination = File(directory, "final.extent")
+        first.writeBytes("first".encodeToByteArray())
+        second.writeBytes("second".encodeToByteArray())
+
+        AndroidExtentDurabilityOps.installAtomicallyNoReplace(
+            first,
+            destination,
+        )
+
+        expectThrows<ExtentConflictException> {
+            AndroidExtentDurabilityOps.installAtomicallyNoReplace(
+                second,
+                destination,
+            )
+        }
+
+        assertEquals(
+            "first",
+            destination.readBytes().decodeToString(),
+        )
+        assertTrue(second.exists())
+    }
+
+    @Test
     fun committedExtentSurvivesCloseAndStartupRecovery() = runBlocking {
         val bytes = "android-persisted-extent".encodeToByteArray()
         val spec = spec("persisted", bytes)
