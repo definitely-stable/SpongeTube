@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 
 class ExtentStore private constructor(
     rootDirectory: File,
+    private val storeLease: ExtentStoreLease,
     private val metadataStore: ExtentMetadataStore,
     internal val durabilityOps: ExtentDurabilityOps,
     internal val ioDispatcher: CoroutineDispatcher,
@@ -98,7 +99,30 @@ class ExtentStore private constructor(
             closed = true
         }
 
-        metadataStore.close()
+        var failure: Throwable? = null
+
+        try {
+            metadataStore.close()
+        } catch (error: Throwable) {
+            failure = error
+        }
+
+        try {
+            storeLease.close()
+        } catch (error: Throwable) {
+            if (failure == null) {
+                failure = error
+            } else {
+                failure.addSuppressed(error)
+            }
+        }
+
+        failure?.let {
+            throw ExtentStoreException(
+                "failed to close extent store",
+                it,
+            )
+        }
     }
 
     private suspend fun createWriter(spec: ExtentSpec): ExtentWriter {
@@ -332,6 +356,7 @@ class ExtentStore private constructor(
             context: Context,
             lifecycleListener: ExtentLifecycleListener? = null,
         ): ExtentStore {
+            var storeLease: ExtentStoreLease? = null
             var metadataStore: RoomExtentMetadataStore? = null
             var store: ExtentStore? = null
 
@@ -343,6 +368,10 @@ class ExtentStore private constructor(
                     val durability = AndroidExtentDurabilityOps
                     val layout = ExtentPathLayout(rootDirectory)
                     layout.ensureRoot(durability)
+
+                    val acquiredLease =
+                        FileExtentStoreLease.acquire(rootDirectory)
+                    storeLease = acquiredLease
 
                     val metadataDirectory = File(rootDirectory, "metadata")
                     durability.ensureDirectory(metadataDirectory)
@@ -356,6 +385,7 @@ class ExtentStore private constructor(
 
                     val openedStore = ExtentStore(
                         rootDirectory = rootDirectory,
+                        storeLease = acquiredLease,
                         metadataStore = openedMetadata,
                         durabilityOps = durability,
                         ioDispatcher = Dispatchers.IO,
@@ -377,6 +407,7 @@ class ExtentStore private constructor(
                             openedStore.close()
                         } else {
                             metadataStore?.close()
+                            storeLease?.close()
                         }
                     } catch (cleanupError: Throwable) {
                         error.addSuppressed(cleanupError)
@@ -395,6 +426,7 @@ class ExtentStore private constructor(
         ): ExtentStore = withContext(ioDispatcher) {
             val store = ExtentStore(
                 rootDirectory = rootDirectory,
+                storeLease = NoOpExtentStoreLease,
                 metadataStore = metadataStore,
                 durabilityOps = durabilityOps,
                 ioDispatcher = ioDispatcher,
@@ -413,27 +445,45 @@ class ExtentStore private constructor(
             val durability = AndroidExtentDurabilityOps
             val layout = ExtentPathLayout(rootDirectory)
             layout.ensureRoot(durability)
-            databaseFile.parentFile?.let(durability::ensureDirectory)
 
-            val metadataStore = RoomExtentMetadataStore.open(
-                context = context,
-                databaseFile = databaseFile,
-            )
-
-            val store = ExtentStore(
-                rootDirectory = rootDirectory,
-                metadataStore = metadataStore,
-                durabilityOps = durability,
-                ioDispatcher = Dispatchers.IO,
-                lifecycleListener = null,
-                faultInjector = ExtentFaultInjector.NONE,
-            )
+            val storeLease = FileExtentStoreLease.acquire(rootDirectory)
+            var metadataStore: RoomExtentMetadataStore? = null
+            var store: ExtentStore? = null
 
             try {
-                store.initialRecoveryReport = store.recoverInternal()
-                store
+                databaseFile.parentFile?.let(durability::ensureDirectory)
+
+                val openedMetadata = RoomExtentMetadataStore.open(
+                    context = context,
+                    databaseFile = databaseFile,
+                )
+                metadataStore = openedMetadata
+
+                val openedStore = ExtentStore(
+                    rootDirectory = rootDirectory,
+                    storeLease = storeLease,
+                    metadataStore = openedMetadata,
+                    durabilityOps = durability,
+                    ioDispatcher = Dispatchers.IO,
+                    lifecycleListener = null,
+                    faultInjector = ExtentFaultInjector.NONE,
+                )
+                store = openedStore
+                openedStore.initialRecoveryReport =
+                    openedStore.recoverInternal()
+                openedStore
             } catch (error: Throwable) {
-                metadataStore.close()
+                try {
+                    val openedStore = store
+                    if (openedStore != null) {
+                        openedStore.close()
+                    } else {
+                        metadataStore?.close()
+                        storeLease.close()
+                    }
+                } catch (cleanupError: Throwable) {
+                    error.addSuppressed(cleanupError)
+                }
                 throw error
             }
         }
