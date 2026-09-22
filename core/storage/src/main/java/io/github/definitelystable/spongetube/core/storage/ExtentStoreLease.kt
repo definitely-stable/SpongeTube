@@ -10,11 +10,22 @@ import java.nio.channels.OverlappingFileLockException
 internal interface ExtentStoreLease : Closeable
 
 internal class FileExtentStoreLease private constructor(
+    private val rootKey: String,
     private val file: RandomAccessFile,
     private val channel: FileChannel,
     private val lock: FileLock,
 ) : ExtentStoreLease {
+    @Volatile
+    private var closed = false
+
     override fun close() {
+        synchronized(this) {
+            if (closed) {
+                return
+            }
+            closed = true
+        }
+
         var failure: Throwable? = null
 
         try {
@@ -41,6 +52,8 @@ internal class FileExtentStoreLease private constructor(
             } else {
                 failure.addSuppressed(error)
             }
+        } finally {
+            releaseProcessOwnership(rootKey)
         }
 
         failure?.let {
@@ -52,39 +65,87 @@ internal class FileExtentStoreLease private constructor(
     }
 
     companion object {
-        fun acquire(rootDirectory: File): FileExtentStoreLease {
-            val leaseFile = File(rootDirectory, ".store.lock")
-            val file = RandomAccessFile(leaseFile, "rw")
-            val channel = file.channel
+        private val processOwnershipLock = Any()
+        private val processOwnedRoots = mutableSetOf<String>()
 
-            val lock = try {
-                channel.tryLock()
-            } catch (_: OverlappingFileLockException) {
-                null
+        fun acquire(rootDirectory: File): FileExtentStoreLease {
+            val rootKey = rootDirectory.canonicalFile.path
+            reserveProcessOwnership(rootKey)
+
+            val leaseFile = File(rootDirectory, ".store.lock")
+            var file: RandomAccessFile? = null
+            var channel: FileChannel? = null
+
+            try {
+                val openedFile = RandomAccessFile(leaseFile, "rw")
+                file = openedFile
+
+                val openedChannel = openedFile.channel
+                channel = openedChannel
+
+                val lock = try {
+                    openedChannel.tryLock()
+                } catch (_: OverlappingFileLockException) {
+                    null
+                }
+
+                if (lock == null) {
+                    throw ExtentConflictException(
+                        "extent store root is already owned: " +
+                            rootDirectory.absolutePath,
+                    )
+                }
+
+                return FileExtentStoreLease(
+                    rootKey = rootKey,
+                    file = openedFile,
+                    channel = openedChannel,
+                    lock = lock,
+                )
             } catch (error: Throwable) {
-                runCatching { channel.close() }
-                runCatching { file.close() }
+                try {
+                    channel?.close()
+                } catch (cleanupError: Throwable) {
+                    error.addSuppressed(cleanupError)
+                }
+
+                try {
+                    file?.close()
+                } catch (cleanupError: Throwable) {
+                    error.addSuppressed(cleanupError)
+                }
+
+                releaseProcessOwnership(rootKey)
+
+                if (
+                    error is ExtentConflictException ||
+                    error is ExtentStoreException
+                ) {
+                    throw error
+                }
+
                 throw ExtentStoreException(
                     "failed to acquire extent store lease: " +
                         leaseFile.absolutePath,
                     error,
                 )
             }
+        }
 
-            if (lock == null) {
-                runCatching { channel.close() }
-                runCatching { file.close() }
-                throw ExtentConflictException(
-                    "extent store root is already owned: " +
-                        rootDirectory.absolutePath,
-                )
+        private fun reserveProcessOwnership(rootKey: String) {
+            synchronized(processOwnershipLock) {
+                if (!processOwnedRoots.add(rootKey)) {
+                    throw ExtentConflictException(
+                        "extent store root is already owned: " + rootKey,
+                    )
+                }
             }
+        }
 
-            return FileExtentStoreLease(
-                file = file,
-                channel = channel,
-                lock = lock,
-            )
+        private fun releaseProcessOwnership(rootKey: String) {
+            synchronized(processOwnershipLock) {
+                processOwnedRoots.remove(rootKey)
+            }
         }
     }
 }
