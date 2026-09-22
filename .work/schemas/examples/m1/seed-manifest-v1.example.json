@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "seedId": "S10",
+  "fixtureId": "F1",
+  "fixtureSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "requiredTrackIds": [
+    "video-main",
+    "audio-main"
+  ],
+  "requiredRepresentations": {
+    "video-main": "video-550k",
+    "audio-main": "audio-64k"
+  },
+  "targetPlayableEndUs": 10000000,
+  "extents": [
+    {
+      "extentId": "v-init",
+      "trackId": "video-main",
+      "representationId": "video-550k",
+      "mediaStartUs": null,
+      "mediaEndUs": null,
+      "dependencyExtentIds": [],
+      "length": 1024,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "extentId": "a-init",
+      "trackId": "audio-main",
+      "representationId": "audio-64k",
+      "mediaStartUs": null,
+      "mediaEndUs": null,
+      "dependencyExtentIds": [],
+      "length": 1024,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "extentId": "v-0",
+      "trackId": "video-main",
+      "representationId": "video-550k",
+      "mediaStartUs": 0,
+      "mediaEndUs": 10000000,
+      "dependencyExtentIds": [
+        "v-init"
+      ],
+      "length": 700000,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "extentId": "a-0",
+      "trackId": "audio-main",
+      "representationId": "audio-64k",
+      "mediaStartUs": 0,
+      "mediaEndUs": 10000000,
+      "dependencyExtentIds": [
+        "a-init"
+      ],
+      "length": 80000,
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    }
+  ],
+  "perTrackCoverage": {
+    "video-main": [
+      {
+        "startUs": 0,
+        "endUs": 10000000
+      }
+    ],
+    "audio-main": [
+      {
+        "startUs": 0,
+        "endUs": 10000000
+      }
+    ]
+  },
+  "playableCoverage": [
+    {
+      "startUs": 0,
+      "endUs": 10000000
+    }
+  ],
+  "actualReserveUs": 10000000
+}
