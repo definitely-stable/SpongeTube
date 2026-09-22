@@ -138,7 +138,7 @@ internal class ExtentWriter(
             )
             store.hit(ExtentFaultPoint.AFTER_VERIFY)
 
-            store.durabilityOps.renameAtomically(
+            store.durabilityOps.installAtomicallyNoReplace(
                 partFile,
                 finalFile,
             )
