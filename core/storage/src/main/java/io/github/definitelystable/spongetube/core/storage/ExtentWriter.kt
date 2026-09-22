@@ -174,7 +174,7 @@ internal class ExtentWriter(
 
             store.assertPublishable(stored)
 
-            store.durabilityOps.installAtomicallyNoReplace(
+            store.durabilityOps.installAtomically(
                 partFile,
                 finalFile,
             )
