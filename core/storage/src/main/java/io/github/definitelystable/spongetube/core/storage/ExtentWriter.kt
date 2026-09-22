@@ -27,6 +27,8 @@ internal class ExtentWriter(
     }
 
     private val mutex = Mutex()
+    private val receivedDigest = Sha256.newDigest()
+    private var receivedLength = 0L
     private var state = WriterState.OPEN
     private var outputClosed = false
 
@@ -45,6 +47,11 @@ internal class ExtentWriter(
             mutex.withLock {
                 ensureOpen()
                 output.write(bytes, offset, length)
+                receivedDigest.update(bytes, offset, length)
+                receivedLength = Math.addExact(
+                    receivedLength,
+                    length.toLong(),
+                )
             }
         }
     }
@@ -114,19 +121,24 @@ internal class ExtentWriter(
                     "sealed temp file disappeared for " + spec.extentId,
                 )
 
+            val receivedSha256 = Sha256.finish(receivedDigest)
             val expectedDigestMismatch =
                 spec.expectedSha256?.let { it != actualSha256 } ?: false
 
             if (
                 actualLength != spec.expectedLength ||
+                actualLength != receivedLength ||
+                actualSha256 != receivedSha256 ||
                 expectedDigestMismatch
             ) {
                 throw ExtentIntegrityException(
                     extentId = spec.extentId,
                     expectedLength = spec.expectedLength,
-                    actualLength = actualLength,
+                    receivedLength = receivedLength,
+                    persistedLength = actualLength,
                     expectedSha256 = spec.expectedSha256,
-                    actualSha256 = actualSha256,
+                    receivedSha256 = receivedSha256,
+                    persistedSha256 = actualSha256,
                 )
             }
 
