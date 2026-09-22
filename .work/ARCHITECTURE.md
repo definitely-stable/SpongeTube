@@ -152,7 +152,7 @@ For each required selected track:
 TrackCoverage(track)
   = union of media-time intervals represented by
     PUBLISHED + VALID extents
-    for the exact active representation identity
+    for the exact MediaAsset + active track/representation identity
 \`\`\`
 
 For a playback plan with multiple required tracks:
@@ -506,7 +506,7 @@ TEMP
   -> CoverageIndex may expose extent
 ```
 
-A crash before the Room publish can leave at most an orphan immutable file, which recovery may adopt only after full identity/integrity validation or otherwise garbage-collect. A crash after the Room publish must not leave a row pointing at uncommitted bytes.
+A crash before the Room publish can leave at most an orphan immutable file. M1 recovery garbage-collects such files and MUST NOT auto-adopt them; adding another publication path is deferred until it has an explicit contract and evidence. A crash after the Room publish must not leave a row pointing at uncommitted bytes.
 
 Packed append-only containers are a later storage optimization only if measured file-count/I/O cost justifies them; adopting them must not change the ExtentStore/CoverageIndex contract.
 
