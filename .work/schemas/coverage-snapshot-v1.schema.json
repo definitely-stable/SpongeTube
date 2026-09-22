@@ -8,13 +8,11 @@
     "eventSequence",
     "eventElapsedRealtimeNs",
     "sessionId",
-    "mediaAssetId",
     "playheadUs",
     "requiredTrackIds",
     "requiredRepresentations",
     "perTrackPublishedIntervals",
     "playableIntervals",
-    "durablePlayableEndUs",
     "durableReserveUs"
   ],
   "properties": {
@@ -115,10 +113,6 @@
         "null"
       ],
       "minimum": 0
-    },
-    "mediaAssetId": {
-      "type": "string",
-      "minLength": 1
     }
   },
   "additionalProperties": false
