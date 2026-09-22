@@ -37,7 +37,7 @@ data class ExtentSpec(
     val byteEndExclusive: Long?,
     val dependencyExtentIds: List<ExtentId> = emptyList(),
     val expectedLength: Long,
-    val expectedSha256: Sha256Digest,
+    val expectedSha256: Sha256Digest? = null,
 ) {
     init {
         require(trackId.isNotBlank()) { "trackId must not be blank" }
@@ -164,11 +164,12 @@ class ExtentIntegrityException(
     val extentId: ExtentId,
     val expectedLength: Long,
     val actualLength: Long,
-    val expectedSha256: Sha256Digest,
+    val expectedSha256: Sha256Digest?,
     val actualSha256: Sha256Digest,
 ) : ExtentStoreException(
     "Extent $extentId failed integrity verification: " +
-        "length $actualLength/$expectedLength, sha256 $actualSha256/$expectedSha256",
+        "length $actualLength/$expectedLength, sha256 $actualSha256/" +
+        (expectedSha256?.toString() ?: "<not-provided>"),
 )
 
 class ExtentConflictException(message: String) : ExtentStoreException(message)
