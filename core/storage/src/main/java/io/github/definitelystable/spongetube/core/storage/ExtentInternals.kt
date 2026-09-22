@@ -27,6 +27,8 @@ internal interface ExtentMetadataStore : Closeable {
         storagePath: String,
     )
 
+    suspend fun assertPublishable(extent: StoredExtent)
+
     suspend fun publish(extent: StoredExtent)
 
     suspend fun snapshot(): List<StoredExtent>
