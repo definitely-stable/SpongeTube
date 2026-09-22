@@ -1,7 +1,13 @@
 """Independent host-side coverage oracle for SpongeTube M1 evidence.
 
-Runtime CoverageIndex output is deliberately not an input. Canonical verification
-supplies ordered extent events plus a separately file-verified extent-id set.
+Runtime CoverageIndex output and lifecycle events are deliberately not authority inputs.
+Canonical verification supplies:
+
+1. rows read from the committed SQLite metadata snapshot; and
+2. file facts independently reconstructed from immutable extent files.
+
+An emitted PUBLISHED lifecycle event without a committed metadata row therefore cannot
+create coverage in this oracle.
 """
 
 from __future__ import annotations
@@ -104,49 +110,67 @@ def durable_reserve_us(
     return 0
 
 
-def final_extent_events(
-    events: Iterable[Mapping[str, object]],
-) -> dict[str, Mapping[str, object]]:
-    final: dict[str, Mapping[str, object]] = {}
-    for event in events:
-        extent_id = str(event["extentId"])
-        sequence = int(event["eventSequence"])
-        previous = final.get(extent_id)
-        if previous is None or sequence > int(previous["eventSequence"]):
-            final[extent_id] = event
-    return final
+def _file_matches_row(
+    row: Mapping[str, object],
+    fact: Mapping[str, object] | None,
+) -> bool:
+    if fact is None or fact.get("exists") is not True:
+        return False
+
+    return (
+        fact.get("length") == row.get("length")
+        and fact.get("sha256") == row.get("sha256")
+        and fact.get("storagePath") == row.get("storagePath")
+    )
 
 
-def reconstruct_published_coverage(
-    events: Iterable[Mapping[str, object]],
+def reconstruct_committed_coverage(
+    committed_rows: Iterable[Mapping[str, object]],
     required_representations: Mapping[str, str],
-    file_verified_extent_ids: set[str],
+    verified_files: Mapping[str, Mapping[str, object]],
 ) -> dict[str, tuple[Interval, ...]]:
-    final = final_extent_events(events)
+    """Reconstruct conservative coverage from committed metadata + file facts.
 
-    published_valid = {
+    A row contributes only when:
+    - the database snapshot contains it as PUBLISHED + VALID;
+    - the independently inspected immutable file exists;
+    - file length, SHA-256 and storage path match committed metadata;
+    - the exact required track/representation identity matches; and
+    - every declared dependency is itself eligible.
+
+    Lifecycle event logs are intentionally not accepted as an input.
+    """
+
+    rows: dict[str, Mapping[str, object]] = {}
+    for row in committed_rows:
+        extent_id = str(row["extentId"])
+        if extent_id in rows:
+            raise ValueError(f"duplicate committed extent row: {extent_id}")
+        rows[extent_id] = row
+
+    eligible_candidates = {
         extent_id
-        for extent_id, event in final.items()
-        if event.get("state") == "PUBLISHED"
-        and event.get("integrityState") == "VALID"
-        and extent_id in file_verified_extent_ids
+        for extent_id, row in rows.items()
+        if row.get("state") == "PUBLISHED"
+        and row.get("integrityState") == "VALID"
+        and _file_matches_row(row, verified_files.get(extent_id))
     }
 
     ready: set[str] = set()
     changed = True
     while changed:
         changed = False
-        for extent_id in published_valid - ready:
-            event = final[extent_id]
+        for extent_id in eligible_candidates - ready:
+            row = rows[extent_id]
             dependencies = {
                 str(item)
-                for item in event.get("dependencyExtentIds", [])
+                for item in row.get("dependencyExtentIds", [])
             }
             same_identity = all(
-                dep in final
-                and final[dep].get("trackId") == event.get("trackId")
-                and final[dep].get("representationId")
-                == event.get("representationId")
+                dep in rows
+                and rows[dep].get("trackId") == row.get("trackId")
+                and rows[dep].get("representationId")
+                == row.get("representationId")
                 for dep in dependencies
             )
             if same_identity and dependencies <= ready:
@@ -158,17 +182,18 @@ def reconstruct_published_coverage(
     }
 
     for extent_id in ready:
-        event = final[extent_id]
-        track_id = str(event["trackId"])
+        row = rows[extent_id]
+        track_id = str(row["trackId"])
         required_representation = required_representations.get(track_id)
         if required_representation is None:
             continue
-        if event.get("representationId") != required_representation:
+        if row.get("representationId") != required_representation:
             continue
 
-        start = event.get("mediaStartUs")
-        end = event.get("mediaEndUs")
+        start = row.get("mediaStartUs")
+        end = row.get("mediaEndUs")
         if start is None or end is None:
+            # Initialization/index/dependency-only extent.
             continue
 
         per_track[track_id].append(Interval(int(start), int(end)))
@@ -180,15 +205,15 @@ def reconstruct_published_coverage(
 
 
 def oracle_snapshot(
-    events: Iterable[Mapping[str, object]],
+    committed_rows: Iterable[Mapping[str, object]],
     required_representations: Mapping[str, str],
-    file_verified_extent_ids: set[str],
+    verified_files: Mapping[str, Mapping[str, object]],
     playhead_us: int,
 ) -> dict[str, object]:
-    per_track = reconstruct_published_coverage(
-        events,
+    per_track = reconstruct_committed_coverage(
+        committed_rows,
         required_representations,
-        file_verified_extent_ids,
+        verified_files,
     )
     required_track_ids = list(required_representations.keys())
     playable = intersect_required(per_track, required_track_ids)
