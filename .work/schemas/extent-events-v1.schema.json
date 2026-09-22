@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/extent-events-v1.schema.json",
+  "title": "SpongeTube M1 Extent Event v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "extentId",
+    "state",
+    "trackId",
+    "representationId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extentId": {
+      "type": "string"
+    },
+    "fetchId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "state": {
+      "enum": [
+        "RECEIVING",
+        "SEALED",
+        "VERIFIED",
+        "DURABLE",
+        "PUBLISHED",
+        "QUARANTINED",
+        "DELETED"
+      ]
+    },
+    "trackId": {
+      "type": "string"
+    },
+    "representationId": {
+      "type": "string"
+    },
+    "mediaStartUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "mediaEndUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "byteStart": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "byteEndExclusive": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "expectedLength": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "actualLength": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

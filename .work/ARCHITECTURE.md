@@ -1,7 +1,7 @@
 # SpongeTube Architecture v0.1
 
 Status: **Provisional**
-Date: **2026-09-21**
+Date: **2026-09-22**
 
 ## 1. Architectural objective
 
@@ -141,6 +141,61 @@ PlayableCoverage = intersection(required track coverage)
 
 UI reserve, offline availability and correctness checks use **PlayableCoverage**, never video-only percent.
 
+
+### 4.5 Normative playable coverage and reserve semantics
+
+M1 distinguishes persisted bytes from media that can actually sustain playback.
+
+For each required selected track:
+
+\`\`\`text
+TrackCoverage(track)
+  = union of media-time intervals represented by
+    PUBLISHED + VALID extents
+    for the exact active representation identity
+\`\`\`
+
+For a playback plan with multiple required tracks:
+
+\`\`\`text
+PlayableCoverage
+  = intersection(TrackCoverage(requiredTrack_1), ... TrackCoverage(requiredTrack_n))
+\`\`\`
+
+For playhead \`P\`:
+
+\`\`\`text
+DurablePlayableReserve(P)
+  = length of the largest contiguous interval [P, E)
+    fully contained in PlayableCoverage
+\`\`\`
+
+A disconnected future interval does not increase reserve before its preceding hole is filled.
+
+M1 must keep these concepts separate:
+
+- \`networkBytesReceived\`: bytes delivered by transport;
+- \`extentBytesSealed\`: bytes no longer writable by the active writer;
+- \`extentBytesVerified\`: bytes whose immutable length and SHA-256 match expected identity;
+- \`extentBytesDurable\`: bytes placed at the final immutable path after the storage barrier;
+- \`publishedCoverage\`: media-time coverage visible from committed metadata;
+- \`DurablePlayableReserve\`: contiguous playable coverage from the current playhead;
+- \`PlayerBufferedAhead\`: data already held by Media3/decoder buffers.
+
+\`PlayerBufferedAhead\` is diagnostic and must not be used to prove durable reserve. Product-level effective reserve may combine sources later, but M1 correctness is anchored to durable published coverage.
+
+CoverageIndex publication rules:
+
+1. only \`PUBLISHED + VALID\` extents contribute coverage;
+2. an extent from a different representation identity never fills a hole in the active representation;
+3. required initialization/index dependencies must be valid before dependent media coverage is exposed as playable;
+4. partial/truncated tails do not contribute beyond independently verified usable boundaries;
+5. coverage may contain islands, but reserve from a playhead ends at the first required-track hole;
+6. every runtime coverage snapshot must be independently reconstructable from committed extent metadata and immutable files;
+7. seek correctness uses the resolved media timeline, never byte-count/bitrate approximations.
+
+These definitions supersede any interpretation of raw cache size as playable reserve.
+
 ## 5. YouTube Adapter boundary
 
 The adapter resolves a provider item into a `PlaybackPlan`.
@@ -239,6 +294,18 @@ SPECULATIVE_NEXT
 ```
 
 The scheduler should prefer the request with the highest stall risk, not simply the lowest segment index.
+
+
+### M1 scheduler scope
+
+M1 does not implement the full adaptive deadline/reserve policy described above. The M1 implementation contract requires only:
+
+- playback-critical versus reserve work classes;
+- joining an existing in-flight fetch instead of restart;
+- priority escalation of the existing shared fetch when playback becomes urgent;
+- deterministic ordering sufficient for the M1 correctness suite.
+
+Estimated stall risk, adaptive reserve targets, dwell confidence, battery/thermal/storage policy and user-mode optimization remain M4 work unless M1 evidence exposes a correctness blocker.
 
 ## 8. ReserveController
 
@@ -442,6 +509,59 @@ TEMP
 A crash before the Room publish can leave at most an orphan immutable file, which recovery may adopt only after full identity/integrity validation or otherwise garbage-collect. A crash after the Room publish must not leave a row pointing at uncommitted bytes.
 
 Packed append-only containers are a later storage optimization only if measured file-count/I/O cost justifies them; adopting them must not change the ExtentStore/CoverageIndex contract.
+
+
+### Partial extent lifecycle and publication
+
+The normative M1 lifecycle is:
+
+\`\`\`text
+RECEIVING
+   -> SEALED
+   -> VERIFIED
+   -> DURABLE
+   -> PUBLISHED
+\`\`\`
+
+Semantics:
+
+- \`RECEIVING\`: unique same-filesystem temporary file; writer may still append;
+- \`SEALED\`: writer closed; expected resource/range identity and final byte count are immutable for this attempt;
+- \`VERIFIED\`: actual length and SHA-256 satisfy the expected immutable extent identity;
+- \`DURABLE\`: verified file has been atomically moved to the final immutable location and the available filesystem durability barrier completed;
+- \`PUBLISHED\`: Room/SQLite transaction committed metadata that makes the extent visible to CoverageIndex.
+
+Only \`PUBLISHED\` may increase PlayableCoverage.
+
+Crash/recovery rules:
+
+| Failure boundary | Required restart result |
+| --- | --- |
+| during \`RECEIVING\` | no published coverage; incomplete temp is deleted or retained only by an explicit future resume policy |
+| after \`SEALED\`, before verification | no published coverage |
+| after \`VERIFIED\`, before final rename | no published coverage |
+| after final rename, before metadata publish | immutable orphan; no published coverage; M1 may garbage-collect rather than auto-adopt |
+| during metadata transaction | transaction atomically rolls back or commits |
+| after \`PUBLISHED\` | file must exist and pass immutable length + SHA-256 validation |
+
+A metadata row whose file is missing, truncated or digest-invalid is never usable coverage. A file with no published metadata is never implicitly coverage.
+
+M1 intentionally prefers deletion of orphan immutable files over automatic orphan adoption. Adoption is a later optimization and requires separate evidence.
+
+### HTTP partial-response and resume safety
+
+M1 deterministic origin tests must exercise resumable-range correctness even though provider-specific descriptor refresh belongs to later milestones.
+
+A partial attempt may append/resume only when the resource/representation identity is unchanged and the response proves that the returned byte range is the exact requested continuation.
+
+Rules:
+
+- a requested range continuation expects a compatible partial response and validated \`Content-Range\`;
+- a full-body response must never be blindly appended to existing partial bytes;
+- validator/resource identity changes invalidate the previous partial attempt;
+- inconsistent total length, unexpected start offset, impossible range or overlapping incompatible response is rejected;
+- partial bytes are never published merely because transport completed;
+- retry/resume accounting is explicit in evidence.
 
 ### Durable locations
 
