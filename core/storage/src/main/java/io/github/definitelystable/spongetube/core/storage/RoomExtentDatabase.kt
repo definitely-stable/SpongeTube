@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.storage
 
+import androidx.room3.AutoMigration
 import androidx.room3.ColumnInfo
 import androidx.room3.Dao
 import androidx.room3.Database
@@ -16,7 +17,7 @@ import androidx.room3.Update
 @Entity(
     tableName = "extents",
     indices = [
-        Index(value = ["track_id", "representation_id"]),
+        Index(value = ["media_asset_id", "track_id", "representation_id"]),
         Index(value = ["publication_state", "integrity_state"]),
     ],
 )
@@ -24,6 +25,11 @@ internal data class ExtentEntity(
     @PrimaryKey
     @ColumnInfo(name = "extent_id")
     val extentId: String,
+    @ColumnInfo(
+        name = "media_asset_id",
+        defaultValue = "'__legacy_unscoped__'",
+    )
+    val mediaAssetId: String,
     @ColumnInfo(name = "track_id")
     val trackId: String,
     @ColumnInfo(name = "representation_id")
@@ -68,6 +74,7 @@ internal data class ExtentSnapshotRows(
 )
 
 internal data class ExtentWritePreflight(
+    val mediaAssetId: String,
     val extentId: String,
     val trackId: String,
     val representationId: String,
@@ -193,6 +200,7 @@ private fun validatePreflightCandidate(
 ) {
     val immutableIdentityMatches =
         existing.extentId == candidate.extentId &&
+            existing.mediaAssetId == candidate.mediaAssetId &&
             existing.trackId == candidate.trackId &&
             existing.representationId == candidate.representationId &&
             existing.mediaStartUs == candidate.mediaStartUs &&
@@ -218,6 +226,7 @@ private fun validateRepairCandidate(
 ) {
     val immutableIdentityMatches =
         existing.extentId == candidate.extentId &&
+            existing.mediaAssetId == candidate.mediaAssetId &&
             existing.trackId == candidate.trackId &&
             existing.representationId == candidate.representationId &&
             existing.mediaStartUs == candidate.mediaStartUs &&
@@ -253,7 +262,10 @@ private fun requireRepairableMatch(
         ExtentEntity::class,
         ExtentDependencyEntity::class,
     ],
-    version = 1,
+    version = 2,
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+    ],
     exportSchema = true,
 )
 internal abstract class ExtentDatabase : RoomDatabase() {
