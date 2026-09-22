@@ -4,8 +4,6 @@ import android.content.Context
 import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -22,8 +20,8 @@ class ExtentStore private constructor(
     internal val faultInjector: ExtentFaultInjector,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
-    private val activeWriterIds: MutableSet<ExtentId> =
-        Collections.newSetFromMap(ConcurrentHashMap())
+    private val activeWriterIds = mutableSetOf<ExtentId>()
+    private var activeReadOperations = 0
 
     @Volatile
     private var closed = false
@@ -64,18 +62,23 @@ class ExtentStore private constructor(
         }
     }
 
-    suspend fun committedExtents(): List<CommittedExtent> =
-        withContext(ioDispatcher) {
-            ensureOpen()
-            metadataStore.snapshot()
-                .asSequence()
-                .filter {
-                    it.publicationState == ExtentPublicationState.PUBLISHED &&
-                        it.integrityState == ExtentIntegrityState.VALID
-                }
-                .map(StoredExtent::toCommitted)
-                .toList()
+    suspend fun committedExtents(): List<CommittedExtent> {
+        beginReadOperation()
+        try {
+            return withContext(ioDispatcher) {
+                metadataStore.snapshot()
+                    .asSequence()
+                    .filter {
+                        it.publicationState == ExtentPublicationState.PUBLISHED &&
+                            it.integrityState == ExtentIntegrityState.VALID
+                    }
+                    .map(StoredExtent::toCommitted)
+                    .toList()
+            }
+        } finally {
+            endReadOperation()
         }
+    }
 
     override fun close() {
         synchronized(this) {
@@ -83,25 +86,23 @@ class ExtentStore private constructor(
                 return
             }
 
-            if (activeWriterIds.isNotEmpty()) {
+            if (
+                activeWriterIds.isNotEmpty() ||
+                activeReadOperations != 0
+            ) {
                 throw ExtentConflictException(
-                    "cannot close extent store while extent writes are active",
+                    "cannot close extent store while operations are active",
                 )
             }
 
             closed = true
-            metadataStore.close()
         }
+
+        metadataStore.close()
     }
 
     private suspend fun createWriter(spec: ExtentSpec): ExtentWriter {
-        ensureOpen()
-
-        if (!activeWriterIds.add(spec.extentId)) {
-            throw ExtentConflictException(
-                "an extent write is already active for " + spec.extentId,
-            )
-        }
+        reserveWriter(spec.extentId)
 
         var partFile: File? = null
         var output: FileOutputStream? = null
@@ -157,7 +158,7 @@ class ExtentStore private constructor(
                 }
             }
 
-            activeWriterIds.remove(spec.extentId)
+            releaseWriter(spec.extentId)
             throw error
         }
     }
@@ -172,8 +173,39 @@ class ExtentStore private constructor(
         metadataStore.publish(extent)
     }
 
+    private fun reserveWriter(extentId: ExtentId) {
+        synchronized(this) {
+            ensureOpen()
+            if (!activeWriterIds.add(extentId)) {
+                throw ExtentConflictException(
+                    "an extent write is already active for " + extentId,
+                )
+            }
+        }
+    }
+
     internal fun releaseWriter(extentId: ExtentId) {
-        activeWriterIds.remove(extentId)
+        synchronized(this) {
+            check(activeWriterIds.remove(extentId)) {
+                "extent writer reservation was not active: " + extentId
+            }
+        }
+    }
+
+    private fun beginReadOperation() {
+        synchronized(this) {
+            ensureOpen()
+            activeReadOperations += 1
+        }
+    }
+
+    private fun endReadOperation() {
+        synchronized(this) {
+            check(activeReadOperations > 0) {
+                "extent read operation counter underflow"
+            }
+            activeReadOperations -= 1
+        }
     }
 
     internal fun emit(event: ExtentLifecycleEvent) {
