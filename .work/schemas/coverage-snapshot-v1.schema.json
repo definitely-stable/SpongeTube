@@ -6,9 +6,11 @@
   "required": [
     "schemaVersion",
     "eventSequence",
+    "eventElapsedRealtimeNs",
     "sessionId",
     "playheadUs",
     "requiredTrackIds",
+    "requiredRepresentations",
     "perTrackPublishedIntervals",
     "playableIntervals",
     "durableReserveUs"
@@ -21,8 +23,13 @@
       "type": "integer",
       "minimum": 0
     },
+    "eventElapsedRealtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    },
     "sessionId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "playheadUs": {
       "type": "integer",
@@ -32,14 +39,61 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "requiredRepresentations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
       }
     },
     "perTrackPublishedIntervals": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "startUs",
+            "endUs"
+          ],
+          "properties": {
+            "startUs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "endUs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      }
     },
     "playableIntervals": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "startUs",
+          "endUs"
+        ],
+        "properties": {
+          "startUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endUs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "durablePlayableEndUs": {
       "type": [
