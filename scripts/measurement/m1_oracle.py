@@ -126,6 +126,7 @@ def _file_matches_row(
 
 def reconstruct_committed_coverage(
     committed_rows: Iterable[Mapping[str, object]],
+    media_asset_id: str,
     required_representations: Mapping[str, str],
     verified_files: Mapping[str, Mapping[str, object]],
 ) -> dict[str, tuple[Interval, ...]]:
@@ -168,6 +169,7 @@ def reconstruct_committed_coverage(
             }
             same_identity = all(
                 dep in rows
+                and rows[dep].get("mediaAssetId") == row.get("mediaAssetId")
                 and rows[dep].get("trackId") == row.get("trackId")
                 and rows[dep].get("representationId")
                 == row.get("representationId")
@@ -183,6 +185,9 @@ def reconstruct_committed_coverage(
 
     for extent_id in ready:
         row = rows[extent_id]
+        if row.get("mediaAssetId") != media_asset_id:
+            continue
+
         track_id = str(row["trackId"])
         required_representation = required_representations.get(track_id)
         if required_representation is None:
@@ -206,12 +211,14 @@ def reconstruct_committed_coverage(
 
 def oracle_snapshot(
     committed_rows: Iterable[Mapping[str, object]],
+    media_asset_id: str,
     required_representations: Mapping[str, str],
     verified_files: Mapping[str, Mapping[str, object]],
     playhead_us: int,
 ) -> dict[str, object]:
     per_track = reconstruct_committed_coverage(
         committed_rows,
+        media_asset_id,
         required_representations,
         verified_files,
     )
@@ -226,6 +233,7 @@ def oracle_snapshot(
             break
 
     return {
+        "mediaAssetId": media_asset_id,
         "perTrackPublishedIntervals": {
             track_id: [
                 {"startUs": interval.start_us, "endUs": interval.end_us}
