@@ -16,13 +16,12 @@ class CoverageIndex private constructor(
 
     constructor(extentStore: ExtentStore) : this(extentStore::committedExtents)
 
-    internal constructor(
-        loader: suspend () -> List<CommittedExtent>,
-        testOnly: Unit = Unit,
-    ) : this(loader)
-
     suspend fun refresh(): Int = refreshMutex.withLock {
-        val loaded = loadCommittedExtents().toList()
+        val loaded = loadCommittedExtents().map { extent ->
+            extent.copy(
+                dependencyExtentIds = extent.dependencyExtentIds.toList(),
+            )
+        }
         committedSnapshot = loaded
         loaded.size
     }
@@ -36,6 +35,12 @@ class CoverageIndex private constructor(
             plan = plan,
             playheadUs = playheadUs,
         )
+
+    companion object {
+        internal fun forTest(
+            loader: suspend () -> List<CommittedExtent>,
+        ): CoverageIndex = CoverageIndex(loader)
+    }
 }
 
 internal object CoverageCalculator {
