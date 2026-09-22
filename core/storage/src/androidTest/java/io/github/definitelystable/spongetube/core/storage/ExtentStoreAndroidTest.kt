@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -217,6 +218,121 @@ class ExtentStoreAndroidTest {
             assertFalse(hasPartFiles())
             assertFalse(extentFile(original.extentId).exists())
             recovering.close()
+        }
+
+    @Test
+    fun roomV1MigrationPreservesLegacyExtentInReservedAssetScope() =
+        runBlocking {
+            val extentId = ExtentId("legacy-v1")
+            val bytes = "legacy-published-extent".encodeToByteArray()
+            val digest = Sha256.digest(bytes)
+            val file = extentFile(extentId)
+            file.parentFile?.mkdirs()
+            file.writeBytes(bytes)
+
+            databaseFile.parentFile?.mkdirs()
+            SQLiteDatabase.openOrCreateDatabase(databaseFile, null).use { db ->
+                db.execSQL(
+                    """
+                    CREATE TABLE extents (
+                        extent_id TEXT NOT NULL PRIMARY KEY,
+                        track_id TEXT NOT NULL,
+                        representation_id TEXT NOT NULL,
+                        media_start_us INTEGER,
+                        media_end_us INTEGER,
+                        byte_start INTEGER,
+                        byte_end_exclusive INTEGER,
+                        length INTEGER NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        storage_path TEXT NOT NULL,
+                        publication_state TEXT NOT NULL,
+                        integrity_state TEXT NOT NULL,
+                        quarantine_reason TEXT,
+                        published_at_epoch_ms INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX index_extents_track_id_representation_id " +
+                        "ON extents(track_id, representation_id)",
+                )
+                db.execSQL(
+                    "CREATE INDEX index_extents_publication_state_integrity_state " +
+                        "ON extents(publication_state, integrity_state)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE extent_dependencies (
+                        extent_id TEXT NOT NULL,
+                        dependency_extent_id TEXT NOT NULL,
+                        PRIMARY KEY(extent_id, dependency_extent_id)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX index_extent_dependencies_dependency_extent_id " +
+                        "ON extent_dependencies(dependency_extent_id)",
+                )
+                db.execSQL(
+                    "CREATE TABLE room_master_table " +
+                        "(id INTEGER PRIMARY KEY, identity_hash TEXT)",
+                )
+                db.execSQL(
+                    "INSERT OR REPLACE INTO room_master_table " +
+                        "(id, identity_hash) VALUES(42, ?)",
+                    arrayOf("0bf05a98b8873edf57ddf005dbc42bdd"),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO extents(
+                        extent_id,
+                        track_id,
+                        representation_id,
+                        media_start_us,
+                        media_end_us,
+                        byte_start,
+                        byte_end_exclusive,
+                        length,
+                        sha256,
+                        storage_path,
+                        publication_state,
+                        integrity_state,
+                        quarantine_reason,
+                        published_at_epoch_ms
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                    """.trimIndent(),
+                    arrayOf(
+                        extentId.value,
+                        "video",
+                        "v1",
+                        0L,
+                        10_000_000L,
+                        0L,
+                        bytes.size.toLong(),
+                        bytes.size.toLong(),
+                        digest.hex,
+                        ExtentPathLayout(root).finalRelativePath(extentId),
+                        "PUBLISHED",
+                        "VALID",
+                        1L,
+                    ),
+                )
+                db.version = 1
+            }
+
+            val migrated = openStore()
+            assertEquals(
+                1,
+                migrated.initialRecoveryReport.verifiedPublishedExtents,
+            )
+            val committed = migrated.committedExtents().single()
+            assertEquals(extentId, committed.extentId)
+            assertTrue(committed.mediaAssetId.isLegacyUnscoped)
+            assertEquals(
+                MediaAssetId.LEGACY_UNSCOPED_VALUE,
+                committed.mediaAssetId.value,
+            )
+            migrated.close()
         }
 
     private suspend fun openStore(): ExtentStore =
