@@ -93,6 +93,7 @@ private fun ExtentSpec.toPreflight(
     storagePath: String,
 ): ExtentWritePreflight =
     ExtentWritePreflight(
+        mediaAssetId = mediaAssetId.value,
         extentId = extentId.value,
         trackId = trackId,
         representationId = representationId,
@@ -113,6 +114,7 @@ private fun StoredExtent.toEntity(
 ): ExtentEntity =
     ExtentEntity(
         extentId = extentId.value,
+        mediaAssetId = mediaAssetId.value,
         trackId = trackId,
         representationId = representationId,
         mediaStartUs = mediaStartUs,
@@ -132,6 +134,7 @@ private fun ExtentEntity.toStoredExtent(
     dependencies: List<ExtentId>,
 ): StoredExtent =
     StoredExtent(
+        mediaAssetId = MediaAssetId(mediaAssetId),
         extentId = ExtentId(extentId),
         trackId = trackId,
         representationId = representationId,
