@@ -6,6 +6,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from m1_oracle import Interval
 from m1_seed_planner import build_seed, load_f1_catalog
 
 
@@ -57,6 +58,91 @@ class M1SeedPlannerTest(unittest.TestCase):
                     reserve,
                     plan.target_playable_end_us,
                 )
+
+    def test_canonical_seed_interval_sets_are_exact(self):
+        expected = {
+            "S0": (
+                (),
+                (),
+                (),
+                0,
+            ),
+            "S10": (
+                (Interval(0, 10_000_000),),
+                (Interval(0, 19_946_666),),
+                (Interval(0, 10_000_000),),
+                10_000_000,
+            ),
+            "S30": (
+                (Interval(0, 30_000_000),),
+                (Interval(0, 39_936_000),),
+                (Interval(0, 30_000_000),),
+                30_000_000,
+            ),
+            "S60": (
+                (Interval(0, 60_000_000),),
+                (Interval(0, 69_930_666),),
+                (Interval(0, 60_000_000),),
+                60_000_000,
+            ),
+            "S120": (
+                (Interval(0, 120_000_000),),
+                (Interval(0, 129_920_000),),
+                (Interval(0, 120_000_000),),
+                120_000_000,
+            ),
+            "S30_VIDEO_HOLE": (
+                (
+                    Interval(0, 10_000_000),
+                    Interval(20_000_000, 30_000_000),
+                ),
+                (Interval(0, 39_936_000),),
+                (
+                    Interval(0, 10_000_000),
+                    Interval(20_000_000, 30_000_000),
+                ),
+                10_000_000,
+            ),
+            "S30_AUDIO_HOLE": (
+                (Interval(0, 30_000_000),),
+                (
+                    Interval(0, 9_941_333),
+                    Interval(19_946_666, 39_936_000),
+                ),
+                (
+                    Interval(0, 9_941_333),
+                    Interval(19_946_666, 30_000_000),
+                ),
+                9_941_333,
+            ),
+            "S30_MISSING_INIT": (
+                (),
+                (Interval(0, 39_936_000),),
+                (),
+                0,
+            ),
+            "S30_PARTIAL_TAIL": (
+                (Interval(0, 20_000_000),),
+                (Interval(0, 39_936_000),),
+                (Interval(0, 20_000_000),),
+                20_000_000,
+            ),
+            "S30_WRONG_REPRESENTATION": (
+                (Interval(0, 10_000_000),),
+                (Interval(0, 39_936_000),),
+                (Interval(0, 10_000_000),),
+                10_000_000,
+            ),
+        }
+
+        for seed_id, expectation in expected.items():
+            with self.subTest(seed=seed_id):
+                plan = build_seed(REPO_ROOT, seed_id)
+                per_track, playable, reserve = plan.coverage()
+                self.assertEqual(expectation[0], per_track["video-main"])
+                self.assertEqual(expectation[1], per_track["audio-main"])
+                self.assertEqual(expectation[2], playable)
+                self.assertEqual(expectation[3], reserve)
 
     def test_negative_seeds_are_conservative(self):
         expected_max_reserve = {
