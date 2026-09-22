@@ -139,7 +139,11 @@ class ExtentStoreAndroidTest {
     fun quarantinedExtentCanBeRepairedOnlyWithSameImmutableIdentity() =
         runBlocking {
             val bytes = "repairable-extent".encodeToByteArray()
-            val originalSpec = spec("repairable", bytes)
+            val originalSpec = spec(
+                id = "repairable",
+                bytes = bytes,
+                includeExpectedSha256 = false,
+            )
             val first = openStore()
             val original = first.writeExtent(originalSpec) {
                 write(bytes)
@@ -182,7 +186,11 @@ class ExtentStoreAndroidTest {
         runBlocking {
             val originalBytes = "immutable-a".encodeToByteArray()
             val changedBytes = "immutable-b".encodeToByteArray()
-            val originalSpec = spec("stable-id", originalBytes)
+            val originalSpec = spec(
+                id = "stable-id",
+                bytes = originalBytes,
+                includeExpectedSha256 = false,
+            )
             val first = openStore()
             val original = first.writeExtent(originalSpec) {
                 write(originalBytes)
@@ -201,7 +209,11 @@ class ExtentStoreAndroidTest {
 
             expectThrows<ExtentConflictException> {
                 recovering.writeExtent(
-                    spec("stable-id", changedBytes),
+                    spec(
+                        id = "stable-id",
+                        bytes = changedBytes,
+                        includeExpectedSha256 = false,
+                    ),
                 ) {
                     write(changedBytes)
                 }
@@ -235,6 +247,7 @@ class ExtentStoreAndroidTest {
     private fun spec(
         id: String,
         bytes: ByteArray,
+        includeExpectedSha256: Boolean = true,
     ): ExtentSpec =
         ExtentSpec(
             extentId = ExtentId(id),
@@ -245,7 +258,11 @@ class ExtentStoreAndroidTest {
             byteStart = 0,
             byteEndExclusive = bytes.size.toLong(),
             expectedLength = bytes.size.toLong(),
-            expectedSha256 = Sha256.digest(bytes),
+            expectedSha256 = if (includeExpectedSha256) {
+                Sha256.digest(bytes)
+            } else {
+                null
+            },
         )
 }
 
