@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "eventSequence": 3,
+  "eventElapsedRealtimeNs": 3000000000,
+  "sessionId": "m1-example-session",
+  "fetchId": "fetch-v-0",
+  "fetchKey": "F1/video-main/video-550k/0-700000",
+  "attempt": 1,
+  "event": "OWNER_STARTED",
+  "consumerIds": [
+    "reserve-1"
+  ],
+  "requestedByteStart": 0,
+  "requestedByteEndExclusive": 700000,
+  "validator": "etag-f1-v",
+  "networkBytes": 0,
+  "outcome": null,
+  "singleFlightJoined": false
+}

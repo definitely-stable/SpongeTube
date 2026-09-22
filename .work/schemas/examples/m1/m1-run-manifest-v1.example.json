@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "runId": "m1-example-run",
+  "sessionId": "m1-example-session",
+  "createdAtUtc": "2026-09-22T04:00:00Z",
+  "gitCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "build": {
+    "buildType": "benchmark"
+  },
+  "fixture": {
+    "id": "F1",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "scenario": {
+    "id": "N4R-SHORT",
+    "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "seed": {
+    "seedId": "S30",
+    "manifestSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "playbackMode": "SPONGE",
+  "device": {
+    "api": 36
+  },
+  "runtime": {
+    "media3": "1.11.1"
+  }
+}

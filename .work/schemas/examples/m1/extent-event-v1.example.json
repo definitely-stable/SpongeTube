@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "eventSequence": 7,
+  "eventElapsedRealtimeNs": 7000000000,
+  "sessionId": "m1-example-session",
+  "extentId": "v-0",
+  "fetchId": "fetch-v-0",
+  "state": "PUBLISHED",
+  "integrityState": "VALID",
+  "trackId": "video-main",
+  "representationId": "video-550k",
+  "mediaStartUs": 0,
+  "mediaEndUs": 10000000,
+  "dependencyExtentIds": [
+    "v-init"
+  ],
+  "byteStart": 0,
+  "byteEndExclusive": 700000,
+  "expectedLength": 700000,
+  "actualLength": 700000,
+  "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "storagePath": "filesDir/sponge/extents/ab/v-0"
+}

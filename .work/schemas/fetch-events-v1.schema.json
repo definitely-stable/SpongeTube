@@ -6,25 +6,41 @@
   "required": [
     "schemaVersion",
     "eventSequence",
+    "eventElapsedRealtimeNs",
+    "sessionId",
     "fetchId",
     "fetchKey",
     "attempt",
     "event",
-    "consumerIds"
+    "consumerIds",
+    "networkBytes",
+    "singleFlightJoined",
+    "outcome"
   ],
   "properties": {
     "schemaVersion": {
+      "type": "integer",
       "const": 1
     },
     "eventSequence": {
       "type": "integer",
       "minimum": 0
     },
+    "eventElapsedRealtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
     "fetchId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "fetchKey": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "attempt": {
       "type": "integer",
@@ -44,7 +60,8 @@
     "consumerIds": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       }
     },
     "requestedByteStart": {
@@ -72,9 +89,17 @@
       "minimum": 0
     },
     "outcome": {
-      "type": [
-        "string",
-        "null"
+      "enum": [
+        null,
+        "SUCCESS",
+        "HTTP_ERROR",
+        "TRANSPORT_TIMEOUT",
+        "TRANSPORT_IO",
+        "RANGE_REJECTED",
+        "VALIDATOR_CHANGED",
+        "CANCELLED_NO_CONSUMERS",
+        "STORAGE_FAILED",
+        "UNKNOWN"
       ]
     },
     "singleFlightJoined": {

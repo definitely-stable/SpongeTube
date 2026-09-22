@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "verified-files-1",
+  "sessionId": "m1-example-session",
+  "files": [
+    {
+      "extentId": "v-init",
+      "exists": true,
+      "length": 1024,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "storagePath": "filesDir/sponge/extents/aa/v-init"
+    },
+    {
+      "extentId": "v-0",
+      "exists": true,
+      "length": 700000,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "storagePath": "filesDir/sponge/extents/ab/v-0"
+    }
+  ]
+}

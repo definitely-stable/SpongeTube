@@ -6,21 +6,35 @@
   "required": [
     "schemaVersion",
     "eventSequence",
+    "eventElapsedRealtimeNs",
+    "sessionId",
     "extentId",
     "state",
+    "integrityState",
     "trackId",
-    "representationId"
+    "representationId",
+    "dependencyExtentIds"
   ],
   "properties": {
     "schemaVersion": {
+      "type": "integer",
       "const": 1
     },
     "eventSequence": {
       "type": "integer",
       "minimum": 0
     },
+    "eventElapsedRealtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
     "extentId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "fetchId": {
       "type": [
@@ -39,11 +53,20 @@
         "DELETED"
       ]
     },
+    "integrityState": {
+      "enum": [
+        "UNKNOWN",
+        "VALID",
+        "CORRUPT"
+      ]
+    },
     "trackId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "representationId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "mediaStartUs": {
       "type": [
@@ -58,6 +81,13 @@
         "null"
       ],
       "minimum": 0
+    },
+    "dependencyExtentIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "byteStart": {
       "type": [
@@ -93,7 +123,13 @@
         "null"
       ],
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "storagePath": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

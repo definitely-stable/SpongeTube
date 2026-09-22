@@ -6,21 +6,31 @@
   "required": [
     "schemaVersion",
     "runId",
+    "sessionId",
     "scenarioId",
     "configuredOutage",
     "coverageBefore",
     "coverageAfter",
-    "independentCoverageMatch"
+    "independentCoverageMatch",
+    "duplicateRangeBytes",
+    "requestAttemptCount"
   ],
   "properties": {
     "schemaVersion": {
+      "type": "integer",
       "const": 1
     },
     "runId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
     },
     "scenarioId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "configuredOutage": {
       "type": "object"

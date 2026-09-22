@@ -6,19 +6,37 @@
   "required": [
     "schemaVersion",
     "runId",
+    "sessionId",
+    "createdAtUtc",
+    "gitCommit",
     "build",
     "fixture",
     "scenario",
     "seed",
-    "playbackMode"
+    "playbackMode",
+    "device",
+    "runtime"
   ],
   "properties": {
     "schemaVersion": {
+      "type": "integer",
       "const": 1
     },
     "runId": {
       "type": "string",
       "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAtUtc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
     },
     "build": {
       "type": "object"
@@ -31,13 +49,15 @@
       ],
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }
-      }
+      },
+      "additionalProperties": true
     },
     "scenario": {
       "type": "object",
@@ -47,13 +67,15 @@
       ],
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "hash": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }
-      }
+      },
+      "additionalProperties": true
     },
     "seed": {
       "type": "object",
@@ -63,13 +85,15 @@
       ],
       "properties": {
         "seedId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "manifestSha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "playbackMode": {
       "enum": [

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "runId": "m1-example-run",
+  "sessionId": "m1-example-session",
+  "scenarioId": "N4R-RESTORE",
+  "configuredOutage": {
+    "startMs": 10000,
+    "durationMs": 45000
+  },
+  "observedOriginGate": {
+    "blockedAtMs": 10002,
+    "unblockedAtMs": 55001
+  },
+  "clientNoProgress": {
+    "startMs": 10005,
+    "endMs": 55010
+  },
+  "playerStalls": [
+    {
+      "startMs": 42000,
+      "endMs": 56500
+    }
+  ],
+  "firstPostRestoreFetchProgressMs": 55020,
+  "firstPostRestorePublicationMs": 55800,
+  "playbackRecoveredMs": 56500,
+  "coverageBefore": {
+    "durableReserveUs": 30000000
+  },
+  "coverageAfter": {
+    "durableReserveUs": 20000000
+  },
+  "independentCoverageMatch": true,
+  "duplicateRangeBytes": 0,
+  "requestAttemptCount": 2
+}
