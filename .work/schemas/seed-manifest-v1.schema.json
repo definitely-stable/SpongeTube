@@ -9,6 +9,7 @@
     "fixtureId",
     "fixtureSha256",
     "requiredTrackIds",
+    "requiredRepresentations",
     "targetPlayableEndUs",
     "extents",
     "perTrackCoverage",
@@ -24,7 +25,8 @@
       "minLength": 1
     },
     "fixtureId": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "fixtureSha256": {
       "type": "string",
@@ -34,7 +36,15 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "requiredRepresentations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
       }
     },
     "targetPlayableEndUs": {
@@ -51,43 +61,100 @@
           "representationId",
           "mediaStartUs",
           "mediaEndUs",
+          "dependencyExtentIds",
           "length",
           "sha256"
         ],
         "properties": {
           "extentId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "trackId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "representationId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "mediaStartUs": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 0
           },
           "mediaEndUs": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 0
+          },
+          "dependencyExtentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           "length": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 1
           },
           "sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
           }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "perTrackCoverage": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "startUs",
+            "endUs"
+          ],
+          "properties": {
+            "startUs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "endUs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      }
     },
     "playableCoverage": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "startUs",
+          "endUs"
+        ],
+        "properties": {
+          "startUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endUs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "actualReserveUs": {
       "type": "integer",
