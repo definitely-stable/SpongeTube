@@ -25,11 +25,14 @@ EXAMPLES = SCHEMAS / "examples" / "m1"
 CONTRACTS = {
     "m1-run-manifest-v1.schema.json": "m1-run-manifest-v1.example.json",
     "seed-manifest-v1.schema.json": "seed-manifest-v1.example.json",
+    "seed-manifest-v2.schema.json": "seed-manifest-v2.example.json",
     "coverage-snapshot-v1.schema.json": "coverage-snapshot-v1.example.json",
+    "coverage-snapshot-v2.schema.json": "coverage-snapshot-v2.example.json",
     "extent-events-v1.schema.json": "extent-event-v1.example.json",
     "fetch-events-v1.schema.json": "fetch-event-v1.example.json",
     "recovery-summary-v1.schema.json": "recovery-summary-v1.example.json",
     "committed-extents-v1.schema.json": "committed-extents-v1.example.json",
+    "committed-extents-v2.schema.json": "committed-extents-v2.example.json",
     "verified-extent-files-v1.schema.json": "verified-extent-files-v1.example.json",
 }
 
