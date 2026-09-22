@@ -2,15 +2,14 @@ package io.github.definitelystable.spongetube.core.storage
 
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -36,11 +35,11 @@ class ExtentStoreCrashTest {
                 metadata = metadata,
                 crashAt = point,
             )
-            val writer = store.openWriter(spec("extent-" + point.name, bytes))
-            writer.write(bytes)
 
-            assertThrows(SimulatedProcessCrash::class.java) {
-                runBlocking { writer.commit() }
+            expectThrows<SimulatedProcessCrash> {
+                store.writeExtent(spec("extent-" + point.name, bytes)) {
+                    write(bytes)
+                }
             }
 
             assertTrue(metadata.snapshot().isEmpty())
@@ -57,11 +56,7 @@ class ExtentStoreCrashTest {
                 point.name,
             )
             assertTrue(reopened.committedExtents().isEmpty())
-            assertFalse(
-                root.walkTopDown().any {
-                    it.isFile && it.name.endsWith(".part")
-                },
-            )
+            assertFalse(hasPartFiles(root))
             reopened.close()
         }
     }
@@ -77,11 +72,11 @@ class ExtentStoreCrashTest {
                 metadata = metadata,
                 crashAt = ExtentFaultPoint.AFTER_DURABLE_BEFORE_PUBLISH,
             )
-            val writer = store.openWriter(spec("orphan", bytes))
-            writer.write(bytes)
 
-            assertThrows(SimulatedProcessCrash::class.java) {
-                runBlocking { writer.commit() }
+            expectThrows<SimulatedProcessCrash> {
+                store.writeExtent(spec("orphan", bytes)) {
+                    write(bytes)
+                }
             }
 
             assertTrue(metadata.snapshot().isEmpty())
@@ -107,11 +102,11 @@ class ExtentStoreCrashTest {
             metadata = metadata,
             crashAt = ExtentFaultPoint.AFTER_PUBLISH,
         )
-        val writer = store.openWriter(spec("published", bytes))
-        writer.write(bytes)
 
-        assertThrows(SimulatedProcessCrash::class.java) {
-            runBlocking { writer.commit() }
+        expectThrows<SimulatedProcessCrash> {
+            store.writeExtent(spec("published", bytes)) {
+                write(bytes)
+            }
         }
 
         assertEquals(1, metadata.snapshot().size)
@@ -139,11 +134,11 @@ class ExtentStoreCrashTest {
             )
             val bytes = "publish-failure".encodeToByteArray()
             val store = openStore(root, metadata)
-            val writer = store.openWriter(spec("publish-failure", bytes))
-            writer.write(bytes)
 
-            assertThrows(IllegalStateException::class.java) {
-                runBlocking { writer.commit() }
+            expectThrows<IllegalStateException> {
+                store.writeExtent(spec("publish-failure", bytes)) {
+                    write(bytes)
+                }
             }
 
             assertTrue(metadata.snapshot().isEmpty())
@@ -166,46 +161,118 @@ class ExtentStoreCrashTest {
         val actual = "actual".encodeToByteArray()
         val expected = "other!".encodeToByteArray()
         val store = openStore(root, metadata)
-        val writer = store.openWriter(
-            spec(
-                id = "bad-hash",
-                bytes = expected,
-                expectedLength = actual.size.toLong(),
-            ),
-        )
-        writer.write(actual)
 
-        assertThrows(ExtentIntegrityException::class.java) {
-            runBlocking { writer.commit() }
+        expectThrows<ExtentIntegrityException> {
+            store.writeExtent(
+                spec(
+                    id = "bad-hash",
+                    bytes = expected,
+                    expectedLength = actual.size.toLong(),
+                ),
+            ) {
+                write(actual)
+            }
         }
 
         assertTrue(metadata.snapshot().isEmpty())
         assertTrue(finalExtentFiles(root).isEmpty())
-        assertFalse(
-            root.walkTopDown().any {
-                it.isFile && it.name.endsWith(".part")
-            },
-        )
+        assertFalse(hasPartFiles(root))
         store.close()
     }
 
     @Test
-    fun duplicateActiveWriterForSameExtentIsRejected() = runBlocking {
-        val root = File(tempDir, "duplicate-writer")
+    fun producerCancellationCleansTempAndReleasesIdentity() = runBlocking {
+        val root = File(tempDir, "producer-cancellation")
         val metadata = FakeExtentMetadataStore()
-        val bytes = "same".encodeToByteArray()
+        val bytes = "cancelled-write".encodeToByteArray()
         val store = openStore(root, metadata)
-        val first = store.openWriter(spec("same", bytes))
+        val spec = spec("cancelled", bytes)
 
-        assertThrows(ExtentConflictException::class.java) {
-            runBlocking {
-                store.openWriter(spec("same", bytes))
+        expectThrows<CancellationException> {
+            store.writeExtent(spec) {
+                write(bytes)
+                throw CancellationException("producer cancelled")
             }
         }
 
-        first.abort()
+        assertTrue(metadata.snapshot().isEmpty())
+        assertFalse(hasPartFiles(root))
+        assertTrue(finalExtentFiles(root).isEmpty())
+
+        val committed = store.writeExtent(spec) {
+            write(bytes)
+        }
+        assertEquals(spec.extentId, committed.extentId)
         store.close()
     }
+
+    @Test
+    fun concurrentSameExtentHasExactlyOneWriterOwner() = runBlocking {
+        val root = File(tempDir, "single-writer")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "same".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val spec = spec("same", bytes)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        val owner = async {
+            store.writeExtent(spec) {
+                entered.complete(Unit)
+                release.await()
+                write(bytes)
+            }
+        }
+
+        entered.await()
+
+        expectThrows<ExtentConflictException> {
+            store.writeExtent(spec) {
+                write(bytes)
+            }
+        }
+
+        release.complete(Unit)
+        owner.await()
+        assertEquals(1, store.committedExtents().size)
+        store.close()
+    }
+
+    @Test
+    fun incompatibleQuarantinedIdentityIsRejectedBeforeTempCreation() =
+        runBlocking {
+            val root = File(tempDir, "immutable-identity")
+            val metadata = FakeExtentMetadataStore()
+            val original = "original".encodeToByteArray()
+            val changed = "changed!".encodeToByteArray()
+            val store = openStore(root, metadata)
+            val originalSpec = spec("stable-id", original)
+
+            store.writeExtent(originalSpec) {
+                write(original)
+            }
+
+            metadata.quarantine(
+                originalSpec.extentId,
+                ExtentQuarantineReason.SHA256_MISMATCH,
+            )
+            HostDurabilityOps.deleteDurably(
+                ExtentPathLayout(root).finalFile(
+                    originalSpec.extentId,
+                    HostDurabilityOps,
+                ),
+            )
+
+            expectThrows<ExtentConflictException> {
+                store.writeExtent(spec("stable-id", changed)) {
+                    write(changed)
+                }
+            }
+
+            assertFalse(hasPartFiles(root))
+            assertTrue(finalExtentFiles(root).isEmpty())
+            store.close()
+        }
 
     private suspend fun openStore(
         root: File,
@@ -246,13 +313,22 @@ class ExtentStoreCrashTest {
         )
 
     private fun sha256(bytes: ByteArray): Sha256Digest {
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString(separator = "") {
-                "%02x".format(it)
-            }
-        return Sha256Digest(digest)
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        val hex = CharArray(digest.size * 2)
+        val alphabet = "0123456789abcdef"
+        digest.forEachIndexed { index, value ->
+            val unsigned = value.toInt() and 0xff
+            hex[index * 2] = alphabet[unsigned ushr 4]
+            hex[index * 2 + 1] = alphabet[unsigned and 0x0f]
+        }
+        return Sha256Digest(hex.concatToString())
     }
+
+    private fun hasPartFiles(root: File): Boolean =
+        root.exists() &&
+            root.walkTopDown().any {
+                it.isFile && it.name.endsWith(".part")
+            }
 
     private fun finalExtentFiles(root: File): List<File> =
         if (!root.exists()) {
@@ -271,11 +347,36 @@ private class FakeExtentMetadataStore(
 ) : ExtentMetadataStore {
     private val rows = linkedMapOf<ExtentId, StoredExtent>()
 
+    override suspend fun assertWritable(
+        spec: ExtentSpec,
+        storagePath: String,
+    ) {
+        val existing = rows[spec.extentId] ?: return
+        if (!existing.isRepairCompatible(spec, storagePath)) {
+            throw ExtentConflictException(
+                "extent id is already bound to different or active immutable metadata: " +
+                    spec.extentId,
+            )
+        }
+    }
+
     override suspend fun publish(extent: StoredExtent) {
         if (failNextPublish) {
             failNextPublish = false
             error("simulated metadata publish failure")
         }
+
+        val existing = rows[extent.extentId]
+        if (
+            existing != null &&
+            !existing.isRepairCompatible(extent)
+        ) {
+            throw ExtentConflictException(
+                "extent id is already bound to different or active immutable metadata: " +
+                    extent.extentId,
+            )
+        }
+
         rows[extent.extentId] = extent.copy(
             publicationState = ExtentPublicationState.PUBLISHED,
             integrityState = ExtentIntegrityState.VALID,
@@ -301,6 +402,41 @@ private class FakeExtentMetadataStore(
     override fun close() = Unit
 }
 
+private fun StoredExtent.isRepairCompatible(
+    spec: ExtentSpec,
+    storagePath: String,
+): Boolean =
+    publicationState == ExtentPublicationState.QUARANTINED &&
+        integrityState == ExtentIntegrityState.CORRUPT &&
+        extentId == spec.extentId &&
+        trackId == spec.trackId &&
+        representationId == spec.representationId &&
+        mediaStartUs == spec.mediaStartUs &&
+        mediaEndUs == spec.mediaEndUs &&
+        byteStart == spec.byteStart &&
+        byteEndExclusive == spec.byteEndExclusive &&
+        dependencyExtentIds.toSet() == spec.dependencyExtentIds.toSet() &&
+        length == spec.expectedLength &&
+        sha256 == spec.expectedSha256 &&
+        this.storagePath == storagePath
+
+private fun StoredExtent.isRepairCompatible(
+    candidate: StoredExtent,
+): Boolean =
+    publicationState == ExtentPublicationState.QUARANTINED &&
+        integrityState == ExtentIntegrityState.CORRUPT &&
+        extentId == candidate.extentId &&
+        trackId == candidate.trackId &&
+        representationId == candidate.representationId &&
+        mediaStartUs == candidate.mediaStartUs &&
+        mediaEndUs == candidate.mediaEndUs &&
+        byteStart == candidate.byteStart &&
+        byteEndExclusive == candidate.byteEndExclusive &&
+        dependencyExtentIds.toSet() == candidate.dependencyExtentIds.toSet() &&
+        length == candidate.length &&
+        sha256 == candidate.sha256 &&
+        storagePath == candidate.storagePath
+
 private object HostDurabilityOps : ExtentDurabilityOps {
     override fun ensureDirectory(directory: File) {
         check(directory.mkdirs() || directory.isDirectory) {
@@ -321,21 +457,33 @@ private object HostDurabilityOps : ExtentDurabilityOps {
         check(!destination.exists()) {
             "destination already exists"
         }
-        try {
-            Files.move(
-                source.toPath(),
-                destination.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-            )
-        } catch (error: AtomicMoveNotSupportedException) {
-            throw AssertionError(
-                "test filesystem must support same-filesystem atomic move",
-                error,
-            )
+        check(source.renameTo(destination)) {
+            "failed to rename test extent"
         }
     }
 
     override fun deleteDurably(file: File) {
-        Files.deleteIfExists(file.toPath())
+        check(!file.exists() || file.delete()) {
+            "failed to delete test extent"
+        }
     }
+}
+
+private suspend inline fun <reified T : Throwable> expectThrows(
+    crossinline block: suspend () -> Unit,
+): T {
+    try {
+        block()
+    } catch (error: Throwable) {
+        if (error is T) {
+            return error
+        }
+        throw AssertionError(
+            "expected " + T::class.java.name +
+                ", got " + error::class.java.name,
+            error,
+        )
+    }
+
+    throw AssertionError("expected " + T::class.java.name)
 }
