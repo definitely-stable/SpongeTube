@@ -611,7 +611,7 @@ private object HostDurabilityOps : ExtentDurabilityOps {
         output.close()
     }
 
-    override fun installAtomicallyNoReplace(
+    override fun installAtomically(
         source: File,
         destination: File,
     ) = synchronized(this) {
