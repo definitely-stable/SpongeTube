@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 2,
+  "eventSequence": 12,
+  "eventElapsedRealtimeNs": 12000000000,
+  "sessionId": "m1-example-session",
+  "playheadUs": 5000000,
+  "requiredTrackIds": [
+    "video-main",
+    "audio-main"
+  ],
+  "requiredRepresentations": {
+    "video-main": "video-550k",
+    "audio-main": "audio-64k"
+  },
+  "perTrackPublishedIntervals": {
+    "video-main": [
+      {
+        "startUs": 0,
+        "endUs": 30000000
+      }
+    ],
+    "audio-main": [
+      {
+        "startUs": 0,
+        "endUs": 30000000
+      }
+    ]
+  },
+  "playableIntervals": [
+    {
+      "startUs": 0,
+      "endUs": 30000000
+    }
+  ],
+  "durablePlayableEndUs": 30000000,
+  "durableReserveUs": 25000000,
+  "playerBufferedAheadUs": 8000000,
+  "mediaAssetId": "fixture:F1"
+}
