@@ -22,6 +22,11 @@ internal data class StoredExtent(
 )
 
 internal interface ExtentMetadataStore : Closeable {
+    suspend fun assertWritable(
+        spec: ExtentSpec,
+        storagePath: String,
+    )
+
     suspend fun publish(extent: StoredExtent)
 
     suspend fun snapshot(): List<StoredExtent>
