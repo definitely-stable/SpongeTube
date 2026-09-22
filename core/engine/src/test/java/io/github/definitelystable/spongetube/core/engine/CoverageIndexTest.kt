@@ -52,7 +52,7 @@ class CoverageIndexTest {
         extents += media("v1", "video", "v1", 40, 90, "v-init")
         extents += media("a1", "audio", "a1", 40, 90, "a-init")
 
-        val index = CoverageIndex({ extents.toList() })
+        val index = CoverageIndex.forTest({ extents.toList() })
         index.refresh()
 
         assertEquals(20, snapshot(index, 10).durableReserveUs)
@@ -79,7 +79,7 @@ class CoverageIndexTest {
             ),
         )
 
-        val index = CoverageIndex({ extents })
+        val index = CoverageIndex.forTest({ extents })
         index.refresh()
 
         val snapshot = snapshot(index, 0)
@@ -115,7 +115,7 @@ class CoverageIndexTest {
             cyclicB,
         )
 
-        val index = CoverageIndex({ extents })
+        val index = CoverageIndex.forTest({ extents })
         index.refresh()
 
         assertEquals(emptyList<MediaInterval>(), snapshot(index, 0).playableIntervals)
@@ -129,7 +129,7 @@ class CoverageIndexTest {
             media("v0", "video", "v1", 0, 10, "v-init"),
             media("a0", "audio", "a1", 0, 10, "a-init"),
         )
-        val index = CoverageIndex({ extents })
+        val index = CoverageIndex.forTest({ extents })
         index.refresh()
 
         assertEquals(10, snapshot(index, 0).durableReserveUs)
@@ -171,7 +171,7 @@ class CoverageIndexTest {
                 "wrong-rep-init",
             ),
         )
-        val index = CoverageIndex({ extents })
+        val index = CoverageIndex.forTest({ extents })
         index.refresh()
 
         assertEquals(emptyList<MediaInterval>(), snapshot(index, 0).playableIntervals)
@@ -192,7 +192,7 @@ class CoverageIndexTest {
     @Test
     fun refreshAtomicallyReplacesCommittedProjection() = runTest {
         var extents = emptyList<CommittedExtent>()
-        val index = CoverageIndex({ extents })
+        val index = CoverageIndex.forTest({ extents })
 
         index.refresh()
         assertEquals(0, snapshot(index, 0).durableReserveUs)
