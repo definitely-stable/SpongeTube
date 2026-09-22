@@ -3,6 +3,16 @@ package io.github.definitelystable.spongetube.core.storage
 import java.io.IOException
 
 @JvmInline
+value class MediaAssetId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "media asset id must not be blank" }
+        require(value.length <= 256) { "media asset id must be <= 256 characters" }
+    }
+
+    override fun toString(): String = value
+}
+
+@JvmInline
 value class ExtentId(val value: String) {
     init {
         require(value.isNotBlank()) { "extent id must not be blank" }
@@ -28,6 +38,7 @@ value class Sha256Digest(val hex: String) {
 }
 
 data class ExtentSpec(
+    val mediaAssetId: MediaAssetId,
     val extentId: ExtentId,
     val trackId: String,
     val representationId: String,
@@ -125,6 +136,7 @@ fun interface ExtentLifecycleListener {
 }
 
 data class CommittedExtent(
+    val mediaAssetId: MediaAssetId,
     val extentId: ExtentId,
     val trackId: String,
     val representationId: String,
