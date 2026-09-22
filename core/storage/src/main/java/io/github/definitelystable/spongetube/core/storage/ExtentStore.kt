@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,7 @@ class ExtentStore private constructor(
     internal val faultInjector: ExtentFaultInjector,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
-    private val activeWriterIds = ConcurrentHashMap.newKeySet<ExtentId>()
+    private val activeWriterIds: MutableSet<ExtentId> = Collections.newSetFromMap(ConcurrentHashMap())
 
     @Volatile
     private var closed = false
