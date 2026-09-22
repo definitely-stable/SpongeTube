@@ -67,6 +67,20 @@ internal data class ExtentSnapshotRows(
     val dependencies: List<ExtentDependencyEntity>,
 )
 
+internal data class ExtentWritePreflight(
+    val extentId: String,
+    val trackId: String,
+    val representationId: String,
+    val mediaStartUs: Long?,
+    val mediaEndUs: Long?,
+    val byteStart: Long?,
+    val byteEndExclusive: Long?,
+    val dependencyIds: List<String>,
+    val length: Long,
+    val expectedSha256: String?,
+    val storagePath: String,
+)
+
 @Dao
 internal abstract class ExtentDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -95,15 +109,25 @@ internal abstract class ExtentDao {
     )
 
     @Transaction
-    open suspend fun assertWritable(
-        candidate: ExtentEntity,
-        dependencyIds: List<String>,
-    ) {
+    open suspend fun assertWritable(candidate: ExtentWritePreflight) {
         val existing = extentById(candidate.extentId) ?: return
-        validateRepairCandidate(
+        validatePreflightCandidate(
             existing = existing,
             existingDependencyIds = dependencyIdsForExtent(candidate.extentId),
             candidate = candidate,
+        )
+    }
+
+    @Transaction
+    open suspend fun assertPublishable(
+        entity: ExtentEntity,
+        dependencyIds: List<String>,
+    ) {
+        val existing = extentById(entity.extentId) ?: return
+        validateRepairCandidate(
+            existing = existing,
+            existingDependencyIds = dependencyIdsForExtent(entity.extentId),
+            candidate = entity,
             candidateDependencyIds = dependencyIds,
         )
     }
@@ -162,6 +186,30 @@ internal abstract class ExtentDao {
     )
 }
 
+private fun validatePreflightCandidate(
+    existing: ExtentEntity,
+    existingDependencyIds: List<String>,
+    candidate: ExtentWritePreflight,
+) {
+    val immutableIdentityMatches =
+        existing.extentId == candidate.extentId &&
+            existing.trackId == candidate.trackId &&
+            existing.representationId == candidate.representationId &&
+            existing.mediaStartUs == candidate.mediaStartUs &&
+            existing.mediaEndUs == candidate.mediaEndUs &&
+            existing.byteStart == candidate.byteStart &&
+            existing.byteEndExclusive == candidate.byteEndExclusive &&
+            existing.length == candidate.length &&
+            (
+                candidate.expectedSha256 == null ||
+                    existing.sha256 == candidate.expectedSha256
+            ) &&
+            existing.storagePath == candidate.storagePath &&
+            existingDependencyIds.sorted() == candidate.dependencyIds.sorted()
+
+    requireRepairableMatch(existing, immutableIdentityMatches)
+}
+
 private fun validateRepairCandidate(
     existing: ExtentEntity,
     existingDependencyIds: List<String>,
@@ -181,6 +229,13 @@ private fun validateRepairCandidate(
             existing.storagePath == candidate.storagePath &&
             existingDependencyIds.sorted() == candidateDependencyIds.sorted()
 
+    requireRepairableMatch(existing, immutableIdentityMatches)
+}
+
+private fun requireRepairableMatch(
+    existing: ExtentEntity,
+    immutableIdentityMatches: Boolean,
+) {
     val repairable =
         existing.publicationState == ExtentPublicationState.QUARANTINED.name &&
             existing.integrityState == ExtentIntegrityState.CORRUPT.name
