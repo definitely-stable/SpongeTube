@@ -44,7 +44,7 @@ internal interface ExtentDurabilityOps {
 
     fun syncAndClose(output: FileOutputStream)
 
-    fun installAtomicallyNoReplace(source: File, destination: File)
+    fun installAtomically(source: File, destination: File)
 
     fun deleteDurably(file: File)
 }
