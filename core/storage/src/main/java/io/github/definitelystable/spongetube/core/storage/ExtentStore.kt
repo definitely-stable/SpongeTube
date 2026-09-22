@@ -8,6 +8,9 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class ExtentStore private constructor(
@@ -19,7 +22,8 @@ class ExtentStore private constructor(
     internal val faultInjector: ExtentFaultInjector,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
-    private val activeWriterIds: MutableSet<ExtentId> = Collections.newSetFromMap(ConcurrentHashMap())
+    private val activeWriterIds: MutableSet<ExtentId> =
+        Collections.newSetFromMap(ConcurrentHashMap())
 
     @Volatile
     private var closed = false
@@ -27,48 +31,29 @@ class ExtentStore private constructor(
     var initialRecoveryReport: RecoveryReport = RecoveryReport.EMPTY
         private set
 
-    suspend fun openWriter(spec: ExtentSpec): ExtentWriter =
+    suspend fun writeExtent(
+        spec: ExtentSpec,
+        producer: suspend ExtentSink.() -> Unit,
+    ): CommittedExtent =
         withContext(ioDispatcher) {
             ensureOpen()
-
-            if (!activeWriterIds.add(spec.extentId)) {
-                throw ExtentConflictException(
-                    "an extent writer is already active for " + spec.extentId,
-                )
-            }
+            val writer = createWriter(spec)
+            var committed = false
 
             try {
-                layout.ensureRoot(durabilityOps)
-                val finalFile = layout.finalFile(spec.extentId, durabilityOps)
-                if (finalFile.exists()) {
-                    throw ExtentConflictException(
-                        "extent file already exists for " + spec.extentId,
-                    )
+                currentCoroutineContext().ensureActive()
+                producer(writer)
+                currentCoroutineContext().ensureActive()
+
+                val result = writer.commit()
+                committed = true
+                result
+            } finally {
+                if (!committed) {
+                    withContext(NonCancellable) {
+                        writer.abort()
+                    }
                 }
-
-                val partFile = layout.createPartFile(
-                    spec.extentId,
-                    durabilityOps,
-                )
-                val output = FileOutputStream(partFile, false)
-
-                emit(
-                    ExtentLifecycleEvent(
-                        extentId = spec.extentId,
-                        state = ExtentLifecycleState.RECEIVING,
-                    ),
-                )
-
-                ExtentWriter(
-                    store = this@ExtentStore,
-                    spec = spec,
-                    partFile = partFile,
-                    finalFile = finalFile,
-                    output = output,
-                )
-            } catch (error: Throwable) {
-                activeWriterIds.remove(spec.extentId)
-                throw error
             }
         }
 
@@ -93,12 +78,80 @@ class ExtentStore private constructor(
 
             if (activeWriterIds.isNotEmpty()) {
                 throw ExtentConflictException(
-                    "cannot close extent store while writers are active",
+                    "cannot close extent store while extent writes are active",
                 )
             }
 
             closed = true
             metadataStore.close()
+        }
+    }
+
+    private suspend fun createWriter(spec: ExtentSpec): ExtentWriter {
+        ensureOpen()
+
+        if (!activeWriterIds.add(spec.extentId)) {
+            throw ExtentConflictException(
+                "an extent write is already active for " + spec.extentId,
+            )
+        }
+
+        var partFile: File? = null
+        var output: FileOutputStream? = null
+
+        try {
+            layout.ensureRoot(durabilityOps)
+            val finalRelativePath = layout.finalRelativePath(spec.extentId)
+
+            metadataStore.assertWritable(
+                spec = spec,
+                storagePath = finalRelativePath,
+            )
+
+            val finalFile = layout.finalFile(spec.extentId, durabilityOps)
+            if (finalFile.exists()) {
+                throw ExtentConflictException(
+                    "extent file already exists for " + spec.extentId,
+                )
+            }
+
+            partFile = layout.createPartFile(
+                spec.extentId,
+                durabilityOps,
+            )
+            output = FileOutputStream(partFile, false)
+
+            emit(
+                ExtentLifecycleEvent(
+                    extentId = spec.extentId,
+                    state = ExtentLifecycleState.RECEIVING,
+                ),
+            )
+
+            return ExtentWriter(
+                store = this,
+                spec = spec,
+                partFile = partFile,
+                finalFile = finalFile,
+                output = output,
+            )
+        } catch (error: Throwable) {
+            try {
+                output?.close()
+            } catch (closeError: Throwable) {
+                error.addSuppressed(closeError)
+            }
+
+            if (partFile?.exists() == true) {
+                try {
+                    durabilityOps.deleteDurably(partFile)
+                } catch (cleanupError: Throwable) {
+                    error.addSuppressed(cleanupError)
+                }
+            }
+
+            activeWriterIds.remove(spec.extentId)
+            throw error
         }
     }
 
@@ -332,5 +385,4 @@ private fun StoredExtent.toCommitted(): CommittedExtent =
         dependencyExtentIds = dependencyExtentIds,
         length = length,
         sha256 = sha256,
-        storagePath = storagePath,
     )
