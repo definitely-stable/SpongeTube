@@ -8,6 +8,7 @@ android {
 
     defaultConfig {
         minSdk = 23
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -17,6 +18,12 @@ android {
 
     lint {
         abortOnError = true
+    }
+
+    sourceSets {
+        getByName("androidTest").assets.srcDir(
+            rootProject.file("test-fixtures/media/F1"),
+        )
     }
 }
 
@@ -28,6 +35,9 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)
     testRuntimeOnly(libs.junit.platform.launcher)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }
 
 tasks.withType<Test>().configureEach {
