@@ -18,6 +18,7 @@
   ],
   "properties": {
     "schemaVersion": {
+      "type": "integer",
       "const": 1
     },
     "seedId": {
