@@ -15,7 +15,7 @@ internal class ExtentPathLayout(
 
     fun finalRelativePath(extentId: ExtentId): String {
         val key = storageKey(extentId)
-        return "extents/\${key.substring(0, 2)}/$key.extent"
+        return "extents/${key.substring(0, 2)}/$key.extent"
     }
 
     fun finalFile(
