@@ -239,6 +239,88 @@ class ExtentStoreCrashTest {
     }
 
     @Test
+    fun repairWithoutOriginDigestUsesStoredDigestIdentity() = runBlocking {
+        val root = File(tempDir, "repair-without-origin-digest")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "repairable".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val repairSpec = spec(
+            id = "repairable-no-digest",
+            bytes = bytes,
+            includeExpectedSha256 = false,
+        )
+
+        store.writeExtent(repairSpec) {
+            write(bytes)
+        }
+        metadata.quarantine(
+            repairSpec.extentId,
+            ExtentQuarantineReason.SHA256_MISMATCH,
+        )
+        HostDurabilityOps.deleteDurably(
+            ExtentPathLayout(root).finalFile(
+                repairSpec.extentId,
+                HostDurabilityOps,
+            ),
+        )
+
+        val repaired = store.writeExtent(repairSpec) {
+            write(bytes)
+        }
+
+        assertEquals(repairSpec.extentId, repaired.extentId)
+        assertEquals(sha256(bytes), repaired.sha256)
+        assertEquals(1, store.committedExtents().size)
+        store.close()
+    }
+
+    @Test
+    fun changedRepairWithoutOriginDigestIsRejectedBeforeFinalInstall() =
+        runBlocking {
+            val root = File(tempDir, "changed-repair-no-digest")
+            val metadata = FakeExtentMetadataStore()
+            val original = "original".encodeToByteArray()
+            val changed = "changed!".encodeToByteArray()
+            val store = openStore(root, metadata)
+            val originalSpec = spec(
+                id = "stable-no-digest",
+                bytes = original,
+                includeExpectedSha256 = false,
+            )
+
+            store.writeExtent(originalSpec) {
+                write(original)
+            }
+            metadata.quarantine(
+                originalSpec.extentId,
+                ExtentQuarantineReason.SHA256_MISMATCH,
+            )
+            HostDurabilityOps.deleteDurably(
+                ExtentPathLayout(root).finalFile(
+                    originalSpec.extentId,
+                    HostDurabilityOps,
+                ),
+            )
+
+            expectThrows<ExtentConflictException> {
+                store.writeExtent(
+                    spec(
+                        id = "stable-no-digest",
+                        bytes = changed,
+                        includeExpectedSha256 = false,
+                    ),
+                ) {
+                    write(changed)
+                }
+            }
+
+            assertFalse(hasPartFiles(root))
+            assertTrue(finalExtentFiles(root).isEmpty())
+            assertTrue(store.committedExtents().isEmpty())
+            store.close()
+        }
+
+    @Test
     fun incompatibleQuarantinedIdentityIsRejectedBeforeTempCreation() =
         runBlocking {
             val root = File(tempDir, "immutable-identity")
@@ -299,6 +381,7 @@ class ExtentStoreCrashTest {
         id: String,
         bytes: ByteArray,
         expectedLength: Long = bytes.size.toLong(),
+        includeExpectedSha256: Boolean = true,
     ): ExtentSpec =
         ExtentSpec(
             extentId = ExtentId(id),
@@ -309,7 +392,11 @@ class ExtentStoreCrashTest {
             byteStart = 0,
             byteEndExclusive = expectedLength,
             expectedLength = expectedLength,
-            expectedSha256 = sha256(bytes),
+            expectedSha256 = if (includeExpectedSha256) {
+                sha256(bytes)
+            } else {
+                null
+            },
         )
 
     private fun sha256(bytes: ByteArray): Sha256Digest {
@@ -356,6 +443,16 @@ private class FakeExtentMetadataStore(
             throw ExtentConflictException(
                 "extent id is already bound to different or active immutable metadata: " +
                     spec.extentId,
+            )
+        }
+    }
+
+    override suspend fun assertPublishable(extent: StoredExtent) {
+        val existing = rows[extent.extentId] ?: return
+        if (!existing.isRepairCompatible(extent)) {
+            throw ExtentConflictException(
+                "extent id is already bound to different or active immutable metadata: " +
+                    extent.extentId,
             )
         }
     }
@@ -417,7 +514,10 @@ private fun StoredExtent.isRepairCompatible(
         byteEndExclusive == spec.byteEndExclusive &&
         dependencyExtentIds.toSet() == spec.dependencyExtentIds.toSet() &&
         length == spec.expectedLength &&
-        sha256 == spec.expectedSha256 &&
+        (
+            spec.expectedSha256 == null ||
+                sha256 == spec.expectedSha256
+        ) &&
         this.storagePath == storagePath
 
 private fun StoredExtent.isRepairCompatible(
