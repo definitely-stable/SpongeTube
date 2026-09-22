@@ -62,6 +62,24 @@ jobs:
           test -n "$(grep '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties | cut -d= -f2)"
           python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py' -v
 
+      # TEMPORARY M1-B bootstrap. Removed after generated metadata/schema are committed.
+      - name: Bootstrap M1-B generated metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --write-verification-metadata sha256 \
+            check assembleDebug :benchmark:assembleBenchmark
+
+      - name: Upload M1-B bootstrap outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m1b-bootstrap-generated
+          path: |
+            gradle/verification-metadata.xml
+            core/storage/schemas/
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Verify build and configuration cache
         shell: bash
         run: |
