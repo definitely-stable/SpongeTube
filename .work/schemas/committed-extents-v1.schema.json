@@ -42,6 +42,7 @@
           "extentId",
           "state",
           "integrityState",
+          "mediaAssetId",
           "trackId",
           "representationId",
           "mediaStartUs",
@@ -108,6 +109,10 @@
             "pattern": "^[0-9a-f]{64}$"
           },
           "storagePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mediaAssetId": {
             "type": "string",
             "minLength": 1
           }
