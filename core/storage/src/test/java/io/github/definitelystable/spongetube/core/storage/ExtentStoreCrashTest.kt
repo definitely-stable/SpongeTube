@@ -445,6 +445,7 @@ class ExtentStoreCrashTest {
         includeExpectedSha256: Boolean = true,
     ): ExtentSpec =
         ExtentSpec(
+            mediaAssetId = MediaAssetId("asset-test"),
             extentId = ExtentId(id),
             trackId = "video",
             representationId = "v1",
@@ -567,6 +568,7 @@ private fun StoredExtent.isRepairCompatible(
     publicationState == ExtentPublicationState.QUARANTINED &&
         integrityState == ExtentIntegrityState.CORRUPT &&
         extentId == spec.extentId &&
+        mediaAssetId == spec.mediaAssetId &&
         trackId == spec.trackId &&
         representationId == spec.representationId &&
         mediaStartUs == spec.mediaStartUs &&
@@ -587,6 +589,7 @@ private fun StoredExtent.isRepairCompatible(
     publicationState == ExtentPublicationState.QUARANTINED &&
         integrityState == ExtentIntegrityState.CORRUPT &&
         extentId == candidate.extentId &&
+        mediaAssetId == candidate.mediaAssetId &&
         trackId == candidate.trackId &&
         representationId == candidate.representationId &&
         mediaStartUs == candidate.mediaStartUs &&
