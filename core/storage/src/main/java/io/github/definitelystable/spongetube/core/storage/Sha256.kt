@@ -8,18 +8,23 @@ internal object Sha256 {
     private const val FILE_BUFFER_SIZE = 64 * 1024
     private const val HEX = "0123456789abcdef"
 
-    fun digest(bytes: ByteArray): Sha256Digest =
-        Sha256Digest(
-            MessageDigest.getInstance("SHA-256")
-                .digest(bytes)
-                .toLowerHex(),
-        )
+    fun newDigest(): MessageDigest =
+        MessageDigest.getInstance("SHA-256")
+
+    fun finish(digest: MessageDigest): Sha256Digest =
+        Sha256Digest(digest.digest().toLowerHex())
+
+    fun digest(bytes: ByteArray): Sha256Digest {
+        val digest = newDigest()
+        digest.update(bytes)
+        return finish(digest)
+    }
 
     fun digestUtf8(value: String): Sha256Digest =
         digest(value.toByteArray(Charsets.UTF_8))
 
     fun digest(file: File): Sha256Digest {
-        val digest = MessageDigest.getInstance("SHA-256")
+        val digest = newDigest()
         val buffer = ByteArray(FILE_BUFFER_SIZE)
 
         FileInputStream(file).use { input ->
@@ -32,7 +37,7 @@ internal object Sha256 {
             }
         }
 
-        return Sha256Digest(digest.digest().toLowerHex())
+        return finish(digest)
     }
 
     private fun ByteArray.toLowerHex(): String {
