@@ -20,6 +20,9 @@ class CoveragePlan(
         requiredRepresentations.toSortedMap()
 
     init {
+        require(!mediaAssetId.isLegacyUnscoped) {
+            "legacy unscoped media asset id cannot be a coverage target"
+        }
         require(this.requiredRepresentations.isNotEmpty()) {
             "at least one required track is required"
         }
