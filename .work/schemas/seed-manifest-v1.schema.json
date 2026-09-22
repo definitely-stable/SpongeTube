@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/seed-manifest-v1.schema.json",
+  "title": "SpongeTube M1 Coverage Seed Manifest v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "seedId",
+    "fixtureId",
+    "fixtureSha256",
+    "requiredTrackIds",
+    "targetPlayableEndUs",
+    "extents",
+    "perTrackCoverage",
+    "playableCoverage",
+    "actualReserveUs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "seedId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixtureId": {
+      "type": "string"
+    },
+    "fixtureSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "requiredTrackIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "targetPlayableEndUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "extentId",
+          "trackId",
+          "representationId",
+          "mediaStartUs",
+          "mediaEndUs",
+          "length",
+          "sha256"
+        ],
+        "properties": {
+          "extentId": {
+            "type": "string"
+          },
+          "trackId": {
+            "type": "string"
+          },
+          "representationId": {
+            "type": "string"
+          },
+          "mediaStartUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mediaEndUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "perTrackCoverage": {
+      "type": "object"
+    },
+    "playableCoverage": {
+      "type": "array"
+    },
+    "actualReserveUs": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

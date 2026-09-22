@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/fetch-events-v1.schema.json",
+  "title": "SpongeTube M1 Fetch Event v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "fetchId",
+    "fetchKey",
+    "attempt",
+    "event",
+    "consumerIds"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fetchId": {
+      "type": "string"
+    },
+    "fetchKey": {
+      "type": "string"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event": {
+      "enum": [
+        "OWNER_STARTED",
+        "CONSUMER_JOINED",
+        "PRIORITY_RAISED",
+        "CONSUMER_CANCELLED",
+        "OWNER_COMPLETED",
+        "OWNER_FAILED",
+        "OWNER_CANCELLED"
+      ]
+    },
+    "consumerIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requestedByteStart": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "requestedByteEndExclusive": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "validator": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "networkBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "outcome": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "singleFlightJoined": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/recovery-summary-v1.schema.json",
+  "title": "SpongeTube M1 Recovery Summary v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "scenarioId",
+    "configuredOutage",
+    "coverageBefore",
+    "coverageAfter",
+    "independentCoverageMatch"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string"
+    },
+    "scenarioId": {
+      "type": "string"
+    },
+    "configuredOutage": {
+      "type": "object"
+    },
+    "observedOriginGate": {
+      "type": "object"
+    },
+    "clientNoProgress": {
+      "type": "object"
+    },
+    "playerStalls": {
+      "type": "array"
+    },
+    "firstPostRestoreFetchProgressMs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "firstPostRestorePublicationMs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "playbackRecoveredMs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "coverageBefore": {
+      "type": "object"
+    },
+    "coverageAfter": {
+      "type": "object"
+    },
+    "independentCoverageMatch": {
+      "type": "boolean"
+    },
+    "duplicateRangeBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "requestAttemptCount": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": true
+}

@@ -37,25 +37,35 @@ Exit:
 
 ## M1 — Persistent Playback Core
 
-Goal: prove one-fetch playback + durable reserve without YouTube dependency.
+Goal: prove one-owner fetch → crash-consistent durable extent → published playable coverage → Media3 playback, without YouTube dependency.
 
-Build:
+Canonical milestone specification: \`.work/milestones/M1.md\`.
 
-- MediaAsset / TrackVariant / FetchUnit;
-- CoverageIndex + PlayableCoverage;
-- ExtentStore interface;
-- FetchBroker single-flight;
-- PlaybackBridge to Media3;
-- DeadlineScheduler;
-- deterministic origin adapter;
-- process-kill recovery.
+M1 is split into focused deliveries:
+
+- **M1-A — Contract & Evidence Foundation**: freeze PlayableCoverage/DurablePlayableReserve semantics, extent lifecycle, fixed seed protocol, M1 artifact schemas and persistence implementation choice.
+- **M1-B — Durable ExtentStore**: immutable app-private extent files, SHA-256 integrity, same-filesystem temp/rename publication barrier, metadata transactions and restart recovery.
+- **M1-C — CoverageIndex & Fixed Seeds**: interval algebra over published required-track coverage, deterministic S0/S10/S30/S60/S120 seeds, negative/holed seeds and independent coverage reconstruction.
+- **M1-D — FetchBroker SingleFlight**: one physical owner fetch per FetchKey, multi-consumer join, reference-counted cancellation, priority escalation without restart and explicit duplicate-byte accounting.
+- **M1-E — PlaybackBridge**: local reads from published Sponge coverage; all remote misses routed through FetchBroker; cached seek and in-flight join without a second Media3 upstream owner.
+- **M1-F — Restart & N4 Recovery**: process-death recovery plus N4R-SHORT/N4R-EXHAUST/N4R-RESTORE; bounded retry ownership and post-restore continuation.
+- **M1-G — Canonical Acceptance Evidence**: execute the normative M1 correctness matrix and publish independent cross-checked evidence.
+
+M1 deliberately does **not** implement adaptive Smart Buffer policy, VPN/default-route recovery, YouTube descriptor refresh, transport ranking, packed storage, production GC/eviction, physical-device performance claims or background Keep Offline scheduling.
 
 Exit:
 
-- no duplicate fetch in correctness suite;
-- cached seek works;
-- injected outage is stall-free whenever reserve covers the outage;
-- persistent coverage survives restart.
+- PlayableCoverage is reconstructed from \`PUBLISHED + VALID\` required-track extents and never from raw cache byte count;
+- DurablePlayableReserve is contiguous from the current playhead and ends at the first required-track hole;
+- no uncommitted/partial/corrupt/missing extent contributes playable coverage;
+- fixed semantic coverage seeds are independently verified before playback;
+- a FetchKey has one physical remote owner fetch even when playback and reserve consumers overlap;
+- cached seek works without remote fetch;
+- process death cannot create phantom coverage and valid published coverage survives restart;
+- N4 outage shorter than durable reserve is survived without reserve-exhaustion rebuffer;
+- N4 outage longer than reserve may stall but recovers after transport restoration without corrupting or refetching already valid coverage;
+- runtime CoverageIndex and independent post-run reconstruction agree on interval semantics;
+- emulator timing remains diagnostic only and is not used for representative performance claims.
 
 ## M2 — Network Resilience
 

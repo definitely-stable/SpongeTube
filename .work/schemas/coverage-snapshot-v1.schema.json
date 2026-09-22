@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/coverage-snapshot-v1.schema.json",
+  "title": "SpongeTube M1 Coverage Snapshot v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "sessionId",
+    "playheadUs",
+    "requiredTrackIds",
+    "perTrackPublishedIntervals",
+    "playableIntervals",
+    "durableReserveUs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "playheadUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "requiredTrackIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "perTrackPublishedIntervals": {
+      "type": "object"
+    },
+    "playableIntervals": {
+      "type": "array"
+    },
+    "durablePlayableEndUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "durableReserveUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "playerBufferedAheadUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

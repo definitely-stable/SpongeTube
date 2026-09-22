@@ -642,3 +642,143 @@ Tool selection is evidence-driven. Do not add a dependency merely because it is 
 - DASH-IF Conformance: https://github.com/Dash-Industry-Forum/DASH-IF-Conformance
 - Toxiproxy: https://github.com/Shopify/toxiproxy
 - Linux tc-netem: https://man7.org/linux/man-pages/man8/tc-netem.8.html
+
+
+## 22. M1 pre-implementation acceptance contract
+
+M1 acceptance validates correctness and resilience, not representative device performance.
+
+### 22.1 Measurement domains
+
+The following values must never be conflated:
+
+\`\`\`text
+network bytes
+  -> receiving bytes
+  -> sealed bytes
+  -> verified bytes
+  -> durable bytes
+  -> published per-track coverage
+  -> playable coverage
+  -> durable playable reserve from playhead
+
+Media3 player buffered-ahead is recorded independently.
+\`\`\`
+
+A runtime metric cannot be its own acceptance oracle. Canonical evidence must include an independent reconstruction of published coverage from immutable extent files plus committed metadata.
+
+### 22.2 Fixed semantic coverage seeds
+
+M1 comparisons use deterministic semantic seeds, never "whatever the previous cold run happened to retain".
+
+Canonical positive targets for F1:
+
+- \`S0\`: no published playable media coverage;
+- \`S10\`: at least 10 s contiguous playable coverage from media origin;
+- \`S30\`: at least 30 s;
+- \`S60\`: at least 60 s;
+- \`S120\`: at least 120 s.
+
+A seed builder selects complete required-track units necessary to reach the target. The committed seed manifest records exact extents, per-track intervals, representation identities, initialization dependencies, actual playable intervals and manifest hash.
+
+Boundary/negative seeds are also required:
+
+- video hole;
+- audio hole;
+- missing required initialization/index dependency;
+- partial/truncated tail;
+- wrong representation identity.
+
+The verifier must prove that these invalid/incomplete resources do not overstate PlayableCoverage.
+
+### 22.3 N4 recovery variants
+
+M1 extends the M0 N4 delivery fault into explicit recovery scenarios.
+
+\`N4R-SHORT\`
+- outage duration is shorter than initial durable playable reserve;
+- playback must not incur a network-dependent rebuffer attributable to reserve exhaustion;
+- no second independent remote owner fetch may occur.
+
+\`N4R-EXHAUST\`
+- outage exceeds initial durable playable reserve;
+- a stall is allowed after usable local data and Media3's already-buffered data are exhausted;
+- coverage must never be inflated to hide the stall;
+- retry activity remains bounded by the M1 request budget contract.
+
+\`N4R-RESTORE\`
+- outage exceeds reserve and produces a stall;
+- transport resumes while the playback session remains alive;
+- missing coverage is fetched through FetchBroker, durably published, and playback resumes without recreating the whole player/session solely as a recovery mechanism.
+
+\`N4R-FLAP\` is SHOULD for M1:
+- repeated no-progress/restore cycles;
+- no overlapping owner fetch storm;
+- no coverage corruption;
+- deterministic final state.
+
+Evidence separates:
+- configured outage start/end;
+- origin gate actually blocking/unblocking;
+- client-observed no-progress interval;
+- durable reserve timeline;
+- player stall interval;
+- first successful post-restore fetch progress;
+- first new durable publication;
+- playback recovery.
+
+### 22.4 Canonical M1 MUST gates
+
+| ID | Setup/stimulus | Required evidence | Pass condition |
+| --- | --- | --- | --- |
+| M1-ACC-01 | write one extent | extent state log + independent file/hash check | coverage appears only after PUBLISHED |
+| M1-ACC-02 | crash at each extent boundary | restart recovery report | no crash point produces phantom coverage |
+| M1-ACC-03 | corrupt/missing published file | recovery scan + coverage cross-check | invalid row contributes zero playable coverage |
+| M1-ACC-04 | fixed S0/S10/S30/S60/S120 | seed manifest + independent verifier | runtime and reconstructed coverage agree exactly on interval semantics |
+| M1-ACC-05 | holed/partial/wrong-representation seeds | interval reconstruction | reserve ends at first required-track hole; invalid extent contributes zero |
+| M1-ACC-06 | two consumers request same FetchKey concurrently | fetch ownership log + origin trace | one physical origin owner fetch; both consumers join |
+| M1-ACC-07 | cancel one joined consumer | ownership/cancellation log | remaining consumer is not cancelled |
+| M1-ACC-08 | playback joins reserve in-flight fetch | origin trace + broker events | no cancel/restart duplicate fetch |
+| M1-ACC-09 | seek fully inside published coverage | Media3 + store trace | no remote media request is required |
+| M1-ACC-10 | seek into missing coverage | bridge/broker trace | remote request goes only through FetchBroker |
+| M1-ACC-11 | process death after published coverage | restart + independent reconstruction | identical valid coverage survives restart |
+| M1-ACC-12 | N4R-SHORT | reserve/player/network timelines | outage shorter than durable reserve does not cause reserve-exhaustion rebuffer |
+| M1-ACC-13 | N4R-EXHAUST | same | any stall is consistent with actual reserve exhaustion; no coverage overclaim |
+| M1-ACC-14 | N4R-RESTORE | same + recovery events | missing coverage publishes after restore and playback resumes |
+| M1-ACC-15 | HTTP partial continuation variants | request/response range evidence | incompatible range/full-body/identity responses are never appended as valid continuation |
+| M1-ACC-16 | runtime CoverageIndex snapshot | independent offline reconstruction | interval sets and reserve semantics match exactly |
+
+Deterministic correctness gates normally require one successful canonical execution plus targeted unit/state-machine coverage. No arbitrary performance repetition count is encoded into correctness acceptance.
+
+### 22.5 SHOULD gates
+
+- \`N4R-FLAP\`;
+- wider corruption and storage-pressure matrix;
+- API 23/API 34 compatibility subset where implementation touches platform-specific behavior;
+- property/state-machine generation for interval and lifecycle transitions;
+- repeated calibration of noisy timing observations.
+
+### 22.6 LATER gates
+
+Not M1 exit criteria:
+
+- physical-device performance effect sizes;
+- p95/p99 latency targets;
+- battery/thermal conclusions;
+- transport winner;
+- Smart Buffer target optimization;
+- background Keep Offline scheduling;
+- packed-container storage optimization.
+
+### 22.7 M1 artifact set
+
+Canonical M1 runs use versioned machine-readable artifacts:
+
+- \`m1-run-manifest-v1\`;
+- \`seed-manifest-v1\`;
+- \`coverage-snapshot-v1\`;
+- \`extent-events-v1\`;
+- \`fetch-events-v1\`;
+- \`recovery-summary-v1\`.
+
+The committed evidence summary references raw CI artifacts by run identity/digest and records limitations explicitly.

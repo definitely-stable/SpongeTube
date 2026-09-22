@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m1-run-manifest-v1.schema.json",
+  "title": "SpongeTube M1 Run Manifest v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "build",
+    "fixture",
+    "scenario",
+    "seed",
+    "playbackMode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "build": {
+      "type": "object"
+    },
+    "fixture": {
+      "type": "object",
+      "required": [
+        "id",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "id",
+        "hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "seed": {
+      "type": "object",
+      "required": [
+        "seedId",
+        "manifestSha256"
+      ],
+      "properties": {
+        "seedId": {
+          "type": "string"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "playbackMode": {
+      "enum": [
+        "DIRECT",
+        "STANDARD_CACHE",
+        "SPONGE"
+      ]
+    },
+    "device": {
+      "type": "object"
+    },
+    "runtime": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}
