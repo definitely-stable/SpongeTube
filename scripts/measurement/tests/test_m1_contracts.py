@@ -198,6 +198,40 @@ class M1CoverageOracleTest(unittest.TestCase):
             coverage["audio"],
         )
 
+    def test_oracle_does_not_merge_different_media_assets(self):
+        rows = [
+            self.row("v-init", "video", "v1", None, None),
+            self.row("a-init", "audio", "a1", None, None),
+            self.row("v-good", "video", "v1", 0, 10, deps=["v-init"]),
+            self.row("a-good", "audio", "a1", 0, 20, deps=["a-init"]),
+            self.row(
+                "v-other",
+                "video",
+                "v1",
+                10,
+                20,
+                asset="asset-other",
+            ),
+        ]
+        files = {
+            row["extentId"]: self.file_fact(row)
+            for row in rows
+        }
+
+        snapshot = oracle_snapshot(
+            rows,
+            "asset-f1",
+            {"video": "v1", "audio": "a1"},
+            files,
+            0,
+        )
+
+        self.assertEqual(
+            [{"startUs": 0, "endUs": 10}],
+            snapshot["playableIntervals"],
+        )
+        self.assertEqual(10, snapshot["durableReserveUs"])
+
     def test_published_event_without_committed_row_is_not_coverage(self):
         # A lifecycle event may have been emitted immediately before a crash.
         phantom_published_event = {
@@ -290,11 +324,12 @@ class M1CoverageOracleTest(unittest.TestCase):
         deps=None,
         state="PUBLISHED",
         integrity="VALID",
+        asset="asset-f1",
     ):
         sha256 = (extent_id.encode("utf-8").hex() + "0" * 64)[:64]
         return {
             "extentId": extent_id,
-            "mediaAssetId": "asset-f1",
+            "mediaAssetId": asset,
             "state": state,
             "integrityState": integrity,
             "trackId": track_id,
