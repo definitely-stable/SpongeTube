@@ -16,8 +16,7 @@
       "dependencyExtentIds": [],
       "length": 1024,
       "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-      "storagePath": "filesDir/sponge/extents/aa/v-init",
-      "mediaAssetId": "fixture:F1"
+      "storagePath": "filesDir/sponge/extents/aa/v-init"
     },
     {
       "extentId": "v-0",
@@ -32,8 +31,7 @@
       ],
       "length": 700000,
       "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-      "storagePath": "filesDir/sponge/extents/ab/v-0",
-      "mediaAssetId": "fixture:F1"
+      "storagePath": "filesDir/sponge/extents/ab/v-0"
     }
   ]
 }
