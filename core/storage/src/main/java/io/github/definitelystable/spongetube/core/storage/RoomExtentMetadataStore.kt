@@ -10,24 +10,25 @@ internal class RoomExtentMetadataStore private constructor(
 ) : ExtentMetadataStore {
     private val dao = database.extentDao()
 
+    override suspend fun assertWritable(
+        spec: ExtentSpec,
+        storagePath: String,
+    ) {
+        dao.assertWritable(
+            candidate = spec.toEntity(
+                storagePath = storagePath,
+                publishedAtEpochMs = 0L,
+            ),
+            dependencyIds = spec.dependencyExtentIds
+                .map(ExtentId::value)
+                .sorted(),
+        )
+    }
+
     override suspend fun publish(extent: StoredExtent) {
-        val entity = ExtentEntity(
-            extentId = extent.extentId.value,
-            trackId = extent.trackId,
-            representationId = extent.representationId,
-            mediaStartUs = extent.mediaStartUs,
-            mediaEndUs = extent.mediaEndUs,
-            byteStart = extent.byteStart,
-            byteEndExclusive = extent.byteEndExclusive,
-            length = extent.length,
-            sha256 = extent.sha256.hex,
-            storagePath = extent.storagePath,
-            publicationState = ExtentPublicationState.PUBLISHED.name,
-            integrityState = ExtentIntegrityState.VALID.name,
-            quarantineReason = null,
+        val entity = extent.toEntity(
             publishedAtEpochMs = System.currentTimeMillis(),
         )
-
         val dependencies = extent.dependencyExtentIds.map { dependency ->
             ExtentDependencyEntity(
                 extentId = extent.extentId.value,
@@ -39,30 +40,16 @@ internal class RoomExtentMetadataStore private constructor(
     }
 
     override suspend fun snapshot(): List<StoredExtent> {
-        val dependenciesByExtent = dao.allDependencies()
+        val snapshot = dao.snapshot()
+        val dependenciesByExtent = snapshot.dependencies
             .groupBy(ExtentDependencyEntity::extentId)
             .mapValues { (_, rows) ->
                 rows.map { ExtentId(it.dependencyExtentId) }
             }
 
-        return dao.allExtents().map { entity ->
-            StoredExtent(
-                extentId = ExtentId(entity.extentId),
-                trackId = entity.trackId,
-                representationId = entity.representationId,
-                mediaStartUs = entity.mediaStartUs,
-                mediaEndUs = entity.mediaEndUs,
-                byteStart = entity.byteStart,
-                byteEndExclusive = entity.byteEndExclusive,
-                dependencyExtentIds = dependenciesByExtent[entity.extentId].orEmpty(),
-                length = entity.length,
-                sha256 = Sha256Digest(entity.sha256),
-                storagePath = entity.storagePath,
-                publicationState = ExtentPublicationState.valueOf(entity.publicationState),
-                integrityState = ExtentIntegrityState.valueOf(entity.integrityState),
-                quarantineReason = entity.quarantineReason?.let(
-                    ExtentQuarantineReason::valueOf,
-                ),
+        return snapshot.extents.map { entity ->
+            entity.toStoredExtent(
+                dependencies = dependenciesByExtent[entity.extentId].orEmpty(),
             )
         }
     }
@@ -95,3 +82,66 @@ internal class RoomExtentMetadataStore private constructor(
         }
     }
 }
+
+private fun ExtentSpec.toEntity(
+    storagePath: String,
+    publishedAtEpochMs: Long,
+): ExtentEntity =
+    ExtentEntity(
+        extentId = extentId.value,
+        trackId = trackId,
+        representationId = representationId,
+        mediaStartUs = mediaStartUs,
+        mediaEndUs = mediaEndUs,
+        byteStart = byteStart,
+        byteEndExclusive = byteEndExclusive,
+        length = expectedLength,
+        sha256 = expectedSha256.hex,
+        storagePath = storagePath,
+        publicationState = ExtentPublicationState.PUBLISHED.name,
+        integrityState = ExtentIntegrityState.VALID.name,
+        quarantineReason = null,
+        publishedAtEpochMs = publishedAtEpochMs,
+    )
+
+private fun StoredExtent.toEntity(
+    publishedAtEpochMs: Long,
+): ExtentEntity =
+    ExtentEntity(
+        extentId = extentId.value,
+        trackId = trackId,
+        representationId = representationId,
+        mediaStartUs = mediaStartUs,
+        mediaEndUs = mediaEndUs,
+        byteStart = byteStart,
+        byteEndExclusive = byteEndExclusive,
+        length = length,
+        sha256 = sha256.hex,
+        storagePath = storagePath,
+        publicationState = ExtentPublicationState.PUBLISHED.name,
+        integrityState = ExtentIntegrityState.VALID.name,
+        quarantineReason = null,
+        publishedAtEpochMs = publishedAtEpochMs,
+    )
+
+private fun ExtentEntity.toStoredExtent(
+    dependencies: List<ExtentId>,
+): StoredExtent =
+    StoredExtent(
+        extentId = ExtentId(extentId),
+        trackId = trackId,
+        representationId = representationId,
+        mediaStartUs = mediaStartUs,
+        mediaEndUs = mediaEndUs,
+        byteStart = byteStart,
+        byteEndExclusive = byteEndExclusive,
+        dependencyExtentIds = dependencies,
+        length = length,
+        sha256 = Sha256Digest(sha256),
+        storagePath = storagePath,
+        publicationState = ExtentPublicationState.valueOf(publicationState),
+        integrityState = ExtentIntegrityState.valueOf(integrityState),
+        quarantineReason = quarantineReason?.let(
+            ExtentQuarantineReason::valueOf,
+        ),
+    )
