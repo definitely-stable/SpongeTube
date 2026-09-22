@@ -34,28 +34,35 @@ class ExtentStore private constructor(
     suspend fun writeExtent(
         spec: ExtentSpec,
         producer: suspend ExtentSink.() -> Unit,
-    ): CommittedExtent =
-        withContext(ioDispatcher) {
-            ensureOpen()
-            val writer = createWriter(spec)
-            var committed = false
+    ): CommittedExtent {
+        var writer: ExtentWriter? = null
+        var committed = false
 
-            try {
+        try {
+            withContext(ioDispatcher) {
                 currentCoroutineContext().ensureActive()
-                producer(writer)
-                currentCoroutineContext().ensureActive()
+                writer = createWriter(spec)
+            }
 
-                val result = writer.commit()
-                committed = true
-                result
-            } finally {
-                if (!committed) {
-                    withContext(NonCancellable) {
-                        writer.abort()
-                    }
+            currentCoroutineContext().ensureActive()
+            val ownedWriter = checkNotNull(writer)
+            producer(ownedWriter)
+            currentCoroutineContext().ensureActive()
+
+            val result = withContext(NonCancellable) {
+                ownedWriter.commit()
+            }
+            committed = true
+            return result
+        } finally {
+            val pendingWriter = writer
+            if (!committed && pendingWriter != null) {
+                withContext(NonCancellable) {
+                    pendingWriter.abort()
                 }
             }
         }
+    }
 
     suspend fun committedExtents(): List<CommittedExtent> =
         withContext(ioDispatcher) {
@@ -287,34 +294,57 @@ class ExtentStore private constructor(
         suspend fun open(
             context: Context,
             lifecycleListener: ExtentLifecycleListener? = null,
-        ): ExtentStore = withContext(Dispatchers.IO) {
-            val rootDirectory = File(context.filesDir, "sponge")
-            val durability = AndroidExtentDurabilityOps
-            val layout = ExtentPathLayout(rootDirectory)
-            layout.ensureRoot(durability)
-
-            val metadataDirectory = File(rootDirectory, "metadata")
-            durability.ensureDirectory(metadataDirectory)
-            val databaseFile = File(metadataDirectory, "extents.db")
-            val metadataStore = RoomExtentMetadataStore.open(
-                context = context,
-                databaseFile = databaseFile,
-            )
-
-            val store = ExtentStore(
-                rootDirectory = rootDirectory,
-                metadataStore = metadataStore,
-                durabilityOps = durability,
-                ioDispatcher = Dispatchers.IO,
-                lifecycleListener = lifecycleListener,
-                faultInjector = ExtentFaultInjector.NONE,
-            )
+        ): ExtentStore {
+            var metadataStore: RoomExtentMetadataStore? = null
+            var store: ExtentStore? = null
 
             try {
-                store.initialRecoveryReport = store.recoverInternal()
-                store
+                withContext(Dispatchers.IO) {
+                    currentCoroutineContext().ensureActive()
+
+                    val rootDirectory = File(context.filesDir, "sponge")
+                    val durability = AndroidExtentDurabilityOps
+                    val layout = ExtentPathLayout(rootDirectory)
+                    layout.ensureRoot(durability)
+
+                    val metadataDirectory = File(rootDirectory, "metadata")
+                    durability.ensureDirectory(metadataDirectory)
+                    val databaseFile = File(metadataDirectory, "extents.db")
+
+                    val openedMetadata = RoomExtentMetadataStore.open(
+                        context = context,
+                        databaseFile = databaseFile,
+                    )
+                    metadataStore = openedMetadata
+
+                    val openedStore = ExtentStore(
+                        rootDirectory = rootDirectory,
+                        metadataStore = openedMetadata,
+                        durabilityOps = durability,
+                        ioDispatcher = Dispatchers.IO,
+                        lifecycleListener = lifecycleListener,
+                        faultInjector = ExtentFaultInjector.NONE,
+                    )
+                    store = openedStore
+                    openedStore.initialRecoveryReport =
+                        openedStore.recoverInternal()
+                }
+
+                currentCoroutineContext().ensureActive()
+                return checkNotNull(store)
             } catch (error: Throwable) {
-                metadataStore.close()
+                withContext(NonCancellable + Dispatchers.IO) {
+                    try {
+                        val openedStore = store
+                        if (openedStore != null) {
+                            openedStore.close()
+                        } else {
+                            metadataStore?.close()
+                        }
+                    } catch (cleanupError: Throwable) {
+                        error.addSuppressed(cleanupError)
+                    }
+                }
                 throw error
             }
         }
