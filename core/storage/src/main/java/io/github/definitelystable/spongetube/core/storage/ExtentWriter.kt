@@ -114,9 +114,12 @@ internal class ExtentWriter(
                     "sealed temp file disappeared for " + spec.extentId,
                 )
 
+            val expectedDigestMismatch =
+                spec.expectedSha256?.let { it != actualSha256 } ?: false
+
             if (
                 actualLength != spec.expectedLength ||
-                actualSha256 != spec.expectedSha256
+                expectedDigestMismatch
             ) {
                 throw ExtentIntegrityException(
                     extentId = spec.extentId,
@@ -138,23 +141,6 @@ internal class ExtentWriter(
             )
             store.hit(ExtentFaultPoint.AFTER_VERIFY)
 
-            store.durabilityOps.installAtomicallyNoReplace(
-                partFile,
-                finalFile,
-            )
-            phase = CommitPhase.DURABLE
-            store.emit(
-                ExtentLifecycleEvent(
-                    extentId = spec.extentId,
-                    state = ExtentLifecycleState.DURABLE,
-                    actualLength = actualLength,
-                    sha256 = actualSha256,
-                ),
-            )
-            store.hit(
-                ExtentFaultPoint.AFTER_DURABLE_BEFORE_PUBLISH,
-            )
-
             val stored = StoredExtent(
                 extentId = spec.extentId,
                 trackId = spec.trackId,
@@ -172,6 +158,25 @@ internal class ExtentWriter(
                 publicationState = ExtentPublicationState.PUBLISHED,
                 integrityState = ExtentIntegrityState.VALID,
                 quarantineReason = null,
+            )
+
+            store.assertPublishable(stored)
+
+            store.durabilityOps.installAtomicallyNoReplace(
+                partFile,
+                finalFile,
+            )
+            phase = CommitPhase.DURABLE
+            store.emit(
+                ExtentLifecycleEvent(
+                    extentId = spec.extentId,
+                    state = ExtentLifecycleState.DURABLE,
+                    actualLength = actualLength,
+                    sha256 = actualSha256,
+                ),
+            )
+            store.hit(
+                ExtentFaultPoint.AFTER_DURABLE_BEFORE_PUBLISH,
             )
 
             store.publish(stored)
