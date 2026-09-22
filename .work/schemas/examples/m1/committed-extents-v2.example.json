@@ -3,7 +3,7 @@
   "snapshotId": "committed-post-recovery-1",
   "sessionId": "m1-example-session",
   "snapshotKind": "POST_RECOVERY",
-  "databaseSchemaVersion": 1,
+  "databaseSchemaVersion": 2,
   "extents": [
     {
       "extentId": "v-init",
