@@ -80,17 +80,25 @@ data class ExtentSpec(
     }
 }
 
-enum class ExtentPublicationState {
+interface ExtentSink {
+    suspend fun write(
+        bytes: ByteArray,
+        offset: Int = 0,
+        length: Int = bytes.size - offset,
+    )
+}
+
+internal enum class ExtentPublicationState {
     PUBLISHED,
     QUARANTINED,
 }
 
-enum class ExtentIntegrityState {
+internal enum class ExtentIntegrityState {
     VALID,
     CORRUPT,
 }
 
-enum class ExtentQuarantineReason {
+internal enum class ExtentQuarantineReason {
     MISSING_FILE,
     LENGTH_MISMATCH,
     SHA256_MISMATCH,
@@ -127,7 +135,6 @@ data class CommittedExtent(
     val dependencyExtentIds: List<ExtentId>,
     val length: Long,
     val sha256: Sha256Digest,
-    val storagePath: String,
 )
 
 data class RecoveryReport(
