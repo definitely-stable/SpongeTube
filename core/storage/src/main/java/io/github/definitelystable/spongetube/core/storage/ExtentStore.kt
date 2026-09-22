@@ -492,6 +492,7 @@ class ExtentStore private constructor(
 
 private fun StoredExtent.toCommitted(): CommittedExtent =
     CommittedExtent(
+        mediaAssetId = mediaAssetId,
         extentId = extentId,
         trackId = trackId,
         representationId = representationId,
