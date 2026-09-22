@@ -9,6 +9,10 @@ on:
       - "benchmark/src/main/java/io/github/definitelystable/spongetube/benchmark/M0AndroidSmokeTest.kt"
       - "app/**"
       - "playback/**"
+      - "core/storage/**"
+      - "settings.gradle.kts"
+      - "build.gradle.kts"
+      - "gradle/libs.versions.toml"
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
@@ -59,6 +63,7 @@ jobs:
           ./gradlew --dependency-verification=strict --configuration-cache \
             :app:assembleBenchmark \
             :benchmark:assembleBenchmark \
+            :core:storage:assembleDebug \
             :tools:media-lab:installDist
 
       - name: Prepare emulator
@@ -68,6 +73,13 @@ jobs:
             "${{ matrix.api }}" \
             "m0-compat-api${{ matrix.api }}" \
             "build/android-compat/api-${{ matrix.api }}/device"
+
+      - name: Run M1 storage compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict \
+            :core:storage:connectedDebugAndroidTest
 
       - name: Run N0 compatibility smoke
         shell: bash
@@ -201,7 +213,11 @@ jobs:
           path: |
             build/android-compat/api-${{ matrix.api }}/
             benchmark/build/outputs/androidTest-results/
-          if-no-files-found: error
+            core/storage/build/outputs/androidTest-results/
+            core/storage/build/reports/
+            build/reports/dependency-verification/
+            build/reports/configuration-cache/
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Stop emulator

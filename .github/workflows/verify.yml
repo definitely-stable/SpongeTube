@@ -54,6 +54,13 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Verify committed Room schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- core/storage/schemas/
+          test -z "$(git status --porcelain --untracked-files=all -- core/storage/schemas/)"
+
       - name: Verify dependency and measurement contracts
         shell: bash
         run: |
@@ -82,5 +89,8 @@ jobs:
             benchmark/build/outputs/
             tools/media-lab/build/reports/
             tools/media-lab/build/test-results/
+            core/storage/build/reports/
+            core/storage/build/test-results/
+            core/storage/schemas/
           if-no-files-found: warn
           retention-days: 7
