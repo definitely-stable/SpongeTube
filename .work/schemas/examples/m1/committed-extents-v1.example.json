@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "committed-post-recovery-1",
+  "sessionId": "m1-example-session",
+  "snapshotKind": "POST_RECOVERY",
+  "databaseSchemaVersion": 1,
+  "extents": [
+    {
+      "extentId": "v-init",
+      "state": "PUBLISHED",
+      "integrityState": "VALID",
+      "trackId": "video-main",
+      "representationId": "video-550k",
+      "mediaStartUs": null,
+      "mediaEndUs": null,
+      "dependencyExtentIds": [],
+      "length": 1024,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "storagePath": "filesDir/sponge/extents/aa/v-init"
+    },
+    {
+      "extentId": "v-0",
+      "state": "PUBLISHED",
+      "integrityState": "VALID",
+      "trackId": "video-main",
+      "representationId": "video-550k",
+      "mediaStartUs": 0,
+      "mediaEndUs": 10000000,
+      "dependencyExtentIds": [
+        "v-init"
+      ],
+      "length": 700000,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "storagePath": "filesDir/sponge/extents/ab/v-0"
+    }
+  ]
+}
