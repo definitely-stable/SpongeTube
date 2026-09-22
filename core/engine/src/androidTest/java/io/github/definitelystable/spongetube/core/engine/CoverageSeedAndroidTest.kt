@@ -149,13 +149,13 @@ class CoverageSeedAndroidTest {
             ),
             s60.copy(
                 videoIntervals = listOf(MediaInterval(0, 60_000_000)),
-                audioIntervals = listOf(MediaInterval(0, 69_930_666)),
+                audioIntervals = listOf(MediaInterval(0, 69_952_000)),
                 playableIntervals = listOf(MediaInterval(0, 60_000_000)),
                 durableReserveUs = 60_000_000,
             ),
             s120.copy(
                 videoIntervals = listOf(MediaInterval(0, 120_000_000)),
-                audioIntervals = listOf(MediaInterval(0, 129_920_000)),
+                audioIntervals = listOf(MediaInterval(0, 129_941_333)),
                 playableIntervals = listOf(MediaInterval(0, 120_000_000)),
                 durableReserveUs = 120_000_000,
             ),
