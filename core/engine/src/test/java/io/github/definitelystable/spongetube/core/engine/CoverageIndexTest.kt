@@ -6,6 +6,7 @@ import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class CoverageIndexTest {
@@ -121,6 +122,74 @@ class CoverageIndexTest {
     }
 
     @Test
+    fun playheadAtHalfOpenEndHasZeroReserve() = runTest {
+        val extents = listOf(
+            init("v-init", "video", "v1"),
+            init("a-init", "audio", "a1"),
+            media("v0", "video", "v1", 0, 10, "v-init"),
+            media("a0", "audio", "a1", 0, 10, "a-init"),
+        )
+        val index = CoverageIndex({ extents })
+        index.refresh()
+
+        assertEquals(10, snapshot(index, 0).durableReserveUs)
+        assertEquals(0, snapshot(index, 10).durableReserveUs)
+    }
+
+    @Test
+    fun crossIdentityDependencyCannotAuthorizeCoverage() = runTest {
+        val wrongAssetDependency = init(
+            id = "wrong-asset-init",
+            track = "video",
+            representation = "v1",
+            asset = MediaAssetId("other"),
+        )
+        val wrongRepresentationDependency = init(
+            id = "wrong-rep-init",
+            track = "video",
+            representation = "v2",
+        )
+        val extents = listOf(
+            wrongAssetDependency,
+            wrongRepresentationDependency,
+            init("a-init", "audio", "a1"),
+            media("a0", "audio", "a1", 0, 20, "a-init"),
+            media(
+                "v-cross-asset",
+                "video",
+                "v1",
+                0,
+                10,
+                "wrong-asset-init",
+            ),
+            media(
+                "v-cross-rep",
+                "video",
+                "v1",
+                10,
+                20,
+                "wrong-rep-init",
+            ),
+        )
+        val index = CoverageIndex({ extents })
+        index.refresh()
+
+        assertEquals(emptyList<MediaInterval>(), snapshot(index, 0).playableIntervals)
+    }
+
+    @Test
+    fun legacyUnscopedAssetCannotBeCoverageTarget() {
+        assertThrows(IllegalArgumentException::class.java) {
+            CoveragePlan(
+                mediaAssetId = MediaAssetId(
+                    MediaAssetId.LEGACY_UNSCOPED_VALUE,
+                ),
+                requiredRepresentations = mapOf("video" to "v1"),
+            )
+        }
+    }
+
+    @Test
     fun refreshAtomicallyReplacesCommittedProjection() = runTest {
         var extents = emptyList<CommittedExtent>()
         val index = CoverageIndex({ extents })
@@ -159,6 +228,7 @@ class CoverageIndexTest {
         track: String,
         representation: String,
         vararg dependencies: String,
+        asset: MediaAssetId = ASSET,
     ): CommittedExtent =
         extent(
             id = id,
@@ -167,6 +237,7 @@ class CoverageIndexTest {
             start = null,
             end = null,
             dependencies = dependencies,
+            asset = asset,
         )
 
     private fun media(
