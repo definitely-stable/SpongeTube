@@ -84,7 +84,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
         }
 
         try {
-            Os.unlink(file.absolutePath)
+            Os.remove(file.absolutePath)
             file.parentFile?.let(::syncDirectory)
         } catch (error: ErrnoException) {
             if (error.errno == OsConstants.ENOENT) {
@@ -101,7 +101,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
         val descriptor = try {
             Os.open(
                 directory.absolutePath,
-                OsConstants.O_RDONLY or OsConstants.O_DIRECTORY,
+                OsConstants.O_RDONLY,
                 0,
             )
         } catch (error: ErrnoException) {
