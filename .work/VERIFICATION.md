@@ -777,10 +777,10 @@ Not M1 exit criteria:
 Canonical M1 runs use versioned machine-readable artifacts:
 
 - \`m1-run-manifest-v1\`;
-- \`seed-manifest-v1\`;
-- \`coverage-snapshot-v1\`;
+- \`seed-manifest-v2\`;
+- \`coverage-snapshot-v2\`;
 - \`extent-events-v1\`;
-- \`committed-extents-v1\`;
+- \`committed-extents-v2\`;
 - \`verified-extent-files-v1\`;
 - \`fetch-events-v1\`;
 - \`recovery-summary-v1\`.
