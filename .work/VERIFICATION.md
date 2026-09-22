@@ -665,7 +665,7 @@ network bytes
 Media3 player buffered-ahead is recorded independently.
 \`\`\`
 
-A runtime metric cannot be its own acceptance oracle. Canonical evidence must include an independent reconstruction of published coverage from immutable extent files plus committed metadata.
+A runtime metric cannot be its own acceptance oracle. Canonical evidence must include an independent reconstruction of published coverage from a committed SQLite metadata snapshot plus independently verified immutable extent files. Lifecycle `PUBLISHED` events are diagnostic only and cannot authorize coverage.
 
 ### 22.2 Fixed semantic coverage seeds
 
@@ -731,8 +731,8 @@ Evidence separates:
 
 | ID | Setup/stimulus | Required evidence | Pass condition |
 | --- | --- | --- | --- |
-| M1-ACC-01 | write one extent | extent state log + independent file/hash check | coverage appears only after PUBLISHED |
-| M1-ACC-02 | crash at each extent boundary | restart recovery report | no crash point produces phantom coverage |
+| M1-ACC-01 | write one extent | extent state log + committed metadata snapshot + independent file/hash check | coverage appears only after committed PUBLISHED metadata and matching immutable file verification |
+| M1-ACC-02 | crash at each extent boundary | restart recovery report + post-recovery committed metadata/file snapshots | no crash point produces phantom coverage; a PUBLISHED event without a committed row contributes zero |
 | M1-ACC-03 | corrupt/missing published file | recovery scan + coverage cross-check | invalid row contributes zero playable coverage |
 | M1-ACC-04 | fixed S0/S10/S30/S60/S120 | seed manifest + independent verifier | runtime and reconstructed coverage agree exactly on interval semantics |
 | M1-ACC-05 | holed/partial/wrong-representation seeds | interval reconstruction | reserve ends at first required-track hole; invalid extent contributes zero |
@@ -746,7 +746,7 @@ Evidence separates:
 | M1-ACC-13 | N4R-EXHAUST | same | any stall is consistent with actual reserve exhaustion; no coverage overclaim |
 | M1-ACC-14 | N4R-RESTORE | same + recovery events | missing coverage publishes after restore and playback resumes |
 | M1-ACC-15 | HTTP partial continuation variants | request/response range evidence | incompatible range/full-body/identity responses are never appended as valid continuation |
-| M1-ACC-16 | runtime CoverageIndex snapshot | independent offline reconstruction | interval sets and reserve semantics match exactly |
+| M1-ACC-16 | runtime CoverageIndex snapshot | committed metadata snapshot + independently verified files + offline reconstruction | interval sets and reserve semantics match exactly |
 
 Deterministic correctness gates normally require one successful canonical execution plus targeted unit/state-machine coverage. No arbitrary performance repetition count is encoded into correctness acceptance.
 
@@ -778,6 +778,8 @@ Canonical M1 runs use versioned machine-readable artifacts:
 - \`seed-manifest-v1\`;
 - \`coverage-snapshot-v1\`;
 - \`extent-events-v1\`;
+- \`committed-extents-v1\`;
+- \`verified-extent-files-v1\`;
 - \`fetch-events-v1\`;
 - \`recovery-summary-v1\`.
 
