@@ -185,6 +185,7 @@ class M1CoverageOracleTest(unittest.TestCase):
 
         coverage = reconstruct_committed_coverage(
             rows,
+            "asset-f1",
             {"video": "v1", "audio": "a1"},
             files,
         )
@@ -209,6 +210,7 @@ class M1CoverageOracleTest(unittest.TestCase):
         row = self.row("v-phantom", "video", "v1", 0, 30)
         snapshot = oracle_snapshot(
             committed_rows=[],
+            media_asset_id="asset-f1",
             required_representations={"video": "v1"},
             verified_files={"v-phantom": self.file_fact(row)},
             playhead_us=0,
@@ -233,6 +235,7 @@ class M1CoverageOracleTest(unittest.TestCase):
 
         coverage = reconstruct_committed_coverage(
             rows,
+            "asset-f1",
             {"video": "v1"},
             files,
         )
@@ -268,6 +271,7 @@ class M1CoverageOracleTest(unittest.TestCase):
 
         snapshot = oracle_snapshot(
             rows,
+            "asset-f1",
             {"video": "v1", "audio": "a1"},
             files,
             0,
@@ -290,6 +294,7 @@ class M1CoverageOracleTest(unittest.TestCase):
         sha256 = (extent_id.encode("utf-8").hex() + "0" * 64)[:64]
         return {
             "extentId": extent_id,
+            "mediaAssetId": "asset-f1",
             "state": state,
             "integrityState": integrity,
             "trackId": track_id,
