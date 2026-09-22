@@ -54,13 +54,6 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Verify committed Room schemas
-        shell: bash
-        run: |
-          set -euo pipefail
-          git diff --exit-code -- core/storage/schemas/
-          test -z "$(git status --porcelain --untracked-files=all -- core/storage/schemas/)"
-
       - name: Verify dependency and measurement contracts
         shell: bash
         run: |
@@ -77,6 +70,13 @@ jobs:
           ./gradlew --dependency-verification=strict --configuration-cache "${TASKS[@]}"
           ./gradlew --dependency-verification=strict --configuration-cache "${TASKS[@]}"
 
+      - name: Verify committed Room schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- core/storage/schemas/
+          test -z "$(git status --porcelain --untracked-files=all -- core/storage/schemas/)"
+
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -92,5 +92,7 @@ jobs:
             core/storage/build/reports/
             core/storage/build/test-results/
             core/storage/schemas/
+            core/engine/build/reports/
+            core/engine/build/test-results/
           if-no-files-found: warn
           retention-days: 7
