@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/seed-manifest-v2.schema.json",
+  "title": "SpongeTube M1 Coverage Seed Manifest v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "seedId",
+    "playheadUs",
+    "seedClass",
+    "mediaAssetId",
+    "fixtureId",
+    "fixtureSha256",
+    "requiredTrackIds",
+    "requiredRepresentations",
+    "targetPlayableEndUs",
+    "extents",
+    "perTrackCoverage",
+    "playableCoverage",
+    "actualReserveUs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "seedId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixtureId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixtureSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "requiredTrackIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "requiredRepresentations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "targetPlayableEndUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "extentId",
+          "fixtureResourcePath",
+          "trackId",
+          "representationId",
+          "mediaStartUs",
+          "mediaEndUs",
+          "dependencyExtentIds",
+          "length",
+          "sha256"
+        ],
+        "properties": {
+          "extentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trackId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "representationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mediaStartUs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "mediaEndUs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "dependencyExtentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "fixtureResourcePath": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "perTrackCoverage": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "startUs",
+            "endUs"
+          ],
+          "properties": {
+            "startUs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "endUs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "playableCoverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "startUs",
+          "endUs"
+        ],
+        "properties": {
+          "startUs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endUs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "actualReserveUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mediaAssetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seedClass": {
+      "enum": [
+        "POSITIVE",
+        "NEGATIVE"
+      ]
+    },
+    "playheadUs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "negativeCase": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "VIDEO_HOLE",
+        "AUDIO_HOLE",
+        "MISSING_INIT",
+        "PARTIAL_TAIL",
+        "WRONG_REPRESENTATION",
+        null
+      ]
+    },
+    "rejectedAttempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "extentId",
+          "reason"
+        ],
+        "properties": {
+          "extentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}
