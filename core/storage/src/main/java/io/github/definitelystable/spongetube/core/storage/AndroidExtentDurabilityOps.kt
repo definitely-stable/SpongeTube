@@ -19,7 +19,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
 
         if (!directory.mkdir() && !directory.isDirectory) {
             throw ExtentStoreException(
-                "failed to create extent directory: \${directory.absolutePath}",
+                "failed to create extent directory: ${directory.absolutePath}",
             )
         }
 
@@ -58,7 +58,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
     ) {
         if (destination.exists()) {
             throw ExtentConflictException(
-                "extent destination already exists: \${destination.absolutePath}",
+                "extent destination already exists: ${destination.absolutePath}",
             )
         }
 
@@ -72,7 +72,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
         } catch (error: ErrnoException) {
             throw ExtentStoreException(
                 "failed to atomically publish extent file " +
-                    "\${source.absolutePath} -> \${destination.absolutePath}",
+                    "${source.absolutePath} -> ${destination.absolutePath}",
                 error,
             )
         }
@@ -91,7 +91,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
                 return
             }
             throw ExtentStoreException(
-                "failed to delete extent file: \${file.absolutePath}",
+                "failed to delete extent file: ${file.absolutePath}",
                 error,
             )
         }
@@ -106,7 +106,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
             )
         } catch (error: ErrnoException) {
             throw ExtentStoreException(
-                "failed to open directory for fsync: \${directory.absolutePath}",
+                "failed to open directory for fsync: ${directory.absolutePath}",
                 error,
             )
         }
@@ -115,7 +115,7 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
             Os.fsync(descriptor)
         } catch (error: ErrnoException) {
             throw ExtentStoreException(
-                "failed to fsync directory: \${directory.absolutePath}",
+                "failed to fsync directory: ${directory.absolutePath}",
                 error,
             )
         } finally {
