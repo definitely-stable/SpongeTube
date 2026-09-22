@@ -11,7 +11,7 @@ import androidx.room3.PrimaryKey
 import androidx.room3.Query
 import androidx.room3.RoomDatabase
 import androidx.room3.Transaction
-import androidx.room3.Upsert
+import androidx.room3.Update
 
 @Entity(
     tableName = "extents",
@@ -62,10 +62,29 @@ internal data class ExtentDependencyEntity(
     val dependencyExtentId: String,
 )
 
+internal data class ExtentSnapshotRows(
+    val extents: List<ExtentEntity>,
+    val dependencies: List<ExtentDependencyEntity>,
+)
+
 @Dao
 internal abstract class ExtentDao {
-    @Upsert
-    abstract suspend fun upsertExtent(entity: ExtentEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertExtent(entity: ExtentEntity)
+
+    @Update
+    abstract suspend fun updateExtent(entity: ExtentEntity)
+
+    @Query("SELECT * FROM extents WHERE extent_id = :extentId LIMIT 1")
+    abstract suspend fun extentById(extentId: String): ExtentEntity?
+
+    @Query(
+        "SELECT dependency_extent_id FROM extent_dependencies " +
+            "WHERE extent_id = :extentId ORDER BY dependency_extent_id",
+    )
+    abstract suspend fun dependencyIdsForExtent(
+        extentId: String,
+    ): List<String>
 
     @Query("DELETE FROM extent_dependencies WHERE extent_id = :extentId")
     abstract suspend fun deleteDependencies(extentId: String)
@@ -76,11 +95,39 @@ internal abstract class ExtentDao {
     )
 
     @Transaction
+    open suspend fun assertWritable(
+        candidate: ExtentEntity,
+        dependencyIds: List<String>,
+    ) {
+        val existing = extentById(candidate.extentId) ?: return
+        validateRepairCandidate(
+            existing = existing,
+            existingDependencyIds = dependencyIdsForExtent(candidate.extentId),
+            candidate = candidate,
+            candidateDependencyIds = dependencyIds,
+        )
+    }
+
+    @Transaction
     open suspend fun publish(
         entity: ExtentEntity,
         dependencies: List<ExtentDependencyEntity>,
     ) {
-        upsertExtent(entity)
+        val existing = extentById(entity.extentId)
+        if (existing == null) {
+            insertExtent(entity)
+        } else {
+            validateRepairCandidate(
+                existing = existing,
+                existingDependencyIds = dependencyIdsForExtent(entity.extentId),
+                candidate = entity,
+                candidateDependencyIds = dependencies
+                    .map(ExtentDependencyEntity::dependencyExtentId)
+                    .sorted(),
+            )
+            updateExtent(entity)
+        }
+
         deleteDependencies(entity.extentId)
         if (dependencies.isNotEmpty()) {
             insertDependencies(dependencies)
@@ -92,6 +139,13 @@ internal abstract class ExtentDao {
 
     @Query("SELECT * FROM extent_dependencies")
     abstract suspend fun allDependencies(): List<ExtentDependencyEntity>
+
+    @Transaction
+    open suspend fun snapshot(): ExtentSnapshotRows =
+        ExtentSnapshotRows(
+            extents = allExtents(),
+            dependencies = allDependencies(),
+        )
 
     @Query(
         """
@@ -106,6 +160,37 @@ internal abstract class ExtentDao {
         extentId: String,
         reason: String,
     )
+}
+
+private fun validateRepairCandidate(
+    existing: ExtentEntity,
+    existingDependencyIds: List<String>,
+    candidate: ExtentEntity,
+    candidateDependencyIds: List<String>,
+) {
+    val immutableIdentityMatches =
+        existing.extentId == candidate.extentId &&
+            existing.trackId == candidate.trackId &&
+            existing.representationId == candidate.representationId &&
+            existing.mediaStartUs == candidate.mediaStartUs &&
+            existing.mediaEndUs == candidate.mediaEndUs &&
+            existing.byteStart == candidate.byteStart &&
+            existing.byteEndExclusive == candidate.byteEndExclusive &&
+            existing.length == candidate.length &&
+            existing.sha256 == candidate.sha256 &&
+            existing.storagePath == candidate.storagePath &&
+            existingDependencyIds.sorted() == candidateDependencyIds.sorted()
+
+    val repairable =
+        existing.publicationState == ExtentPublicationState.QUARANTINED.name &&
+            existing.integrityState == ExtentIntegrityState.CORRUPT.name
+
+    if (!repairable || !immutableIdentityMatches) {
+        throw ExtentConflictException(
+            "extent id is already bound to different or active immutable metadata: " +
+                existing.extentId,
+        )
+    }
 }
 
 @Database(
