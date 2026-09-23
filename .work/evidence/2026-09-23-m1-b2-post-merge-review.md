@@ -177,6 +177,34 @@ Playback/core consumers could accidentally depend on SQLite-specific details, ma
 
 The durability observation type, mismatch exception and store property are internal to the storage module. Android instrumentation still verifies the effective settings. A later canonical evidence producer may serialize those observations explicitly without making them part of the playback API.
 
+### F10 — store lease creation bypassed storage-full classification
+
+**Scenario**
+
+The root existed, but creating/opening `.store.lock` failed because the filesystem or quota was exhausted.
+
+**Impact**
+
+The store-open path wrapped the `RandomAccessFile` failure in a generic `ExtentStoreException`, so callers could not classify the same storage-pressure condition that extent writes expose as `NO_SPACE`.
+
+**Correction**
+
+Canonical root resolution and lease-file I/O are now normalized through the storage taxonomy. Existing ownership conflicts remain `ExtentConflictException`.
+
+### F11 — canonical path resolution could leak raw I/O failures
+
+**Scenario**
+
+Canonicalizing the store root or an extent path failed with filesystem I/O.
+
+**Impact**
+
+Recovery/read admission could surface a raw `IOException` instead of the storage subsystem's typed I/O outcome.
+
+**Correction**
+
+`ExtentPathLayout` canonicalization now maps those failures through `ExtentStorageException(IO)` while preserving the existing path-escape checks.
+
 ## Findings deliberately not changed
 
 - **No per-open SHA-256 rehash.** Startup recovery already verifies SHA-256. Rehashing every playback open would add O(extent bytes) latency without a measured need. Background/incremental integrity remains M6.
