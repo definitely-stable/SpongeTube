@@ -96,22 +96,25 @@ internal class RoomExtentMetadataStore private constructor(
             context: Context,
             databaseFile: File,
         ): RoomExtentMetadataStore {
-            val database = Room.databaseBuilder(
-                context.applicationContext,
-                ExtentDatabase::class.java,
-                databaseFile.absolutePath,
-            )
-                .setDriver(AndroidSQLiteDriver())
-                .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
-                .build()
+            var database: ExtentDatabase? = null
 
             try {
-                val durability = database.readDurability()
+                val openedDatabase = Room.databaseBuilder(
+                    context.applicationContext,
+                    ExtentDatabase::class.java,
+                    databaseFile.absolutePath,
+                )
+                    .setDriver(AndroidSQLiteDriver())
+                    .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
+                    .build()
+                database = openedDatabase
+
+                val durability = openedDatabase.readDurability()
                 if (!durability.meetsM1DurabilityPolicy) {
                     throw ExtentMetadataDurabilityException(durability)
                 }
                 return RoomExtentMetadataStore(
-                    database = database,
+                    database = openedDatabase,
                     durability = durability,
                 )
             } catch (error: Throwable) {
@@ -121,7 +124,7 @@ internal class RoomExtentMetadataStore private constructor(
                         cause = error,
                     ) ?: error
                 try {
-                    database.close()
+                    database?.close()
                 } catch (closeError: Throwable) {
                     failure.addSuppressed(closeError)
                 }
@@ -213,7 +216,6 @@ private suspend fun ExtentDatabase.readDurability(): ExtentMetadataDurability =
             busyTimeoutMs = busyTimeoutMs,
         )
     }
-
 
 private suspend inline fun <T> metadataStorageOperation(
     operation: String,
