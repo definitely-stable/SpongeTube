@@ -224,7 +224,7 @@ private class CoverageProjection private constructor(
                 intervalsByKey = normalized,
                 readyExtentsByKey = readyExtents,
                 readyExtentCount = ready.size,
-                normalizedIntervalCount = normalized.values.sumOf(List<*>::size),
+                normalizedIntervalCount = normalized.values.sumOf { it.size },
             )
         }
     }
