@@ -101,7 +101,8 @@ internal data class ReadyExtentRef(
     }
 }
 
-@ConsistentCopyVisibility\ndata class CoverageSnapshot internal constructor(
+@ConsistentCopyVisibility
+data class CoverageSnapshot internal constructor(
     val mediaAssetId: MediaAssetId,
     val playheadUs: Long,
     val requiredRepresentations: Map<String, String>,
