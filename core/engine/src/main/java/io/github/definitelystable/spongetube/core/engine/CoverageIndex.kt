@@ -2,6 +2,7 @@ package io.github.definitelystable.spongetube.core.engine
 
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentId
+import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import java.util.Collections
@@ -71,6 +72,14 @@ class CoverageIndex private constructor(
         projection.resolveExtent(extentId)
 
     /**
+     * Identity-aware bridge admission. A matching ExtentId is not sufficient:
+     * every immutable metadata field carried by the playback plan must match
+     * the committed row before local bytes or dependency repair are allowed.
+     */
+    internal fun resolveExtent(expected: ExtentSpec): ExtentResolution =
+        projection.resolveExtent(expected)
+
+    /**
      * Pure in-memory query. No Room/SQLite access and no dependency-graph walk.
      */
     fun snapshot(
@@ -98,7 +107,7 @@ private class CoverageProjection private constructor(
     private val intervalsByKey: Map<CoverageKey, List<MediaInterval>>,
     private val readyExtentsByKey: Map<CoverageKey, List<ReadyExtentRef>>,
     private val readyExtentIds: Set<ExtentId>,
-    private val publishedDependencies: Map<ExtentId, List<ExtentId>>,
+    private val publishedExtents: Map<ExtentId, CommittedExtent>,
     val readyExtentCount: Int,
     val normalizedIntervalCount: Int,
 ) {
@@ -109,11 +118,27 @@ private class CoverageProjection private constructor(
         if (extentId in readyExtentIds) {
             return ExtentResolution.Ready
         }
-        val dependencies = publishedDependencies[extentId]
+        val extent = publishedExtents[extentId]
             ?: return ExtentResolution.Absent
         return ExtentResolution.PublishedNotReady(
             missingDependencyIds = Collections.unmodifiableList(
-                dependencies.filterNot { it in readyExtentIds },
+                extent.dependencyExtentIds.filterNot { it in readyExtentIds },
+            ),
+        )
+    }
+
+    fun resolveExtent(expected: ExtentSpec): ExtentResolution {
+        val committed = publishedExtents[expected.extentId]
+            ?: return ExtentResolution.Absent
+        if (!committed.matches(expected)) {
+            return ExtentResolution.IdentityConflict
+        }
+        if (expected.extentId in readyExtentIds) {
+            return ExtentResolution.Ready
+        }
+        return ExtentResolution.PublishedNotReady(
+            missingDependencyIds = Collections.unmodifiableList(
+                committed.dependencyExtentIds.filterNot { it in readyExtentIds },
             ),
         )
     }
@@ -162,7 +187,7 @@ private class CoverageProjection private constructor(
             intervalsByKey = emptyMap(),
             readyExtentsByKey = emptyMap(),
             readyExtentIds = emptySet(),
-            publishedDependencies = emptyMap(),
+            publishedExtents = emptyMap(),
             readyExtentCount = 0,
             normalizedIntervalCount = 0,
         )
@@ -259,13 +284,7 @@ private class CoverageProjection private constructor(
                 intervalsByKey = normalized,
                 readyExtentsByKey = readyExtents,
                 readyExtentIds = Collections.unmodifiableSet(ready.toSet()),
-                publishedDependencies = Collections.unmodifiableMap(
-                    rows.mapValues { (_, extent) ->
-                        Collections.unmodifiableList(
-                            extent.dependencyExtentIds.toList(),
-                        )
-                    },
-                ),
+                publishedExtents = Collections.unmodifiableMap(rows.toMap()),
                 readyExtentCount = ready.size,
                 normalizedIntervalCount = normalized.values.sumOf { it.size },
             )
@@ -403,3 +422,16 @@ private fun CommittedExtent.defensiveCopy(): CommittedExtent =
     copy(
         dependencyExtentIds = dependencyExtentIds.toList(),
     )
+
+private fun CommittedExtent.matches(expected: ExtentSpec): Boolean =
+    mediaAssetId == expected.mediaAssetId &&
+        extentId == expected.extentId &&
+        trackId == expected.trackId &&
+        representationId == expected.representationId &&
+        mediaStartUs == expected.mediaStartUs &&
+        mediaEndUs == expected.mediaEndUs &&
+        byteStart == expected.byteStart &&
+        byteEndExclusive == expected.byteEndExclusive &&
+        dependencyExtentIds.toSet() == expected.dependencyExtentIds.toSet() &&
+        length == expected.expectedLength &&
+        (expected.expectedSha256 == null || sha256 == expected.expectedSha256)
