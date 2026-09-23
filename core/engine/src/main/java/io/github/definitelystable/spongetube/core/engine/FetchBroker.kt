@@ -136,7 +136,7 @@ internal class FetchBroker internal constructor(
                     broker = this,
                     shared = shared,
                     consumerId = consumer.id,
-                    joinedExisting = false,
+                    acquireDisposition = FetchAcquireDisposition.NEW_OWNER,
                 )
             }
 
@@ -158,7 +158,7 @@ internal class FetchBroker internal constructor(
                     broker = this,
                     shared = shared,
                     consumerId = consumer.id,
-                    joinedExisting = true,
+                    acquireDisposition = FetchAcquireDisposition.JOINED_RUNNING,
                 )
             }
 
@@ -600,8 +600,8 @@ internal class FetchBroker internal constructor(
         override val fetchId: FetchId,
         private val outcome: FetchOutcome,
     ) : FetchHandle {
-        override val joinedExisting: Boolean
-            get() = true
+        override val acquireDisposition: FetchAcquireDisposition
+            get() = FetchAcquireDisposition.WAITED_CANCELLING
 
         override suspend fun await(): FetchOutcome = outcome
 
@@ -612,7 +612,7 @@ internal class FetchBroker internal constructor(
         private val broker: FetchBroker,
         private val shared: SharedFetch,
         private val consumerId: FetchConsumerId,
-        override val joinedExisting: Boolean,
+        override val acquireDisposition: FetchAcquireDisposition,
     ) : FetchHandle {
         private val released = AtomicBoolean()
 
