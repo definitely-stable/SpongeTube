@@ -90,6 +90,9 @@ jobs:
             :core:storage:connectedDebugAndroidTest \
             :core:engine:connectedDebugAndroidTest
 
+          bash scripts/ci/verify-m1-c-evidence.sh \
+            build/android-smoke/m1-c-evidence
+
       - name: Run N0 and N1 smoke scenarios
         shell: bash
         env:
