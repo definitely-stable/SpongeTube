@@ -1,7 +1,7 @@
 # SpongeTube Architecture v0.1
 
 Status: **Normative — architecture and invariants**
-Date: **2026-09-22**
+Date: **2026-09-23**
 
 ## 1. Architectural objective
 
