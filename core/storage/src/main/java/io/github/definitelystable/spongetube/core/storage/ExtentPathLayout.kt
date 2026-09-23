@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import java.io.File
+import java.io.IOException
 
 internal class ExtentPathLayout(
     private val rootDirectory: File,
@@ -42,8 +43,14 @@ internal class ExtentPathLayout(
             "stored path must be relative"
         }
 
-        val rootCanonical = rootDirectory.canonicalFile
-        val resolved = File(rootDirectory, relativePath).canonicalFile
+        val rootCanonical = canonicalFile(
+            rootDirectory,
+            "resolve-extent-root",
+        )
+        val resolved = canonicalFile(
+            File(rootDirectory, relativePath),
+            "resolve-extent-path",
+        )
         val prefix = rootCanonical.path + File.separator
 
         require(
@@ -56,8 +63,14 @@ internal class ExtentPathLayout(
     }
 
     fun relativePath(file: File): String {
-        val rootCanonical = rootDirectory.canonicalFile
-        val fileCanonical = file.canonicalFile
+        val rootCanonical = canonicalFile(
+            rootDirectory,
+            "resolve-extent-root",
+        )
+        val fileCanonical = canonicalFile(
+            file,
+            "resolve-extent-path",
+        )
         val prefix = rootCanonical.path + File.separator
         require(fileCanonical.path.startsWith(prefix)) {
             "file is outside the extent root"
@@ -83,6 +96,19 @@ internal class ExtentPathLayout(
             extentsDirectory.walkTopDown()
                 .filter { it.isFile && it.name.endsWith(".extent") }
                 .toList()
+        }
+
+    private fun canonicalFile(
+        file: File,
+        operation: String,
+    ): File =
+        try {
+            file.canonicalFile
+        } catch (error: IOException) {
+            throw storageFailure(
+                operation = operation,
+                cause = error,
+            )
         }
 
     private fun storageKey(extentId: ExtentId): String =
