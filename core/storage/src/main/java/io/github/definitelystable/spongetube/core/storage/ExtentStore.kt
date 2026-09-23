@@ -21,7 +21,7 @@ class ExtentStore private constructor(
     internal val ioDispatcher: CoroutineDispatcher,
     private val lifecycleListener: ExtentLifecycleListener?,
     internal val faultInjector: ExtentFaultInjector,
-    val metadataDurability: ExtentMetadataDurability?,
+    val metadataDurability: ExtentMetadataDurability,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
     private val activeWriterIds = mutableSetOf<ExtentId>()
@@ -286,22 +286,34 @@ class ExtentStore private constructor(
                 output = output,
             )
         } catch (error: Throwable) {
+            val failure = if (
+                error is IOException &&
+                error !is ExtentStoreException
+            ) {
+                storageFailure(
+                    operation = "create-extent-temp",
+                    cause = error,
+                )
+            } else {
+                error
+            }
+
             try {
                 output?.close()
             } catch (closeError: Throwable) {
-                error.addSuppressed(closeError)
+                failure.addSuppressed(closeError)
             }
 
             if (partFile?.exists() == true) {
                 try {
                     durabilityOps.deleteDurably(partFile)
                 } catch (cleanupError: Throwable) {
-                    error.addSuppressed(cleanupError)
+                    failure.addSuppressed(cleanupError)
                 }
             }
 
             releaseWriter(spec.extentId)
-            throw error
+            throw failure
         }
     }
 
@@ -551,7 +563,7 @@ class ExtentStore private constructor(
                 ioDispatcher = ioDispatcher,
                 lifecycleListener = null,
                 faultInjector = faultInjector,
-                metadataDurability = null,
+                metadataDurability = ExtentMetadataDurability.UNVERIFIED_TEST,
             )
             store.initialRecoveryReport = store.recoverInternal()
             store
