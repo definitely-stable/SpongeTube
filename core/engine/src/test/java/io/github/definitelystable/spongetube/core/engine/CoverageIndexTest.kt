@@ -264,9 +264,8 @@ class CoverageIndexTest {
         assertEquals(10, snapshot(index, 0).durableReserveUs)
 
         fail = true
-        assertThrows(IllegalStateException::class.java) {
-            runTest { index.refresh() }
-        }
+        val failure = runCatching { index.refresh() }.exceptionOrNull()
+        assertEquals(IllegalStateException::class.java, failure?.javaClass)
 
         extents = emptyList()
         assertEquals(10, snapshot(index, 0).durableReserveUs)
