@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-class FetchBroker internal constructor(
+internal class FetchBroker private constructor(
     private val publisher: FetchPublisher,
     private val executor: FetchAttemptExecutor,
     private val attemptBudget: FetchAttemptBudget,
@@ -67,7 +67,7 @@ class FetchBroker internal constructor(
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
     }
 
-    suspend fun acquire(
+    internal suspend fun acquire(
         request: FetchRequest,
         consumer: FetchConsumer,
     ): FetchHandle {
