@@ -83,6 +83,7 @@ data class CoverageRefreshResult(
 
 internal data class ReadyExtentRef(
     val extentId: ExtentId,
+    val dependencyExtentIds: List<ExtentId>,
     val mediaStartUs: Long,
     val mediaEndUs: Long,
     val byteStart: Long?,
