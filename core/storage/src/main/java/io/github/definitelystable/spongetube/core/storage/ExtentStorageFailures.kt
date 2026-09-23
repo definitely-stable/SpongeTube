@@ -26,7 +26,10 @@ internal fun storageFailure(
         .firstOrNull()
         ?.errno
 
-    val kind = if (errno == OsConstants.ENOSPC) {
+    val kind = if (
+        errno == OsConstants.ENOSPC ||
+        errno == OsConstants.EDQUOT
+    ) {
         ExtentStorageFailureKind.NO_SPACE
     } else {
         ExtentStorageFailureKind.IO
