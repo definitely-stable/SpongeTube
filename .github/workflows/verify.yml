@@ -99,10 +99,11 @@ jobs:
           retention-days: 7
 
 
-  windows-metadata-probe:
-    name: windows metadata probe
+
+  windows-verify:
+    name: windows verify
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -122,8 +123,7 @@ jobs:
           cache-provider: basic
           cache-read-only: true
 
-      - name: Probe Windows dependency verification metadata
+      - name: Verify Windows build and byte-exact fixtures
         shell: pwsh
         run: |
-          ./gradlew.bat --write-verification-metadata sha256 :app:assembleDebug
-          git diff -- gradle/verification-metadata.xml
+          ./gradlew.bat --dependency-verification=strict --configuration-cache check assembleDebug
