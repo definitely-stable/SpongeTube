@@ -13,7 +13,7 @@ REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from m1_oracle import (
-    build_canonical_oracle_snapshot,
+    build_canonical_oracle_snapshot as build_oracle_snapshot,
     compare_coverage_semantics,
     export_committed_snapshot,
     main,
@@ -38,6 +38,10 @@ ROOM_SCHEMA_FILES = sorted(
 if not ROOM_SCHEMA_FILES:
     raise RuntimeError("no checked-in ExtentDatabase Room schemas found")
 ROOM_SCHEMA = ROOM_SCHEMA_FILES[-1]
+ROOM_SCHEMA_VERSION = int(
+    json.loads(ROOM_SCHEMA.read_text(encoding="utf-8"))["database"]["version"]
+)
+MEDIA_ASSET_ID = "asset-f1"
 
 
 class M1EvidenceKernelTest(unittest.TestCase):
@@ -133,6 +137,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
             """
             INSERT INTO extents(
                 extent_id,
+                media_asset_id,
                 track_id,
                 representation_id,
                 media_start_us,
@@ -146,10 +151,11 @@ class M1EvidenceKernelTest(unittest.TestCase):
                 integrity_state,
                 quarantine_reason,
                 published_at_epoch_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 extent_id,
+                MEDIA_ASSET_ID,
                 "video",
                 representation_id,
                 media_start_us,
@@ -163,6 +169,25 @@ class M1EvidenceKernelTest(unittest.TestCase):
                 integrity,
                 None,
                 1,
+            ),
+        )
+
+    def _build_oracle_snapshot(
+        self,
+        committed,
+        verified,
+        required,
+        playhead_us,
+    ):
+        return build_oracle_snapshot(
+            committed,
+            verified,
+            required,
+            playhead_us,
+            media_asset_id=(
+                MEDIA_ASSET_ID
+                if committed["schemaVersion"] == 2
+                else None
             ),
         )
 
@@ -183,7 +208,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
 
     def _oracle(self):
         committed = self._committed()
-        return build_canonical_oracle_snapshot(
+        return self._build_oracle_snapshot(
             committed,
             self._verified(committed),
             {"video": "v1"},
@@ -192,7 +217,14 @@ class M1EvidenceKernelTest(unittest.TestCase):
 
     def test_end_to_end_reads_sqlite_and_hashes_real_files(self):
         committed = self._committed()
-        self.assertEqual(1, committed["databaseSchemaVersion"])
+        self.assertEqual(ROOM_SCHEMA_VERSION, committed["databaseSchemaVersion"])
+        self.assertEqual(2, committed["schemaVersion"])
+        self.assertTrue(
+            all(
+                row["mediaAssetId"] == MEDIA_ASSET_ID
+                for row in committed["extents"]
+            )
+        )
         self.assertEqual(["v-0", "v-init"], [
             row["extentId"] for row in committed["extents"]
         ])
@@ -210,7 +242,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
             facts["v-0"]["sha256"],
         )
 
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             verified,
             {"video": "v1"},
@@ -218,7 +250,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         )
         validate_instance(
             json.loads(
-                (SCHEMAS / "coverage-snapshot-v1.schema.json").read_text(
+                (SCHEMAS / "coverage-snapshot-v2.schema.json").read_text(
                     encoding="utf-8"
                 )
             ),
@@ -241,7 +273,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         self.assertIsNone(facts["v-0"]["length"])
         self.assertIsNone(facts["v-0"]["sha256"])
 
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             verified,
             {"video": "v1"},
@@ -266,7 +298,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
             facts["v-0"]["sha256"],
         )
 
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             verified,
             {"video": "v1"},
@@ -292,7 +324,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         )
         self.assertNotEqual("f" * 64, fact["sha256"])
 
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             verified,
             {"video": "v1"},
@@ -319,7 +351,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         )
         self.assertNotEqual(committed_row["length"], fact["length"])
 
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             verified,
             {"video": "v1"},
@@ -339,7 +371,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
             )
 
         committed = self._committed()
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             self._verified(committed),
             {"video": "v1"},
@@ -359,13 +391,30 @@ class M1EvidenceKernelTest(unittest.TestCase):
             )
 
         committed = self._committed()
-        oracle = build_canonical_oracle_snapshot(
+        oracle = self._build_oracle_snapshot(
             committed,
             self._verified(committed),
             {"video": "v1"},
             0,
         )
         self.assertEqual([], oracle["playableIntervals"])
+
+    def test_v2_oracle_rejects_cross_asset_dependency(self):
+        with sqlite3.connect(self.database) as connection:
+            connection.execute(
+                "UPDATE extents SET media_asset_id = ? WHERE extent_id = ?",
+                ("other-asset", "v-init"),
+            )
+
+        committed = self._committed()
+        oracle = self._build_oracle_snapshot(
+            committed,
+            self._verified(committed),
+            {"video": "v1"},
+            0,
+        )
+        self.assertEqual([], oracle["playableIntervals"])
+        self.assertEqual(MEDIA_ASSET_ID, oracle["mediaAssetId"])
 
     def test_storage_path_escape_is_rejected(self):
         with sqlite3.connect(self.database) as connection:
@@ -379,7 +428,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
 
     def test_unsupported_database_schema_version_fails_closed(self):
         with sqlite3.connect(self.database) as connection:
-            connection.execute("PRAGMA user_version = 2")
+            connection.execute("PRAGMA user_version = 99")
 
         with self.assertRaisesRegex(
             ValueError,
@@ -390,13 +439,13 @@ class M1EvidenceKernelTest(unittest.TestCase):
     def test_reconstruct_rejects_unsupported_database_schema_version(self):
         committed = self._committed()
         verified = self._verified(committed)
-        committed["databaseSchemaVersion"] = 2
+        committed["databaseSchemaVersion"] = 99
 
         with self.assertRaisesRegex(
             ValueError,
             "unsupported ExtentStore database schema version",
         ):
-            build_canonical_oracle_snapshot(
+            self._build_oracle_snapshot(
                 committed,
                 verified,
                 {"video": "v1"},
@@ -424,7 +473,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         verified["sessionId"] = "different-session"
 
         with self.assertRaisesRegex(ValueError, "sessionId mismatch"):
-            build_canonical_oracle_snapshot(
+            self._build_oracle_snapshot(
                 committed,
                 verified,
                 {"video": "v1"},
@@ -441,7 +490,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(ValueError, "extent-id set mismatch"):
-            build_canonical_oracle_snapshot(
+            self._build_oracle_snapshot(
                 committed,
                 verified,
                 {"video": "v1"},
@@ -462,7 +511,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "extent-id set mismatch"):
-            build_canonical_oracle_snapshot(
+            self._build_oracle_snapshot(
                 committed,
                 verified,
                 {"video": "v1"},
@@ -527,6 +576,8 @@ class M1EvidenceKernelTest(unittest.TestCase):
                 "POST_RECOVERY",
                 "--playhead-us",
                 "5000000",
+                "--media-asset-id",
+                MEDIA_ASSET_ID,
                 "--required",
                 "video=v1",
                 "--committed-output",
@@ -567,6 +618,8 @@ class M1EvidenceKernelTest(unittest.TestCase):
             "POST_RECOVERY",
             "--playhead-us",
             "5000000",
+            "--media-asset-id",
+            MEDIA_ASSET_ID,
             "--required",
             "video=v1",
             "--committed-output",
@@ -628,6 +681,8 @@ class M1EvidenceKernelTest(unittest.TestCase):
                 "POST_RECOVERY",
                 "--playhead-us",
                 "5000000",
+                "--media-asset-id",
+                MEDIA_ASSET_ID,
                 "--required",
                 "video=v1",
                 "--committed-output",
