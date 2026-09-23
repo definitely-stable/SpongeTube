@@ -1,6 +1,6 @@
 package io.github.definitelystable.spongetube.core.storage
 
-data class ExtentMetadataDurability(
+internal data class ExtentMetadataDurability(
     val journalMode: String,
     val synchronous: Int,
     val busyTimeoutMs: Long,
@@ -27,7 +27,7 @@ data class ExtentMetadataDurability(
     }
 }
 
-class ExtentMetadataDurabilityException internal constructor(
+internal class ExtentMetadataDurabilityException(
     val observed: ExtentMetadataDurability,
 ) : ExtentStoreException(
     "metadata durability policy mismatch: " +
