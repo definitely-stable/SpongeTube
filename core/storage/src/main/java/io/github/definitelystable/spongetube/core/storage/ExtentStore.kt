@@ -21,7 +21,7 @@ class ExtentStore private constructor(
     internal val ioDispatcher: CoroutineDispatcher,
     private val lifecycleListener: ExtentLifecycleListener?,
     internal val faultInjector: ExtentFaultInjector,
-    val metadataDurability: ExtentMetadataDurability,
+    internal val metadataDurability: ExtentMetadataDurability,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
     private val activeWriterIds = mutableSetOf<ExtentId>()
@@ -39,6 +39,7 @@ class ExtentStore private constructor(
     ): CommittedExtent {
         var writer: ExtentWriter? = null
         var committed = false
+        var primaryFailure: Throwable? = null
 
         try {
             withContext(ioDispatcher) {
@@ -56,11 +57,23 @@ class ExtentStore private constructor(
             }
             committed = true
             return result
+        } catch (error: Throwable) {
+            primaryFailure = error
+            throw error
         } finally {
             val pendingWriter = writer
             if (!committed && pendingWriter != null) {
-                withContext(NonCancellable) {
-                    pendingWriter.abort()
+                try {
+                    withContext(NonCancellable) {
+                        pendingWriter.abort()
+                    }
+                } catch (cleanupError: Throwable) {
+                    val failure = primaryFailure
+                    if (failure != null) {
+                        failure.addSuppressed(cleanupError)
+                    } else {
+                        throw cleanupError
+                    }
                 }
             }
         }
@@ -87,21 +100,46 @@ class ExtentStore private constructor(
     suspend fun openRead(
         extentId: ExtentId,
     ): ExtentReadHandle? {
+        currentCoroutineContext().ensureActive()
         beginReadOperation()
+
+        var openedHandle: ExtentReadHandle? = null
+        var leaseReleased = false
         var ownershipTransferred = false
 
         try {
-            val handle = withContext(ioDispatcher) {
-                openReadInternal(extentId)
+            withContext(ioDispatcher) {
+                currentCoroutineContext().ensureActive()
+                openedHandle = openReadInternal(extentId)
             }
-            if (handle != null) {
+
+            val handle = openedHandle
+            if (handle == null) {
+                leaseReleased = true
+                endReadOperation()
+            } else {
                 ownershipTransferred = true
             }
             return handle
-        } finally {
+        } catch (error: Throwable) {
             if (!ownershipTransferred) {
-                endReadOperation()
+                val handle = openedHandle
+                if (handle != null) {
+                    try {
+                        handle.close()
+                    } catch (cleanupError: Throwable) {
+                        error.addSuppressed(cleanupError)
+                    }
+                } else if (!leaseReleased) {
+                    leaseReleased = true
+                    try {
+                        endReadOperation()
+                    } catch (cleanupError: Throwable) {
+                        error.addSuppressed(cleanupError)
+                    }
+                }
             }
+            throw error
         }
     }
 
@@ -162,8 +200,8 @@ class ExtentStore private constructor(
 
         val expectedPath = layout.finalRelativePath(extentId)
         if (stored.storagePath != expectedPath) {
-            metadataStore.quarantine(
-                extentId,
+            quarantineReadFailure(
+                stored,
                 ExtentQuarantineReason.UNEXPECTED_PATH,
             )
             return null
@@ -172,23 +210,23 @@ class ExtentStore private constructor(
         val file = try {
             layout.resolveStoredPath(stored.storagePath)
         } catch (_: IllegalArgumentException) {
-            metadataStore.quarantine(
-                extentId,
+            quarantineReadFailure(
+                stored,
                 ExtentQuarantineReason.UNEXPECTED_PATH,
             )
             return null
         }
 
         if (!file.exists()) {
-            metadataStore.quarantine(
-                extentId,
+            quarantineReadFailure(
+                stored,
                 ExtentQuarantineReason.MISSING_FILE,
             )
             return null
         }
         if (!file.isFile) {
-            metadataStore.quarantine(
-                extentId,
+            quarantineReadFailure(
+                stored,
                 ExtentQuarantineReason.UNEXPECTED_PATH,
             )
             return null
@@ -198,8 +236,8 @@ class ExtentStore private constructor(
             FileInputStream(file).channel
         } catch (error: IOException) {
             if (!file.exists()) {
-                metadataStore.quarantine(
-                    extentId,
+                quarantineReadFailure(
+                    stored,
                     ExtentQuarantineReason.MISSING_FILE,
                 )
                 return null
@@ -222,8 +260,8 @@ class ExtentStore private constructor(
 
         if (persistedLength != stored.length) {
             runCatching { channel.close() }
-            metadataStore.quarantine(
-                extentId,
+            quarantineReadFailure(
+                stored,
                 ExtentQuarantineReason.LENGTH_MISMATCH,
             )
             return null
@@ -441,6 +479,14 @@ class ExtentStore private constructor(
         )
     }
 
+    private suspend fun quarantineReadFailure(
+        row: StoredExtent,
+        reason: ExtentQuarantineReason,
+    ) {
+        metadataStore.quarantine(row.extentId, reason)
+        deleteRowFileIfExpected(row)
+    }
+
     private fun validationFailure(
         row: StoredExtent,
     ): ExtentQuarantineReason? {
@@ -450,7 +496,14 @@ class ExtentStore private constructor(
             return ExtentQuarantineReason.UNEXPECTED_PATH
         }
 
-        val fact = FileIntegrity.inspect(file)
+        val fact = try {
+            FileIntegrity.inspect(file)
+        } catch (error: IOException) {
+            throw storageFailure(
+                operation = "verify-published-extent",
+                cause = error,
+            )
+        }
         return when {
             !fact.exists -> ExtentQuarantineReason.MISSING_FILE
             fact.length != row.length ->

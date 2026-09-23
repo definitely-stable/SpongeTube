@@ -558,7 +558,9 @@ Room is the durable metadata authority. CoverageIndex is the read-optimized runt
 
 ### Metadata durability scope
 
-M1 distinguishes process death from device power loss/kernel reset. Metadata publication must use the strongest practical SQLite durability mode selected for the M1 contract on supported Android storage. The effective journal/synchronous settings used by acceptance runs must be observable in evidence. Filesystem/media corruption outside the guarantees of the underlying storage stack is not claimed to be recoverable.
+M1 distinguishes process death from device power loss/kernel reset. M1-B2 pins Room 3 metadata to `JournalMode.TRUNCATE`; Room 3 configures non-WAL connections with `PRAGMA synchronous=FULL` and a non-zero busy timeout. The store reads the effective writer-connection settings at open and refuses a configuration that does not meet the M1 `TRUNCATE + FULL` policy.
+
+The observed configuration is evidence of the selected SQLite policy, not a claim that the filesystem, kernel, VFS or physical storage device cannot violate durability. Acceptance records the effective journal/synchronous settings. Filesystem/media corruption outside the guarantees of the underlying storage stack is not claimed to be recoverable.
 
 
 ### Partial extent lifecycle and publication

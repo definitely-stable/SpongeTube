@@ -1,11 +1,17 @@
 package io.github.definitelystable.spongetube.core.storage
 
-data class ExtentMetadataDurability(
+internal data class ExtentMetadataDurability(
     val journalMode: String,
     val synchronous: Int,
     val busyTimeoutMs: Long,
 ) {
-    val isPowerLossHardened: Boolean
+    /**
+     * True when the effective SQLite connection satisfies the M1 metadata policy.
+     *
+     * This is an observed configuration invariant, not a guarantee against a
+     * broken VFS, filesystem, kernel, or storage device.
+     */
+    val meetsM1DurabilityPolicy: Boolean
         get() =
             journalMode.equals("truncate", ignoreCase = true) &&
                 synchronous >= SQLITE_SYNCHRONOUS_FULL
@@ -21,7 +27,7 @@ data class ExtentMetadataDurability(
     }
 }
 
-class ExtentMetadataDurabilityException internal constructor(
+internal class ExtentMetadataDurabilityException(
     val observed: ExtentMetadataDurability,
 ) : ExtentStoreException(
     "metadata durability policy mismatch: " +

@@ -18,9 +18,21 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
             ensureDirectory(parent)
         }
 
-        if (!directory.mkdir() && !directory.isDirectory) {
-            throw ExtentStoreException(
-                "failed to create extent directory: ${directory.absolutePath}",
+        try {
+            Os.mkdir(
+                directory.absolutePath,
+                OsConstants.S_IRWXU,
+            )
+        } catch (error: ErrnoException) {
+            if (
+                error.errno == OsConstants.EEXIST &&
+                directory.isDirectory
+            ) {
+                return
+            }
+            throw storageFailure(
+                operation = "create-extent-directory",
+                cause = error,
             )
         }
 
