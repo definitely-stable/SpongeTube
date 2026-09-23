@@ -1,7 +1,7 @@
 # SpongeTube Roadmap v0.1
 
 Status: **Normative sequencing**
-Date: **2026-09-21**
+Date: **2026-09-23**
 
 The roadmap is ordered to prove the risky assumptions before building a large YouTube UI.
 
