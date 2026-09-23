@@ -9,7 +9,8 @@ resulting coverage independently.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -132,12 +133,11 @@ def load_f1_catalog(repo_root: Path) -> tuple[tuple[SeedUnit, ...], str]:
         for item in fixture["resources"]
     }
 
+    media_root = repo_root / "test-fixtures/media"
     timeline_path = "F1/manifest.mpd"
-    timeline_resource = resources.get(timeline_path)
-    if timeline_resource is None:
-        raise ValueError("F1 fixture manifest does not contain F1/manifest.mpd")
+    timeline_resource = _resource(resources, timeline_path, media_root)
 
-    mpd_path = repo_root / "test-fixtures/media" / timeline_path
+    mpd_path = media_root / timeline_path
     root = ET.fromstring(mpd_path.read_text(encoding="utf-8"))
     ns = {"d": "urn:mpeg:dash:schema:mpd:2011"}
 
@@ -173,7 +173,7 @@ def load_f1_catalog(repo_root: Path) -> tuple[tuple[SeedUnit, ...], str]:
             "$RepresentationID$",
             rep_id,
         )
-        init_resource = _resource(resources, init_path)
+        init_resource = _resource(resources, init_path, media_root)
         init_extent_id = f"f1:{kind}:{rep_id}:init"
         units.append(
             SeedUnit(
@@ -227,7 +227,7 @@ def load_f1_catalog(repo_root: Path) -> tuple[tuple[SeedUnit, ...], str]:
                     f"{number:05d}",
                 )
                 path = "F1/" + relative_path
-                resource = _resource(resources, path)
+                resource = _resource(resources, path, media_root)
 
                 units.append(
                     SeedUnit(
@@ -439,17 +439,177 @@ def _without(
 def _resource(
     resources: dict[str, dict[str, object]],
     path: str,
+    media_root: Path,
 ) -> dict[str, object]:
     resource = resources.get(path)
     if resource is None:
         raise ValueError(f"F1 resource missing from fixture manifest: {path}")
+
     length = int(resource["sizeBytes"])
     digest = str(resource["sha256"])
     if length <= 0:
         raise ValueError(f"F1 resource has invalid length: {path}")
     if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
         raise ValueError(f"F1 resource has invalid sha256: {path}")
+
+    file_path = media_root / path
+    blob = file_path.read_bytes()
+    actual_digest = hashlib.sha256(blob).hexdigest()
+    if len(blob) != length:
+        raise ValueError(
+            f"F1 resource length mismatch for {path}: "
+            f"manifest={length} actual={len(blob)}"
+        )
+    if actual_digest != digest:
+        raise ValueError(
+            f"F1 resource sha256 mismatch for {path}: "
+            f"manifest={digest} actual={actual_digest}"
+        )
     return resource
+
+
+NEGATIVE_CASES = {
+    "S30_VIDEO_HOLE": "VIDEO_HOLE",
+    "S30_AUDIO_HOLE": "AUDIO_HOLE",
+    "S30_MISSING_INIT": "MISSING_INIT",
+    "S30_PARTIAL_TAIL": "PARTIAL_TAIL",
+    "S30_WRONG_REPRESENTATION": "WRONG_REPRESENTATION",
+}
+
+
+def validate_seed_plan(plan: SeedPlan) -> None:
+    if not plan.required_representations:
+        raise ValueError("seed requires at least one playback representation")
+    if plan.media_asset_id != ASSET_ID or plan.fixture_id != "F1":
+        raise ValueError("M1 canonical seeds must be bound to fixture F1")
+
+    extent_ids = [unit.extent_id for unit in plan.units]
+    if len(extent_ids) != len(set(extent_ids)):
+        raise ValueError(f"{plan.seed_id}: duplicate extent ids")
+
+    for unit in plan.units:
+        if not unit.track_id or not unit.representation_id:
+            raise ValueError(f"{plan.seed_id}: blank track/representation")
+        if unit.length <= 0:
+            raise ValueError(f"{plan.seed_id}: non-positive extent length")
+        if len(unit.sha256) != 64 or any(
+            ch not in "0123456789abcdef" for ch in unit.sha256
+        ):
+            raise ValueError(f"{plan.seed_id}: invalid extent sha256")
+        if (unit.media_start_us is None) != (unit.media_end_us is None):
+            raise ValueError(
+                f"{plan.seed_id}: partial media interval for {unit.extent_id}"
+            )
+        if unit.media_start_us is not None:
+            if unit.media_start_us < 0 or int(unit.media_end_us) <= unit.media_start_us:
+                raise ValueError(
+                    f"{plan.seed_id}: invalid media interval for {unit.extent_id}"
+                )
+        if unit.extent_id in unit.dependency_extent_ids:
+            raise ValueError(
+                f"{plan.seed_id}: self dependency for {unit.extent_id}"
+            )
+        if len(unit.dependency_extent_ids) != len(
+            set(unit.dependency_extent_ids)
+        ):
+            raise ValueError(
+                f"{plan.seed_id}: duplicate dependency for {unit.extent_id}"
+            )
+
+    if plan.seed_id in POSITIVE_TARGETS_US:
+        if plan.negative_case is not None or plan.rejected_attempts:
+            raise ValueError(f"{plan.seed_id}: positive seed has negative evidence")
+        if plan.target_playable_end_us != POSITIVE_TARGETS_US[plan.seed_id]:
+            raise ValueError(f"{plan.seed_id}: wrong positive target")
+        return
+
+    expected_case = NEGATIVE_CASES.get(plan.seed_id)
+    if expected_case is None:
+        raise ValueError(f"unknown canonical seed: {plan.seed_id}")
+    if plan.negative_case != expected_case:
+        raise ValueError(
+            f"{plan.seed_id}: expected negativeCase={expected_case}, "
+            f"got {plan.negative_case!r}"
+        )
+    if plan.target_playable_end_us != POSITIVE_TARGETS_US["S30"]:
+        raise ValueError(f"{plan.seed_id}: negative seed must derive from S30")
+
+    if plan.negative_case == "PARTIAL_TAIL":
+        if len(plan.rejected_attempts) != 1:
+            raise ValueError("PARTIAL_TAIL requires exactly one rejected attempt")
+        attempt = plan.rejected_attempts[0]
+        if not (0 <= attempt.received_length < attempt.expected_length):
+            raise ValueError("PARTIAL_TAIL must be strictly truncated")
+        if attempt.extent_id in set(extent_ids):
+            raise ValueError("rejected PARTIAL_TAIL extent must not be published")
+        if attempt.reason != "TRUNCATED_BEFORE_PUBLICATION":
+            raise ValueError("unexpected PARTIAL_TAIL rejection reason")
+    elif plan.rejected_attempts:
+        raise ValueError(
+            f"{plan.seed_id}: rejectedAttempts only belong to PARTIAL_TAIL"
+        )
+
+
+def verify_seed_state(
+    plan: SeedPlan,
+    committed_snapshot: dict[str, object],
+) -> None:
+    validate_seed_plan(plan)
+
+    if int(committed_snapshot.get("schemaVersion", 0)) != 2:
+        raise ValueError("seed state verification requires committed-extents-v2")
+    raw_rows = committed_snapshot.get("extents")
+    if not isinstance(raw_rows, list):
+        raise ValueError("committed snapshot extents must be an array")
+
+    rows: dict[str, dict[str, object]] = {}
+    for value in raw_rows:
+        if not isinstance(value, dict):
+            raise ValueError("committed extent row must be an object")
+        extent_id = str(value.get("extentId", ""))
+        if not extent_id or extent_id in rows:
+            raise ValueError(f"invalid/duplicate committed extent id: {extent_id!r}")
+        rows[extent_id] = value
+
+    expected = {unit.extent_id: unit for unit in plan.units}
+    if set(rows) != set(expected):
+        raise ValueError(
+            f"{plan.seed_id}: committed extent set mismatch: "
+            f"missing={sorted(set(expected) - set(rows))!r} "
+            f"extra={sorted(set(rows) - set(expected))!r}"
+        )
+
+    for extent_id, unit in expected.items():
+        row = rows[extent_id]
+        expected_fields = {
+            "mediaAssetId": plan.media_asset_id,
+            "trackId": unit.track_id,
+            "representationId": unit.representation_id,
+            "mediaStartUs": unit.media_start_us,
+            "mediaEndUs": unit.media_end_us,
+            "length": unit.length,
+            "sha256": unit.sha256,
+            "state": "PUBLISHED",
+            "integrityState": "VALID",
+        }
+        for field, expected_value in expected_fields.items():
+            if row.get(field) != expected_value:
+                raise ValueError(
+                    f"{plan.seed_id}/{extent_id}: {field} mismatch: "
+                    f"expected={expected_value!r} actual={row.get(field)!r}"
+                )
+
+        actual_dependencies = row.get("dependencyExtentIds")
+        if not isinstance(actual_dependencies, list):
+            raise ValueError(
+                f"{plan.seed_id}/{extent_id}: dependencyExtentIds must be an array"
+            )
+        if sorted(str(value) for value in actual_dependencies) != sorted(
+            unit.dependency_extent_ids
+        ):
+            raise ValueError(
+                f"{plan.seed_id}/{extent_id}: dependency set mismatch"
+            )
 
 
 def write_seed_manifest(
@@ -457,7 +617,9 @@ def write_seed_manifest(
     seed_id: str,
     output: Path,
 ) -> None:
-    payload = build_seed(repo_root, seed_id).to_artifact()
+    plan = build_seed(repo_root, seed_id)
+    validate_seed_plan(plan)
+    payload = plan.to_artifact()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -476,6 +638,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seed-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--verify-committed",
+        type=Path,
+        help=(
+            "optional committed-extents-v2 artifact to verify against the "
+            "canonical seed construction"
+        ),
+    )
     return parser
 
 
@@ -487,6 +657,12 @@ def main(argv: list[str] | None = None) -> int:
             seed_id=args.seed_id,
             output=args.output,
         )
+        if args.verify_committed is not None:
+            plan = build_seed(args.repo_root, args.seed_id)
+            committed = json.loads(
+                args.verify_committed.read_text(encoding="utf-8")
+            )
+            verify_seed_state(plan, committed)
     except (OSError, ValueError, AssertionError, KeyError, ET.ParseError) as error:
         print(f"seed planner error: {error}", file=sys.stderr)
         return 2
