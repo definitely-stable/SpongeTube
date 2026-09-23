@@ -47,7 +47,7 @@ M1 is split into focused deliveries:
 - **M1-B — Durable ExtentStore**: immutable app-private extent files, SHA-256 integrity, same-filesystem temp/rename publication barrier, metadata transactions and restart recovery.
 - **M1-B2 — ExtentStore Hardening & Read Surface**: close audit-confirmed durability/read-path gaps needed by PlaybackBridge: explicit metadata durability policy/evidence, safe opaque read handles, storage-failure taxonomy and focused real-Room/reopen tests.
 - **M1-V — Executable Independent Evidence Kernel**: real filesystem verifier, M1 artifact producers, executable host oracle and exact runtime-vs-oracle comparator. This is acceptance infrastructure, not product logic.
-- **M1-C — CoverageIndex & Fixed Seeds**: interval algebra over published required-track coverage, deterministic S0/S10/S30/S60/S120 seeds, negative/holed seeds and independent coverage reconstruction.
+- **M1-C — CoverageIndex & Fixed Seeds**: asset-scoped in-memory coverage projection over published required-track coverage, deterministic S0/S10/S30/S60/S120 construction, negative/holed seeds and independent filesystem-backed reconstruction.
 - **M1-D — FetchBroker SingleFlight**: one physical owner fetch per FetchKey, multi-consumer join, reference-counted cancellation, priority escalation without restart and explicit duplicate-byte accounting.
 - **M1-E — PlaybackBridge**: local reads from published Sponge coverage; all remote misses routed through FetchBroker; cached seek and in-flight join without a second Media3 upstream owner.
 - **M1-F — Restart & N4 Recovery**: process-death recovery plus N4R-SHORT/N4R-EXHAUST/N4R-RESTORE; bounded retry ownership and post-restore continuation.
