@@ -40,7 +40,8 @@ internal class ExtentWriter(
     ) {
         require(offset >= 0) { "offset must be >= 0" }
         require(length >= 0) { "length must be >= 0" }
-        require(offset + length <= bytes.size) {
+        require(offset <= bytes.size) { "offset exceeds byte array size" }
+        require(length <= bytes.size - offset) {
             "offset + length exceeds byte array size"
         }
 
@@ -111,8 +112,12 @@ internal class ExtentWriter(
         try {
             store.hit(ExtentFaultPoint.AFTER_RECEIVING)
 
-            store.durabilityOps.syncAndClose(output)
-            outputClosed = true
+            try {
+                store.durabilityOps.syncAndClose(output)
+            } finally {
+                // ExtentDurabilityOps owns closing the stream even when sync fails.
+                outputClosed = true
+            }
             phase = CommitPhase.SEALED
             store.emit(
                 ExtentLifecycleEvent(
@@ -222,11 +227,20 @@ internal class ExtentWriter(
 
             return stored.toCommittedExtent()
         } catch (crash: SimulatedProcessCrash) {
-            closeOutputWithoutSync()
-            finishTerminal()
+            try {
+                closeOutputWithoutSync()
+            } catch (cleanupError: Throwable) {
+                crash.addSuppressed(cleanupError)
+            } finally {
+                finishTerminal()
+            }
             throw crash
         } catch (error: Throwable) {
-            closeOutputWithoutSync()
+            try {
+                closeOutputWithoutSync()
+            } catch (cleanupError: Throwable) {
+                error.addSuppressed(cleanupError)
+            }
 
             if (
                 phase.ordinal < CommitPhase.DURABLE.ordinal &&
@@ -265,7 +279,14 @@ internal class ExtentWriter(
         }
 
         outputClosed = true
-        output.close()
+        try {
+            output.close()
+        } catch (error: IOException) {
+            throw storageFailure(
+                operation = "close-extent-temp",
+                cause = error,
+            )
+        }
     }
 }
 
