@@ -39,6 +39,7 @@ class ExtentStore private constructor(
     ): CommittedExtent {
         var writer: ExtentWriter? = null
         var committed = false
+        var primaryFailure: Throwable? = null
 
         try {
             withContext(ioDispatcher) {
@@ -56,11 +57,23 @@ class ExtentStore private constructor(
             }
             committed = true
             return result
+        } catch (error: Throwable) {
+            primaryFailure = error
+            throw error
         } finally {
             val pendingWriter = writer
             if (!committed && pendingWriter != null) {
-                withContext(NonCancellable) {
-                    pendingWriter.abort()
+                try {
+                    withContext(NonCancellable) {
+                        pendingWriter.abort()
+                    }
+                } catch (cleanupError: Throwable) {
+                    val failure = primaryFailure
+                    if (failure != null) {
+                        failure.addSuppressed(cleanupError)
+                    } else {
+                        throw cleanupError
+                    }
                 }
             }
         }
