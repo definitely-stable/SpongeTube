@@ -261,6 +261,28 @@ class M1BridgeEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, "terminal"):
             self.run_verify(evidence)
 
+    def test_rejects_preseek_fetch_as_e2_proof(self):
+        evidence = Evidence()
+        rows = evidence.cases["E2"]["bridge"]
+        issued = next(
+            row for row in rows
+            if row["event"] == "HARNESS_MARKER"
+            and row["markerName"] == "SEEK_TO_MISSING_ISSUED"
+        )
+        rows.remove(issued)
+        settled_index = next(
+            index for index, row in enumerate(rows)
+            if row["event"] == "HARNESS_MARKER"
+            and row["markerName"] == "SEEK_TO_MISSING_SETTLED"
+        )
+        issued["fetchEventSequenceWatermark"] = 4
+        rows.insert(settled_index, issued)
+        for index, row in enumerate(rows):
+            row["eventSequence"] = index
+
+        with self.assertRaisesRegex(EvidenceError, "seek window"):
+            self.run_verify(evidence)
+
     def test_rejects_join_without_single_attempt(self):
         evidence = Evidence()
         rows = evidence.cases["E3"]["fetch"]
