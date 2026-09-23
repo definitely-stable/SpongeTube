@@ -482,6 +482,9 @@ class FetchBroker internal constructor(
             event = event,
             outcome = outcome.kind,
         )
+        synchronized(registryLock) {
+            shared.consumers.clear()
+        }
     }
 
     private fun ensureCompatible(
@@ -659,6 +662,7 @@ private class SharedFetch(
 
     var state: SharedFetchState = SharedFetchState.RUNNING
     var ownerJob: Job? = null
+    @Volatile
     var attemptsStarted: Int = 0
     var cancelOutcome: FetchOutcomeKind? = null
 }
@@ -690,6 +694,7 @@ private class FetchByteAccumulator {
     private var duplicateRangeBytes = 0L
     private var rejectedOrUnmappedBytes = 0L
 
+    @Synchronized
     fun recordAccepted(
         start: Long,
         endExclusive: Long,
@@ -721,6 +726,7 @@ private class FetchByteAccumulator {
         addInterval(ByteInterval(start, endExclusive))
     }
 
+    @Synchronized
     fun recordRejected(length: Long) {
         require(length > 0)
         networkBytes = Math.addExact(networkBytes, length)
@@ -730,6 +736,7 @@ private class FetchByteAccumulator {
         )
     }
 
+    @Synchronized
     fun snapshot(): FetchByteAccounting = FetchByteAccounting(
         networkBytes = networkBytes,
         uniqueRangeBytes = uniqueRangeBytes,
