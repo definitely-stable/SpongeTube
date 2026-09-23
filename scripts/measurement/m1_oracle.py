@@ -7,10 +7,10 @@ Sponge storage root:
 
     SQLite snapshot
         + immutable extent files
-        -> committed-extents-v1
+        -> committed-extents-v1/v2
         -> verified-extent-files-v1
         -> independent coverage reconstruction
-        -> coverage-snapshot-v1 oracle
+        -> coverage-snapshot-v1/v2 oracle
         -> exact semantic comparison with runtime coverage
 
 The filesystem verifier derives existence, byte length and SHA-256 itself. Metadata
@@ -936,7 +936,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     export = subparsers.add_parser(
         "export-db",
-        help="export committed-extents-v1 from a copied Room SQLite database",
+        help="export versioned committed extents from a copied Room SQLite database",
     )
     export.add_argument("--database", required=True, type=pathlib.Path)
     export.add_argument("--snapshot-id", required=True)
