@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/coverage-snapshot-v2.schema.json",
+  "title": "SpongeTube M1 Coverage Snapshot v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "eventElapsedRealtimeNs",
+    "sessionId",
+    "mediaAssetId",
+    "playheadUs",
+    "requiredTrackIds",
+    "requiredRepresentations",
+    "perTrackPublishedIntervals",
+    "playableIntervals",
+    "durablePlayableEndUs",
+    "durableReserveUs"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 2 },
+    "eventSequence": { "type": "integer", "minimum": 0 },
+    "eventElapsedRealtimeNs": { "type": "integer", "minimum": 0 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "mediaAssetId": { "type": "string", "minLength": 1 },
+    "playheadUs": { "type": "integer", "minimum": 0 },
+    "requiredTrackIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "requiredRepresentations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "perTrackPublishedIntervals": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["startUs", "endUs"],
+          "properties": {
+            "startUs": { "type": "integer", "minimum": 0 },
+            "endUs": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "playableIntervals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["startUs", "endUs"],
+        "properties": {
+          "startUs": { "type": "integer", "minimum": 0 },
+          "endUs": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "durablePlayableEndUs": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "durableReserveUs": { "type": "integer", "minimum": 0 },
+    "playerBufferedAheadUs": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

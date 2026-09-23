@@ -10,7 +10,7 @@ The kernel compares three evidence domains:
 
 1. copied Room/SQLite metadata — what the app says it published;
 2. pulled immutable extent files — what bytes independently exist on disk;
-3. runtime `coverage-snapshot-v1` — what CoverageIndex claims is playable.
+3. runtime coverage snapshot — v1 for historical pre-asset evidence, v2 for asset-scoped M1-C runs — what CoverageIndex claims is playable.
 
 Database length/SHA-256 values are never accepted as file facts. The host verifier derives actual file existence, length and SHA-256 from the pulled storage root.
 
@@ -32,7 +32,7 @@ extents/
 metadata/
 ```
 
-For database schema v1, extent paths are independently derived as:
+For ExtentStore database schemas v1 and v2, extent paths are independently derived as:
 
 ```text
 extents/<first-2-of-sha256(extentId)>/<sha256(extentId)>.extent
@@ -63,15 +63,16 @@ python3 scripts/measurement/m1_oracle.py verify-files \
   --output build/m1/verified-extent-files.json
 ```
 
-Reconstruct oracle coverage:
+Reconstruct oracle coverage. Asset-scoped committed-extents-v2 requires an explicit media asset; historical v1 omits that option:
 
 ```bash
 python3 scripts/measurement/m1_oracle.py reconstruct \
   --committed build/m1/committed-extents.json \
   --verified build/m1/verified-extent-files.json \
   --playhead-us 0 \
-  --required video=v1 \
-  --required audio=a1 \
+  --media-asset-id fixture:F1 \
+  --required video-main=f1-video-0 \
+  --required audio-main=f1-audio-1 \
   --output build/m1/oracle-coverage.json
 ```
 
@@ -94,8 +95,9 @@ python3 scripts/measurement/m1_oracle.py verify-run \
   --session-id run-123 \
   --snapshot-kind POST_RECOVERY \
   --playhead-us 0 \
-  --required video=v1 \
-  --required audio=a1 \
+  --media-asset-id fixture:F1 \
+  --required video-main=f1-video-0 \
+  --required audio-main=f1-audio-1 \
   --committed-output build/m1/committed-extents.json \
   --verified-output build/m1/verified-extent-files.json \
   --oracle-output build/m1/oracle-coverage.json
@@ -111,4 +113,30 @@ Exit status:
 
 #48 owns the independent host kernel.
 
-#38 owns the runtime CoverageIndex snapshot and deterministic seed-manifest producers, including the forthcoming canonical `mediaAssetId` identity. M1-F/M1-G own process-kill acquisition and canonical evidence collection; they should consume this kernel without reimplementing its interval logic.
+#38 owns the asset-scoped runtime CoverageIndex, coverage-snapshot-v2 field producer and deterministic seed-manifest-v2 construction producer. The seed planner is intentionally not a coverage oracle; it only binds exact F1 timeline/resource identities and construction attempts. M1-F/M1-G own process-kill acquisition and canonical evidence collection; they should consume this kernel without reimplementing its interval logic.
+
+
+## Deterministic M1-C seed construction
+
+Produce a canonical construction manifest directly from the committed F1 fixture:
+
+```bash
+python3 scripts/measurement/m1_seed_planner.py \
+  --seed-id S30_AUDIO_HOLE \
+  --output build/m1/seed-manifest.json
+```
+
+The producer parses `F1/manifest.mpd`, independently reads every selected fixture file and verifies its actual length/SHA-256 against `test-fixtures/media/manifest.json`. It records exact construction/dependency identity and deliberately does not emit expected playable coverage or reserve.
+
+To verify that a real committed snapshot is exactly the requested seed construction:
+
+```bash
+python3 scripts/measurement/m1_seed_planner.py \
+  --seed-id S30_AUDIO_HOLE \
+  --output build/m1/seed-manifest.json \
+  --verify-committed build/m1/committed-extents.json
+```
+
+This verification checks identity, dependencies, immutable byte facts and negative-seed construction only. Runtime CoverageIndex and `m1_oracle.py` still calculate coverage independently.
+
+The API 36 CI path executes all ten canonical seeds through the real Android ExtentStore, copies the closed Room database/storage root plus runtime coverage artifact, then runs `scripts/ci/verify-m1-c-evidence.sh`. The script invokes the #48 filesystem/oracle verifier and the construction verifier for every seed.

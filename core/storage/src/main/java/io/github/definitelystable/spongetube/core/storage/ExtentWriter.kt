@@ -170,6 +170,7 @@ internal class ExtentWriter(
             store.hit(ExtentFaultPoint.AFTER_VERIFY)
 
             val stored = StoredExtent(
+                mediaAssetId = spec.mediaAssetId,
                 extentId = spec.extentId,
                 trackId = spec.trackId,
                 representationId = spec.representationId,
@@ -288,6 +289,7 @@ internal class ExtentWriter(
 
 private fun StoredExtent.toCommittedExtent(): CommittedExtent =
     CommittedExtent(
+        mediaAssetId = mediaAssetId,
         extentId = extentId,
         trackId = trackId,
         representationId = representationId,

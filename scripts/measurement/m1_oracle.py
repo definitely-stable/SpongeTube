@@ -7,10 +7,10 @@ Sponge storage root:
 
     SQLite snapshot
         + immutable extent files
-        -> committed-extents-v1
+        -> committed-extents-v1/v2
         -> verified-extent-files-v1
         -> independent coverage reconstruction
-        -> coverage-snapshot-v1 oracle
+        -> coverage-snapshot-v1/v2 oracle
         -> exact semantic comparison with runtime coverage
 
 The filesystem verifier derives existence, byte length and SHA-256 itself. Metadata
@@ -36,7 +36,7 @@ from schema_subset import SchemaContractError, validate_instance
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
-SUPPORTED_DATABASE_SCHEMA_VERSIONS = frozenset({1})
+SUPPORTED_DATABASE_SCHEMA_VERSIONS = frozenset({1, 2})
 
 SEMANTIC_COVERAGE_FIELDS = (
     "sessionId",
@@ -47,6 +47,8 @@ SEMANTIC_COVERAGE_FIELDS = (
     "durablePlayableEndUs",
     "durableReserveUs",
 )
+
+LEGACY_UNSCOPED_MEDIA_ASSET_ID = "__legacy_unscoped__"
 
 
 @dataclass(frozen=True, order=True)
@@ -163,6 +165,31 @@ def _validate_artifact(
     validate_instance(_load_schema(schema_name), dict(artifact))
 
 
+def _schema_version(
+    artifact: Mapping[str, object],
+    *,
+    kind: str,
+) -> int:
+    version = int(artifact.get("schemaVersion", 0))
+    if version not in {1, 2}:
+        raise ValueError(f"unsupported {kind} schemaVersion: {version}")
+    return version
+
+
+def _committed_schema_name(
+    artifact: Mapping[str, object],
+) -> str:
+    version = _schema_version(artifact, kind="committed-extents")
+    return f"committed-extents-v{version}.schema.json"
+
+
+def _coverage_schema_name(
+    artifact: Mapping[str, object],
+) -> str:
+    version = _schema_version(artifact, kind="coverage-snapshot")
+    return f"coverage-snapshot-v{version}.schema.json"
+
+
 def _require_supported_database_schema_version(
     value: object,
 ) -> int:
@@ -216,11 +243,20 @@ def reconstruct_committed_coverage(
     committed_rows: Iterable[Mapping[str, object]],
     required_representations: Mapping[str, str],
     verified_files: Mapping[str, Mapping[str, object]],
+    *,
+    media_asset_id: str | None = None,
 ) -> dict[str, tuple[Interval, ...]]:
     """Reconstruct conservative coverage from committed metadata + file facts."""
 
     if not required_representations:
         raise ValueError("at least one required representation is required")
+    if media_asset_id is not None:
+        if not media_asset_id:
+            raise ValueError("media asset id must not be empty")
+        if media_asset_id == LEGACY_UNSCOPED_MEDIA_ASSET_ID:
+            raise ValueError(
+                "legacy unscoped media asset id cannot be a coverage target"
+            )
 
     rows: dict[str, Mapping[str, object]] = {}
     for row in committed_rows:
@@ -254,6 +290,11 @@ def reconstruct_committed_coverage(
                 and rows[dep].get("trackId") == row.get("trackId")
                 and rows[dep].get("representationId")
                 == row.get("representationId")
+                and (
+                    "mediaAssetId" not in row
+                    or rows[dep].get("mediaAssetId")
+                    == row.get("mediaAssetId")
+                )
                 for dep in dependencies
             )
             if same_identity and dependencies <= ready:
@@ -266,6 +307,12 @@ def reconstruct_committed_coverage(
 
     for extent_id in ready:
         row = rows[extent_id]
+        if (
+            media_asset_id is not None
+            and row.get("mediaAssetId") != media_asset_id
+        ):
+            continue
+
         track_id = str(row["trackId"])
         required_representation = required_representations.get(track_id)
         if required_representation is None:
@@ -273,13 +320,14 @@ def reconstruct_committed_coverage(
         if row.get("representationId") != required_representation:
             continue
 
-        start = row.get("mediaStartUs")
-        end = row.get("mediaEndUs")
-        if start is None or end is None:
-            # Initialization/index/dependency-only extent.
+        start_us = row.get("mediaStartUs")
+        end_us = row.get("mediaEndUs")
+        if start_us is None or end_us is None:
             continue
 
-        per_track[track_id].append(Interval(int(start), int(end)))
+        per_track[track_id].append(
+            Interval(int(start_us), int(end_us))
+        )
 
     return {
         track_id: normalize_intervals(intervals)
@@ -292,13 +340,16 @@ def oracle_snapshot(
     required_representations: Mapping[str, str],
     verified_files: Mapping[str, Mapping[str, object]],
     playhead_us: int,
+    *,
+    media_asset_id: str | None = None,
 ) -> dict[str, object]:
-    """Return the semantic subset used by unit tests and canonical snapshots."""
+    """Return the semantic subset used by canonical snapshots."""
 
     per_track = reconstruct_committed_coverage(
         committed_rows,
         required_representations,
         verified_files,
+        media_asset_id=media_asset_id,
     )
     required_track_ids = sorted(required_representations)
     playable = intersect_required(per_track, required_track_ids)
@@ -310,7 +361,7 @@ def oracle_snapshot(
             playable_end = interval.end_us
             break
 
-    return {
+    result: dict[str, object] = {
         "perTrackPublishedIntervals": {
             track_id: [
                 {"startUs": interval.start_us, "endUs": interval.end_us}
@@ -325,6 +376,9 @@ def oracle_snapshot(
         "durablePlayableEndUs": playable_end,
         "durableReserveUs": reserve,
     }
+    if media_asset_id is not None:
+        result["mediaAssetId"] = media_asset_id
+    return result
 
 
 def export_committed_snapshot(
@@ -376,11 +430,21 @@ def export_committed_snapshot(
                 str(row["dependency_extent_id"])
             )
 
+        artifact_schema_version = (
+            2 if database_schema_version >= 2 else 1
+        )
+        media_asset_column = (
+            "media_asset_id, "
+            if artifact_schema_version == 2
+            else ""
+        )
+
         extents: list[dict[str, object]] = []
         rows = connection.execute(
-            """
+            f"""
             SELECT
                 extent_id,
+                {media_asset_column}
                 publication_state,
                 integrity_state,
                 track_id,
@@ -395,8 +459,7 @@ def export_committed_snapshot(
             """
         )
         for row in rows:
-            extents.append(
-                {
+            extent: dict[str, object] = {
                     "extentId": str(row["extent_id"]),
                     "state": str(row["publication_state"]),
                     "integrityState": str(row["integrity_state"]),
@@ -412,17 +475,19 @@ def export_committed_snapshot(
                     "sha256": str(row["sha256"]),
                     "storagePath": str(row["storage_path"]),
                 }
-            )
+            if artifact_schema_version == 2:
+                extent["mediaAssetId"] = str(row["media_asset_id"])
+            extents.append(extent)
 
     snapshot: dict[str, object] = {
-        "schemaVersion": 1,
+        "schemaVersion": artifact_schema_version,
         "snapshotId": snapshot_id,
         "sessionId": session_id,
         "snapshotKind": snapshot_kind,
         "databaseSchemaVersion": database_schema_version,
         "extents": extents,
     }
-    _validate_artifact(snapshot, "committed-extents-v1.schema.json")
+    _validate_artifact(snapshot, _committed_schema_name(snapshot))
     return snapshot
 
 
@@ -494,7 +559,7 @@ def verify_extent_files(
 
     _validate_artifact(
         committed_snapshot,
-        "committed-extents-v1.schema.json",
+        _committed_schema_name(committed_snapshot),
     )
     if not storage_root.is_dir():
         raise ValueError(f"storage root is not a directory: {storage_root}")
@@ -592,12 +657,18 @@ def build_canonical_oracle_snapshot(
     verified_snapshot: Mapping[str, object],
     required_representations: Mapping[str, str],
     playhead_us: int,
+    *,
+    media_asset_id: str | None = None,
 ) -> dict[str, object]:
-    """Build a schema-valid coverage-snapshot-v1 from independent inputs."""
+    """Build a schema-valid coverage snapshot from independent inputs."""
 
+    committed_schema_version = _schema_version(
+        committed_snapshot,
+        kind="committed-extents",
+    )
     _validate_artifact(
         committed_snapshot,
-        "committed-extents-v1.schema.json",
+        _committed_schema_name(committed_snapshot),
     )
     _validate_artifact(
         verified_snapshot,
@@ -620,6 +691,20 @@ def build_canonical_oracle_snapshot(
             raise ValueError(
                 "required track and representation ids must be non-empty"
             )
+
+    if committed_schema_version == 2:
+        if not media_asset_id:
+            raise ValueError(
+                "media_asset_id is required for committed-extents-v2"
+            )
+        if media_asset_id == LEGACY_UNSCOPED_MEDIA_ASSET_ID:
+            raise ValueError(
+                "legacy unscoped media asset id cannot be a coverage target"
+            )
+    elif media_asset_id is not None:
+        raise ValueError(
+            "media_asset_id cannot be used with committed-extents-v1"
+        )
 
     raw_extents = committed_snapshot["extents"]
     assert isinstance(raw_extents, list)
@@ -644,13 +729,12 @@ def build_canonical_oracle_snapshot(
         required_representations,
         verified_file_map,
         playhead_us,
+        media_asset_id=media_asset_id,
     )
 
     required_track_ids = sorted(required_representations)
     snapshot: dict[str, object] = {
-        "schemaVersion": 1,
-        # Oracle evidence has no Android runtime event clock. These fields make
-        # the artifact schema-compatible but are intentionally non-semantic.
+        "schemaVersion": committed_schema_version,
         "eventSequence": 0,
         "eventElapsedRealtimeNs": 0,
         "sessionId": committed_snapshot["sessionId"],
@@ -663,7 +747,7 @@ def build_canonical_oracle_snapshot(
         **semantic,
         "playerBufferedAheadUs": None,
     }
-    _validate_artifact(snapshot, "coverage-snapshot-v1.schema.json")
+    _validate_artifact(snapshot, _coverage_schema_name(snapshot))
     return snapshot
 
 
@@ -671,15 +755,30 @@ def compare_coverage_semantics(
     runtime_snapshot: Mapping[str, object],
     oracle: Mapping[str, object],
 ) -> list[str]:
-    """Return deterministic semantic mismatch descriptions.
+    """Return deterministic semantic mismatch descriptions."""
 
-    Event sequence/timestamps and playerBufferedAheadUs are deliberately excluded:
-    the host oracle has no Android runtime clock and PlayerBufferedAhead is not
-    DurablePlayableReserve.
-    """
+    runtime_version = _schema_version(
+        runtime_snapshot,
+        kind="coverage-snapshot",
+    )
+    oracle_version = _schema_version(
+        oracle,
+        kind="coverage-snapshot",
+    )
+    if runtime_version != oracle_version:
+        return [
+            "coverage schemaVersion mismatch: "
+            f"runtime={runtime_version} oracle={oracle_version}"
+        ]
 
-    _validate_artifact(runtime_snapshot, "coverage-snapshot-v1.schema.json")
-    _validate_artifact(oracle, "coverage-snapshot-v1.schema.json")
+    _validate_artifact(
+        runtime_snapshot,
+        _coverage_schema_name(runtime_snapshot),
+    )
+    _validate_artifact(
+        oracle,
+        _coverage_schema_name(oracle),
+    )
 
     errors: list[str] = []
 
@@ -698,7 +797,11 @@ def compare_coverage_semantics(
             f"runtime={runtime_track_ids!r} oracle={oracle_track_ids!r}"
         )
 
-    for field in SEMANTIC_COVERAGE_FIELDS:
+    semantic_fields = list(SEMANTIC_COVERAGE_FIELDS)
+    if runtime_version == 2:
+        semantic_fields.append("mediaAssetId")
+
+    for field in semantic_fields:
         runtime_value = runtime_snapshot.get(field)
         oracle_value = oracle.get(field)
         if runtime_value != oracle_value:
@@ -761,6 +864,7 @@ def _command_reconstruct(args: argparse.Namespace) -> int:
         verified,
         _parse_required(args.required),
         args.playhead_us,
+        media_asset_id=args.media_asset_id,
     )
     _write_json(args.output, payload)
     return 0
@@ -796,6 +900,7 @@ def _command_verify_run(args: argparse.Namespace) -> int:
         verified,
         required,
         args.playhead_us,
+        media_asset_id=args.media_asset_id,
     )
 
     _write_json(args.committed_output, committed)
@@ -831,7 +936,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     export = subparsers.add_parser(
         "export-db",
-        help="export committed-extents-v1 from a copied Room SQLite database",
+        help="export versioned committed extents from a copied Room SQLite database",
     )
     export.add_argument("--database", required=True, type=pathlib.Path)
     export.add_argument("--snapshot-id", required=True)
@@ -861,6 +966,7 @@ def _build_parser() -> argparse.ArgumentParser:
     reconstruct.add_argument("--committed", required=True, type=pathlib.Path)
     reconstruct.add_argument("--verified", required=True, type=pathlib.Path)
     reconstruct.add_argument("--playhead-us", required=True, type=int)
+    reconstruct.add_argument("--media-asset-id")
     _add_required_representations(reconstruct)
     reconstruct.add_argument("--output", required=True, type=pathlib.Path)
     reconstruct.set_defaults(handler=_command_reconstruct)
@@ -888,6 +994,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     verify_run.add_argument("--playhead-us", required=True, type=int)
+    verify_run.add_argument("--media-asset-id")
     _add_required_representations(verify_run)
     verify_run.add_argument(
         "--committed-output",

@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteDiskIOException
 import android.database.sqlite.SQLiteFullException
@@ -313,6 +314,161 @@ class ExtentStoreAndroidTest {
             recovering.close()
         }
 
+    @Test
+    fun sameExtentIdCannotBeReboundAcrossAssets() = runBlocking {
+        val bytes = "globally-unique-extent".encodeToByteArray()
+        val store = openStore()
+        val first = spec(
+            id = "global-id",
+            bytes = bytes,
+        )
+
+        store.writeExtent(first) {
+            write(bytes)
+        }
+
+        expectThrows<ExtentConflictException> {
+            store.writeExtent(
+                first.copy(
+                    mediaAssetId = MediaAssetId("asset-other"),
+                ),
+            ) {
+                write(bytes)
+            }
+        }
+
+        val committed = store.committedExtents().single()
+        assertEquals(MediaAssetId("asset-test"), committed.mediaAssetId)
+        store.close()
+    }
+
+    @Test
+    fun roomV1MigrationDiscardsUnscopedCacheAndAllowsNamedRewrite() =
+        runBlocking {
+            val extentId = ExtentId("legacy-v1")
+            val bytes = "legacy-published-extent".encodeToByteArray()
+            val digest = Sha256.digest(bytes)
+            val file = extentFile(extentId)
+            file.parentFile?.mkdirs()
+            file.writeBytes(bytes)
+
+            databaseFile.parentFile?.mkdirs()
+            SQLiteDatabase.openOrCreateDatabase(databaseFile, null).use { db ->
+                db.execSQL(
+                    """
+                    CREATE TABLE extents (
+                        extent_id TEXT NOT NULL PRIMARY KEY,
+                        track_id TEXT NOT NULL,
+                        representation_id TEXT NOT NULL,
+                        media_start_us INTEGER,
+                        media_end_us INTEGER,
+                        byte_start INTEGER,
+                        byte_end_exclusive INTEGER,
+                        length INTEGER NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        storage_path TEXT NOT NULL,
+                        publication_state TEXT NOT NULL,
+                        integrity_state TEXT NOT NULL,
+                        quarantine_reason TEXT,
+                        published_at_epoch_ms INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX index_extents_track_id_representation_id " +
+                        "ON extents(track_id, representation_id)",
+                )
+                db.execSQL(
+                    "CREATE INDEX index_extents_publication_state_integrity_state " +
+                        "ON extents(publication_state, integrity_state)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE extent_dependencies (
+                        extent_id TEXT NOT NULL,
+                        dependency_extent_id TEXT NOT NULL,
+                        PRIMARY KEY(extent_id, dependency_extent_id)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX index_extent_dependencies_dependency_extent_id " +
+                        "ON extent_dependencies(dependency_extent_id)",
+                )
+                db.execSQL(
+                    "CREATE TABLE room_master_table " +
+                        "(id INTEGER PRIMARY KEY, identity_hash TEXT)",
+                )
+                db.execSQL(
+                    "INSERT OR REPLACE INTO room_master_table " +
+                        "(id, identity_hash) VALUES(42, ?)",
+                    arrayOf<Any?>("0bf05a98b8873edf57ddf005dbc42bdd"),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO extents(
+                        extent_id,
+                        track_id,
+                        representation_id,
+                        media_start_us,
+                        media_end_us,
+                        byte_start,
+                        byte_end_exclusive,
+                        length,
+                        sha256,
+                        storage_path,
+                        publication_state,
+                        integrity_state,
+                        quarantine_reason,
+                        published_at_epoch_ms
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                    """.trimIndent(),
+                    arrayOf<Any?>(
+                        extentId.value,
+                        "video",
+                        "v1",
+                        0L,
+                        10_000_000L,
+                        0L,
+                        bytes.size.toLong(),
+                        bytes.size.toLong(),
+                        digest.hex,
+                        ExtentPathLayout(root).finalRelativePath(extentId),
+                        "PUBLISHED",
+                        "VALID",
+                        1L,
+                    ),
+                )
+                db.version = 1
+            }
+
+            val migrated = openStore()
+            assertEquals(
+                1,
+                migrated.initialRecoveryReport.deletedOrphanFiles,
+            )
+            assertEquals(
+                0,
+                migrated.initialRecoveryReport.verifiedPublishedExtents,
+            )
+            assertTrue(migrated.committedExtents().isEmpty())
+            assertFalse(extentFile(extentId).exists())
+
+            val rewritten = migrated.writeExtent(
+                spec(
+                    id = extentId.value,
+                    bytes = bytes,
+                ),
+            ) {
+                write(bytes)
+            }
+
+            assertEquals(extentId, rewritten.extentId)
+            assertEquals(MediaAssetId("asset-test"), rewritten.mediaAssetId)
+            assertTrue(extentFile(extentId).isFile)
+            migrated.close()
+        }
+
     private suspend fun openStore(): ExtentStore =
         ExtentStore.openAndroidForTest(
             context = context,
@@ -338,6 +494,7 @@ class ExtentStoreAndroidTest {
         includeExpectedSha256: Boolean = true,
     ): ExtentSpec =
         ExtentSpec(
+            mediaAssetId = MediaAssetId("asset-test"),
             extentId = ExtentId(id),
             trackId = "video",
             representationId = "v1",

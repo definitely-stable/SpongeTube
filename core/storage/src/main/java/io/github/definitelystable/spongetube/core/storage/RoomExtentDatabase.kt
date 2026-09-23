@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.storage
 
+import androidx.room3.AutoMigration
 import androidx.room3.ColumnInfo
 import androidx.room3.Dao
 import androidx.room3.Database
@@ -12,11 +13,14 @@ import androidx.room3.Query
 import androidx.room3.RoomDatabase
 import androidx.room3.Transaction
 import androidx.room3.Update
+import androidx.room3.migration.AutoMigrationSpec
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 
 @Entity(
     tableName = "extents",
     indices = [
-        Index(value = ["track_id", "representation_id"]),
+        Index(value = ["media_asset_id", "track_id", "representation_id"]),
         Index(value = ["publication_state", "integrity_state"]),
     ],
 )
@@ -24,6 +28,11 @@ internal data class ExtentEntity(
     @PrimaryKey
     @ColumnInfo(name = "extent_id")
     val extentId: String,
+    @ColumnInfo(
+        name = "media_asset_id",
+        defaultValue = "'__legacy_unscoped__'",
+    )
+    val mediaAssetId: String,
     @ColumnInfo(name = "track_id")
     val trackId: String,
     @ColumnInfo(name = "representation_id")
@@ -73,6 +82,7 @@ internal data class ExtentSnapshotRow(
 )
 
 internal data class ExtentWritePreflight(
+    val mediaAssetId: String,
     val extentId: String,
     val trackId: String,
     val representationId: String,
@@ -209,6 +219,7 @@ private fun validatePreflightCandidate(
 ) {
     val immutableIdentityMatches =
         existing.extentId == candidate.extentId &&
+            existing.mediaAssetId == candidate.mediaAssetId &&
             existing.trackId == candidate.trackId &&
             existing.representationId == candidate.representationId &&
             existing.mediaStartUs == candidate.mediaStartUs &&
@@ -234,6 +245,7 @@ private fun validateRepairCandidate(
 ) {
     val immutableIdentityMatches =
         existing.extentId == candidate.extentId &&
+            existing.mediaAssetId == candidate.mediaAssetId &&
             existing.trackId == candidate.trackId &&
             existing.representationId == candidate.representationId &&
             existing.mediaStartUs == candidate.mediaStartUs &&
@@ -264,12 +276,30 @@ private fun requireRepairableMatch(
     }
 }
 
+internal class PurgeUnscopedV1CacheMigration : AutoMigrationSpec {
+    override suspend fun onPostMigrate(connection: SQLiteConnection) {
+        // v1 did not persist MediaAssetId. Retaining those rows would either
+        // invent provenance or permanently reserve their global ExtentId.
+        // The payload is rebuildable cache: drop only metadata here and let
+        // normal ExtentStore recovery remove the resulting orphan files.
+        connection.execSQL("DELETE FROM extent_dependencies")
+        connection.execSQL("DELETE FROM extents")
+    }
+}
+
 @Database(
     entities = [
         ExtentEntity::class,
         ExtentDependencyEntity::class,
     ],
-    version = 1,
+    version = 2,
+    autoMigrations = [
+        AutoMigration(
+            from = 1,
+            to = 2,
+            spec = PurgeUnscopedV1CacheMigration::class,
+        ),
+    ],
     exportSchema = true,
 )
 internal abstract class ExtentDatabase : RoomDatabase() {

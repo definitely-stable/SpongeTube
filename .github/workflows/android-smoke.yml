@@ -8,6 +8,7 @@ on:
       - "benchmark/**"
       - "playback/**"
       - "core/storage/**"
+      - "core/engine/**"
       - "tools/media-lab/**"
       - "scripts/ci/**"
       - "scripts/measurement/**"
@@ -22,6 +23,7 @@ on:
       - "benchmark/**"
       - "playback/**"
       - "core/storage/**"
+      - "core/engine/**"
       - "tools/media-lab/**"
       - "scripts/ci/**"
       - "scripts/measurement/**"
@@ -69,6 +71,7 @@ jobs:
             :app:assembleBenchmark \
             :benchmark:assembleBenchmark \
             :core:storage:assembleDebug \
+            :core:engine:assembleDebug \
             :tools:media-lab:installDist
 
       - name: Prepare API 36 emulator
@@ -79,12 +82,16 @@ jobs:
             m0e-api36 \
             build/android-smoke/device
 
-      - name: Run M1 storage integration
+      - name: Run M1 storage and coverage integration
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew --dependency-verification=strict \
-            :core:storage:connectedDebugAndroidTest
+            :core:storage:connectedDebugAndroidTest \
+            :core:engine:connectedDebugAndroidTest
+
+          bash scripts/ci/verify-m1-c-evidence.sh \
+            build/android-smoke/m1-c-evidence
 
       - name: Run N0 and N1 smoke scenarios
         shell: bash
@@ -260,6 +267,9 @@ jobs:
           path: |
             build/android-smoke/
             benchmark/build/outputs/androidTest-results/
+            core/storage/build/outputs/androidTest-results/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/reports/
           if-no-files-found: error
           retention-days: 14
 

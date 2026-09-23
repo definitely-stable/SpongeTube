@@ -10,6 +10,7 @@ on:
       - "app/**"
       - "playback/**"
       - "core/storage/**"
+      - "core/engine/**"
       - "settings.gradle.kts"
       - "build.gradle.kts"
       - "gradle/libs.versions.toml"
@@ -64,6 +65,7 @@ jobs:
             :app:assembleBenchmark \
             :benchmark:assembleBenchmark \
             :core:storage:assembleDebug \
+            :core:engine:assembleDebug \
             :tools:media-lab:installDist
 
       - name: Prepare emulator
@@ -74,12 +76,13 @@ jobs:
             "m0-compat-api${{ matrix.api }}" \
             "build/android-compat/api-${{ matrix.api }}/device"
 
-      - name: Run M1 storage compatibility
+      - name: Run M1 storage and coverage compatibility
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew --dependency-verification=strict \
-            :core:storage:connectedDebugAndroidTest
+            :core:storage:connectedDebugAndroidTest \
+            :core:engine:connectedDebugAndroidTest
 
       - name: Run N0 compatibility smoke
         shell: bash
@@ -215,6 +218,8 @@ jobs:
             benchmark/build/outputs/androidTest-results/
             core/storage/build/outputs/androidTest-results/
             core/storage/build/reports/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/reports/
             build/reports/dependency-verification/
             build/reports/configuration-cache/
           if-no-files-found: warn

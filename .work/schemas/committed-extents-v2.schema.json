@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/committed-extents-v2.schema.json",
+  "title": "SpongeTube M1 Committed Extents Snapshot v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "snapshotId",
+    "sessionId",
+    "snapshotKind",
+    "databaseSchemaVersion",
+    "extents"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 2 },
+    "snapshotId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "snapshotKind": {
+      "enum": ["LIVE_COMMITTED", "POST_RECOVERY"]
+    },
+    "databaseSchemaVersion": { "type": "integer", "minimum": 2 },
+    "extents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "extentId",
+          "mediaAssetId",
+          "state",
+          "integrityState",
+          "trackId",
+          "representationId",
+          "mediaStartUs",
+          "mediaEndUs",
+          "dependencyExtentIds",
+          "length",
+          "sha256",
+          "storagePath"
+        ],
+        "properties": {
+          "extentId": { "type": "string", "minLength": 1 },
+          "mediaAssetId": { "type": "string", "minLength": 1 },
+          "state": {
+            "enum": ["PUBLISHED", "QUARANTINED", "DELETED"]
+          },
+          "integrityState": {
+            "enum": ["UNKNOWN", "VALID", "CORRUPT"]
+          },
+          "trackId": { "type": "string", "minLength": 1 },
+          "representationId": { "type": "string", "minLength": 1 },
+          "mediaStartUs": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "mediaEndUs": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "dependencyExtentIds": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "length": { "type": "integer", "minimum": 1 },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "storagePath": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

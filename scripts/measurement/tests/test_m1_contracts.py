@@ -25,11 +25,14 @@ EXAMPLES = SCHEMAS / "examples" / "m1"
 CONTRACTS = {
     "m1-run-manifest-v1.schema.json": "m1-run-manifest-v1.example.json",
     "seed-manifest-v1.schema.json": "seed-manifest-v1.example.json",
+    "seed-manifest-v2.schema.json": "seed-manifest-v2.example.json",
     "coverage-snapshot-v1.schema.json": "coverage-snapshot-v1.example.json",
+    "coverage-snapshot-v2.schema.json": "coverage-snapshot-v2.example.json",
     "extent-events-v1.schema.json": "extent-event-v1.example.json",
     "fetch-events-v1.schema.json": "fetch-event-v1.example.json",
     "recovery-summary-v1.schema.json": "recovery-summary-v1.example.json",
     "committed-extents-v1.schema.json": "committed-extents-v1.example.json",
+    "committed-extents-v2.schema.json": "committed-extents-v2.example.json",
     "verified-extent-files-v1.schema.json": "verified-extent-files-v1.example.json",
 }
 
@@ -49,9 +52,10 @@ class M1SchemaContractTest(unittest.TestCase):
                     schema["$schema"],
                 )
                 self.assertEqual(
-                    1,
+                    example["schemaVersion"],
                     schema["properties"]["schemaVersion"]["const"],
                 )
+                self.assertIn(example["schemaVersion"], (1, 2))
                 validate_instance(schema, example)
 
     def test_validator_rejects_missing_required_property(self):
@@ -84,6 +88,42 @@ class M1SchemaContractTest(unittest.TestCase):
         )
         broken = copy.deepcopy(example)
         broken["fixtureSha256"] = "not-a-sha256"
+
+        with self.assertRaises(SchemaContractError):
+            validate_instance(schema, broken)
+
+    def test_asset_scoped_v2_requires_media_asset_id(self):
+        schema = json.loads(
+            (SCHEMAS / "coverage-snapshot-v2.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        example = json.loads(
+            (EXAMPLES / "coverage-snapshot-v2.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        broken = copy.deepcopy(example)
+        del broken["mediaAssetId"]
+
+        with self.assertRaises(SchemaContractError):
+            validate_instance(schema, broken)
+
+    def test_seed_v2_is_construction_only_not_coverage_oracle(self):
+        schema = json.loads(
+            (SCHEMAS / "seed-manifest-v2.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        example = json.loads(
+            (EXAMPLES / "seed-manifest-v2.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        broken = copy.deepcopy(example)
+        broken["playableCoverage"] = [
+            {"startUs": 0, "endUs": 10_000_000}
+        ]
 
         with self.assertRaises(SchemaContractError):
             validate_instance(schema, broken)
