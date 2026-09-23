@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/fetch-events-v2.schema.json",
+  "title": "SpongeTube M1 Fetch Event v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "eventElapsedRealtimeNs",
+    "sessionId",
+    "fetchId",
+    "fetchKey",
+    "attempt",
+    "attemptCorrelationId",
+    "event",
+    "consumerIds",
+    "effectivePriority",
+    "requestedByteStart",
+    "requestedByteEndExclusive",
+    "networkBytes",
+    "uniqueRangeBytes",
+    "duplicateRangeBytes",
+    "rejectedOrUnmappedBytes",
+    "singleFlightJoined",
+    "outcome"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 2 },
+    "eventSequence": { "type": "integer", "minimum": 0 },
+    "eventElapsedRealtimeNs": { "type": "integer", "minimum": 0 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "fetchId": { "type": "string", "minLength": 1 },
+    "fetchKey": { "type": "string", "minLength": 1 },
+    "attempt": { "type": ["integer", "null"], "minimum": 1 },
+    "attemptCorrelationId": { "type": ["string", "null"] },
+    "event": {
+      "enum": [
+        "OWNER_REGISTERED",
+        "CONSUMER_JOINED",
+        "PRIORITY_RAISED",
+        "ATTEMPT_STARTED",
+        "ATTEMPT_COMPLETED",
+        "ATTEMPT_FAILED",
+        "CONSUMER_RELEASED",
+        "OWNER_COMPLETED",
+        "OWNER_FAILED",
+        "OWNER_CANCELLED"
+      ]
+    },
+    "consumerIds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "effectivePriority": { "enum": ["RESERVE", "PLAYBACK"] },
+    "requestedByteStart": { "type": ["integer", "null"], "minimum": 0 },
+    "requestedByteEndExclusive": { "type": ["integer", "null"], "minimum": 0 },
+    "networkBytes": { "type": "integer", "minimum": 0 },
+    "uniqueRangeBytes": { "type": "integer", "minimum": 0 },
+    "duplicateRangeBytes": { "type": "integer", "minimum": 0 },
+    "rejectedOrUnmappedBytes": { "type": "integer", "minimum": 0 },
+    "singleFlightJoined": { "type": "boolean" },
+    "outcome": {
+      "enum": [
+        null,
+        "SUCCESS",
+        "RETRYABLE_TRANSPORT_FAILURE",
+        "TERMINAL_TRANSPORT_FAILURE",
+        "DESCRIPTOR_STALE",
+        "RANGE_REJECTED",
+        "CONTENT_INTEGRITY_REJECTED",
+        "STORAGE_NO_SPACE",
+        "STORAGE_IO",
+        "STORAGE_CONFLICT",
+        "CANCELLED_NO_CONSUMERS",
+        "CANCELLED_BROKER_SHUTDOWN",
+        "INTERNAL_FAILURE"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
