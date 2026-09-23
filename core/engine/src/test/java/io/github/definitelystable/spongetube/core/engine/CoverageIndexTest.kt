@@ -245,6 +245,58 @@ class CoverageIndexTest {
     }
 
     @Test
+    fun refreshReportsExplicitProjectionCounts() = runTest {
+        val index = CoverageIndex.forTest {
+            listOf(
+                init("v-init", "video", "v1"),
+                init("a-init", "audio", "a1"),
+                media("v0", "video", "v1", 0, 20, "v-init"),
+                media("a0", "audio", "a1", 0, 20, "a-init"),
+            )
+        }
+
+        val result = index.refresh()
+
+        assertEquals(4, result.loadedExtentCount)
+        assertEquals(4, result.readyExtentCount)
+        assertEquals(2, result.normalizedIntervalCount)
+    }
+
+    @Test
+    fun readyExtentRefsAreOrderedAndUseSameInMemoryProjection() = runTest {
+        var loads = 0
+        val index = CoverageIndex.forTest {
+            loads += 1
+            listOf(
+                init("v-init", "video", "v1"),
+                media("v1", "video", "v1", 10, 20, "v-init"),
+                media("v0", "video", "v1", 0, 10, "v-init"),
+            )
+        }
+
+        index.refresh()
+
+        val refs = index.readyExtentRefs(
+            mediaAssetId = ASSET,
+            trackId = "video",
+            representationId = "v1",
+        )
+        assertEquals(
+            listOf(ExtentId("v0"), ExtentId("v1")),
+            refs.map(ReadyExtentRef::extentId),
+        )
+
+        index.snapshot(
+            PlaybackRequirementSet(
+                ASSET,
+                mapOf("video" to "v1"),
+            ),
+            0,
+        )
+        assertEquals(1, loads)
+    }
+
+    @Test
     fun failedRefreshKeepsPreviousImmutableProjection() = runTest {
         var fail = false
         var extents = listOf(
