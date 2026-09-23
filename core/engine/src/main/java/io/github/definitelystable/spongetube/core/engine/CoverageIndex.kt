@@ -4,6 +4,7 @@ import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
+import java.util.Collections
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -62,15 +63,17 @@ private class CoverageProjection private constructor(
         requirements: PlaybackRequirementSet,
         playheadUs: Long,
     ): CoverageSnapshot {
-        val perTrack = requirements.requirements.associate { requirement ->
-            requirement.trackId to intervalsByKey[
-                CoverageKey(
-                    mediaAssetId = requirements.mediaAssetId,
-                    trackId = requirement.trackId,
-                    representationId = requirement.representationId,
-                )
-            ].orEmpty()
-        }
+        val perTrack = Collections.unmodifiableMap(
+            requirements.requirements.associate { requirement ->
+                requirement.trackId to intervalsByKey[
+                    CoverageKey(
+                        mediaAssetId = requirements.mediaAssetId,
+                        trackId = requirement.trackId,
+                        representationId = requirement.representationId,
+                    )
+                ].orEmpty()
+            },
+        )
 
         val playable = CoverageAlgebra.intersectNormalizedRequired(
             perTrack = perTrack,
@@ -88,7 +91,7 @@ private class CoverageProjection private constructor(
             playheadUs = playheadUs,
             requiredRepresentations = requirements.requiredRepresentations,
             perTrackPublishedIntervals = perTrack,
-            playableIntervals = playable,
+            playableIntervals = Collections.unmodifiableList(playable),
             durablePlayableEndUs = containing?.endUs,
             durableReserveUs =
                 containing?.let { it.endUs - playheadUs } ?: 0L,
@@ -151,9 +154,13 @@ private class CoverageProjection private constructor(
                     .add(interval)
             }
 
-            val normalized = raw.mapValues { (_, intervals) ->
-                CoverageAlgebra.normalize(intervals)
-            }
+            val normalized = Collections.unmodifiableMap(
+                raw.mapValues { (_, intervals) ->
+                    Collections.unmodifiableList(
+                        CoverageAlgebra.normalize(intervals),
+                    )
+                },
+            )
             return CoverageProjection(normalized)
         }
     }
