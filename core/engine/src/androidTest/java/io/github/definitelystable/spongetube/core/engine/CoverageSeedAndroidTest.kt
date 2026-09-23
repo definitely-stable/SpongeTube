@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.definitelystable.spongetube.core.storage.ExtentId
@@ -28,12 +29,17 @@ import org.w3c.dom.Element
 class CoverageSeedAndroidTest {
     private lateinit var context: Context
     private lateinit var resources: Map<String, ResourceFact>
+    private lateinit var evidenceRoot: File
 
     @Before
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         resources = loadResourceFacts()
+        evidenceRoot = requireNotNull(context.getExternalFilesDir(null))
+            .resolve("m1-c-evidence")
         cleanStoreRoot()
+        evidenceRoot.deleteRecursively()
+        evidenceRoot.mkdirs()
     }
 
     @After
@@ -42,19 +48,25 @@ class CoverageSeedAndroidTest {
     }
 
     @Test
-    fun canonicalSeedsPublishThroughRealStoreAndMatchExactCoverage() =
+    fun canonicalSeedsPublishThroughRealStoreAndExportOracleEvidence() =
         runBlocking {
             val catalog = loadCatalog()
-            val cases = canonicalCases(catalog)
 
-            for (case in cases) {
+            for (case in canonicalCases(catalog)) {
                 cleanStoreRoot()
+
                 val store = ExtentStore.open(context)
+                val runtimeArtifact: Map<String, Any?>
                 try {
                     publishSeed(store, case)
 
                     val index = CoverageIndex(store)
-                    index.refresh()
+                    val refresh = index.refresh()
+                    assertTrue(
+                        case.seedId + " loaded extents",
+                        refresh.loadedExtentCount > 0,
+                    )
+
                     val snapshot = index.snapshot(
                         requirements = PlaybackRequirementSet(
                             mediaAssetId = ASSET,
@@ -63,35 +75,7 @@ class CoverageSeedAndroidTest {
                         playheadUs = 0,
                     )
 
-                    assertEquals(
-                        case.seedId + " video coverage",
-                        case.videoIntervals,
-                        snapshot.perTrackPublishedIntervals.getValue(
-                            "video-main",
-                        ),
-                    )
-                    assertEquals(
-                        case.seedId + " audio coverage",
-                        case.audioIntervals,
-                        snapshot.perTrackPublishedIntervals.getValue(
-                            "audio-main",
-                        ),
-                    )
-                    assertEquals(
-                        case.seedId + " playable coverage",
-                        case.playableIntervals,
-                        snapshot.playableIntervals,
-                    )
-                    assertEquals(
-                        case.seedId + " playable end",
-                        case.durablePlayableEndUs,
-                        snapshot.durablePlayableEndUs,
-                    )
-                    assertEquals(
-                        case.seedId + " reserve",
-                        case.durableReserveUs,
-                        snapshot.durableReserveUs,
-                    )
+                    assertRuntime(case, snapshot)
 
                     if (case.seedId == "S30_PARTIAL_TAIL") {
                         assertFalse(
@@ -100,11 +84,54 @@ class CoverageSeedAndroidTest {
                             },
                         )
                     }
+
+                    runtimeArtifact = CoverageEvidenceSnapshot(
+                        eventSequence = 0,
+                        eventElapsedRealtimeNs = 0,
+                        sessionId = "m1-c-" + case.seedId,
+                        coverage = snapshot,
+                        playerBufferedAheadUs = null,
+                    ).toArtifactMap()
                 } finally {
                     store.close()
                 }
+
+                writeEvidence(case.seedId, runtimeArtifact)
             }
+
+            publishEvidenceForHost()
         }
+
+    private fun assertRuntime(
+        case: SeedCase,
+        snapshot: CoverageSnapshot,
+    ) {
+        assertEquals(
+            case.seedId + " video coverage",
+            case.videoIntervals,
+            snapshot.perTrackPublishedIntervals.getValue("video-main"),
+        )
+        assertEquals(
+            case.seedId + " audio coverage",
+            case.audioIntervals,
+            snapshot.perTrackPublishedIntervals.getValue("audio-main"),
+        )
+        assertEquals(
+            case.seedId + " playable coverage",
+            case.playableIntervals,
+            snapshot.playableIntervals,
+        )
+        assertEquals(
+            case.seedId + " playable end",
+            case.durablePlayableEndUs,
+            snapshot.durablePlayableEndUs,
+        )
+        assertEquals(
+            case.seedId + " reserve",
+            case.durableReserveUs,
+            snapshot.durableReserveUs,
+        )
+    }
 
     private suspend fun publishSeed(
         store: ExtentStore,
@@ -117,7 +144,10 @@ class CoverageSeedAndroidTest {
             if (unit.partialWrite) {
                 expectThrows<ExtentIntegrityException> {
                     store.writeExtent(spec) {
-                        write(bytes, length = maxOf(1, bytes.size / 2))
+                        write(
+                            bytes,
+                            length = maxOf(1, bytes.size / 2),
+                        )
                     }
                 }
             } else {
@@ -286,6 +316,7 @@ class CoverageSeedAndroidTest {
             extentId = "f1:video:alt:init",
             representationId = "f1-video-alt",
         )
+
         return copy(
             units = buildList {
                 add(wrongInit)
@@ -391,7 +422,7 @@ class CoverageSeedAndroidTest {
                 var currentTicks = 0L
                 var previousEndUs: Long? = null
 
-                for (segmentIndex in 0 until segments.length) {
+                for (segmentIndex in 0 until segments.length()) {
                     val segment = segments.item(segmentIndex) as Element
                     if (segment.hasAttribute("t")) {
                         currentTicks = segment.getAttribute("t").toLong()
@@ -459,6 +490,7 @@ class CoverageSeedAndroidTest {
                 break
             }
         }
+
         val f1 = checkNotNull(fixture)
         val result = linkedMapOf<String, ResourceFact>()
         val array = f1.getJSONArray("resources")
@@ -479,6 +511,40 @@ class CoverageSeedAndroidTest {
         assertEquals(path + " length", fact.length, bytes.size.toLong())
         assertEquals(path + " sha256", fact.sha256, sha256(bytes))
         return bytes
+    }
+
+    private fun writeEvidence(
+        seedId: String,
+        runtimeArtifact: Map<String, Any?>,
+    ) {
+        val caseRoot = evidenceRoot.resolve(seedId)
+        val storageCopy = caseRoot.resolve("storage")
+        caseRoot.deleteRecursively()
+        caseRoot.mkdirs()
+
+        val storeRoot = File(context.filesDir, "sponge")
+        check(storeRoot.copyRecursively(storageCopy, overwrite = true)) {
+            "failed to copy ExtentStore evidence for $seedId"
+        }
+
+        caseRoot.resolve("runtime-coverage.json").writeText(
+            JSONObject(runtimeArtifact).toString(2) + "\n",
+        )
+    }
+
+    private fun publishEvidenceForHost() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val destination = "/data/local/tmp/spongetube-m1-c"
+        val source = evidenceRoot.absolutePath
+        val command =
+            "rm -rf $destination && mkdir -p $destination && " +
+                "cp -R '$source/.' '$destination/'"
+
+        val descriptor = instrumentation.uiAutomation
+            .executeShellCommand(command)
+        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use {
+            it.readBytes()
+        }
     }
 
     private fun sha256(bytes: ByteArray): String {
