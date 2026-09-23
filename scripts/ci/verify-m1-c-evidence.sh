@@ -20,25 +20,32 @@ SEEDS=(
   S30_WRONG_REPRESENTATION
 )
 
-mapfile -t DEVICE_ROOTS < <(
-  adb shell 'find /sdcard/Android/media -type d -path "*/additional_test_output/m1-c-evidence" -print' \
-    | tr -d '\r' \
-    | sed '/^$/d'
+ADDITIONAL_OUTPUT_ROOT="core/engine/build/outputs/connected_android_test_additional_output"
+test -d "$ADDITIONAL_OUTPUT_ROOT"
+
+mapfile -t EVIDENCE_ROOTS < <(
+  find "$ADDITIONAL_OUTPUT_ROOT" \
+    -type d \
+    -path '*/m1-c-evidence' \
+    -print
 )
 
-if [[ "${#DEVICE_ROOTS[@]}" -ne 1 ]]; then
-  printf 'expected exactly one M1-C evidence root, found %s\n' \
-    "${#DEVICE_ROOTS[@]}" >&2
-  printf '%s\n' "${DEVICE_ROOTS[@]}" >&2
+if [[ "${#EVIDENCE_ROOTS[@]}" -ne 1 ]]; then
+  printf 'expected exactly one collected M1-C evidence root, found %s\n' \
+    "${#EVIDENCE_ROOTS[@]}" >&2
+  printf '%s\n' "${EVIDENCE_ROOTS[@]}" >&2
   exit 1
 fi
-DEVICE_ROOT="${DEVICE_ROOTS[0]}"
+COLLECTED_ROOT="${EVIDENCE_ROOTS[0]}"
 
 for seed in "${SEEDS[@]}"; do
+  source_root="$COLLECTED_ROOT/$seed"
   case_root="$PULLED_ROOT/$seed"
+  test -d "$source_root/storage"
+  test -s "$source_root/runtime-coverage.json"
   mkdir -p "$case_root"
-  adb pull "$DEVICE_ROOT/$seed/storage" "$case_root/"
-  adb pull "$DEVICE_ROOT/$seed/runtime-coverage.json" \
+  cp -R "$source_root/storage" "$case_root/storage"
+  cp "$source_root/runtime-coverage.json" \
     "$case_root/runtime-coverage.json"
 done
 
