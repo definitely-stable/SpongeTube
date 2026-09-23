@@ -1,7 +1,7 @@
 # SpongeTube Product Contract v0.1
 
-Status: **Provisional architecture baseline**
-Date: **2026-09-21**
+Status: **Normative — product scope and invariants**
+Date: **2026-09-23**
 
 ## Mission
 
@@ -37,6 +37,14 @@ Not in initial scope:
 - Generic torrent support.
 - Automatic bypass of the user's configured VPN/proxy.
 - Mandatory export/remux to MP4.
+
+## Product differentiation and provider advertising stance
+
+SpongeTube's primary differentiator is **Durable Playable Reserve under unstable connectivity**. Provider-ad handling is an expected product capability for the selected third-party playback path, but it is not the architectural differentiator and must not distort the resilience engine.
+
+The target playback experience does not intentionally add provider advertising to the third-party playback path. Any public "ad-free" claim is release-gated: the selected provider path must be technically verified and reviewed for dependency licensing, provider terms and intended distribution channel before that claim is made.
+
+SponsorBlock is separate from provider advertising. It concerns creator-integrated sponsor segments and remains a later optional product capability.
 
 ## UX invariants
 

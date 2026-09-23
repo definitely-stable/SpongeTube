@@ -1,7 +1,7 @@
 # SpongeTube Verification & Benchmark Plan v0.2
 
-Status: **Provisional**
-Date: **2026-09-21**
+Status: **Normative — evidence and acceptance policy**
+Date: **2026-09-23**
 
 ## 1. Rule: architecture must be falsifiable
 
@@ -667,6 +667,24 @@ Media3 player buffered-ahead is recorded independently.
 
 A runtime metric cannot be its own acceptance oracle. Canonical evidence must include an independent reconstruction of published coverage from a committed SQLite metadata snapshot plus independently verified immutable extent files. Lifecycle `PUBLISHED` events are diagnostic only and cannot authorize coverage.
 
+For M1, "independent" means the verifier obtains file facts from the storage root itself. It MUST stat and hash immutable extent files independently of runtime CoverageIndex and independently of metadata values supplied by the app. A caller-supplied map that merely repeats database length/digest fields is not an independent file verifier.
+
+The canonical oracle pipeline is:
+
+```text
+committed SQLite snapshot
+        +
+immutable storage root
+        -> independent filesystem verifier
+        -> verified-extent-files-v1
+        -> independent coverage reconstruction
+        -> oracle coverage snapshot
+        -> exact comparator
+        <-> runtime CoverageIndex snapshot
+```
+
+The host oracle must be directly executable against a real run directory/inputs. Runtime CoverageIndex helpers must not be imported as the implementation of the independent interval reconstruction.
+
 ### 22.2 Fixed semantic coverage seeds
 
 M1 comparisons use deterministic semantic seeds, never "whatever the previous cold run happened to retain".
@@ -729,6 +747,16 @@ Evidence separates:
 
 ### 22.4 Canonical M1 MUST gates
 
+A MUST gate is not considered executable merely because its prose and JSON Schema exist. Before a slice may claim a gate, the repository must contain:
+
+1. the evidence producer(s);
+2. an independent verifier or comparator where required;
+3. a deterministic pass/fail execution path wired into the owning slice's verification;
+4. at least one negative test proving that a materially wrong result fails.
+
+Missing evidence infrastructure is work for the owning slice, not deferred implementation work for M1-G.
+
+
 | ID | Setup/stimulus | Required evidence | Pass condition |
 | --- | --- | --- | --- |
 | M1-ACC-01 | write one extent | extent state log + committed metadata snapshot + independent file/hash check | coverage appears only after committed PUBLISHED metadata and matching immutable file verification |
@@ -782,5 +810,20 @@ Canonical M1 runs use versioned machine-readable artifacts:
 - \`verified-extent-files-v1\`;
 - \`fetch-events-v1\`;
 - \`recovery-summary-v1\`.
+
+Artifact ownership is incremental:
+
+| Artifact | Producer | Independent check | Required by |
+| --- | --- | --- | --- |
+| `committed-extents-v1` | storage metadata snapshot exporter | schema + oracle ingestion | M1-C |
+| `verified-extent-files-v1` | host filesystem verifier | stat + SHA-256 from storage root | M1-C |
+| `seed-manifest-v1` | deterministic seed builder | independent seed/coverage verifier | M1-C |
+| `coverage-snapshot-v1` | runtime CoverageIndex | exact oracle comparator | M1-C |
+| `extent-events-v1` | ExtentStore instrumentation | reducer/schema checks | M1-B/M1-F |
+| `fetch-events-v1` | FetchBroker | origin/correlation cross-check | M1-D |
+| `recovery-summary-v1` | recovery harness | schema + post-reopen oracle | M1-F |
+| `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
+
+M1-G executes and publishes the already-working evidence path; it must not become the first place where missing producers or comparators are implemented.
 
 The committed evidence summary references raw CI artifacts by run identity/digest and records limitations explicitly.

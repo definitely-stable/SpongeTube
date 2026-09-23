@@ -1,7 +1,7 @@
 # SpongeTube Architecture v0.1
 
-Status: **Provisional**
-Date: **2026-09-22**
+Status: **Normative — architecture and invariants**
+Date: **2026-09-23**
 
 ## 1. Architectural objective
 
@@ -72,6 +72,21 @@ The central metric is **Playable Reserve**: how much future playback time can co
 
 The transport winner is deliberately not frozen in v0.1. For M0, the recommended platform path uses Media3 HttpEngine where runtime support exists and DefaultHttpDataSource as the portable fallback. OkHttp, Google Play services Cronet and Embedded Cronet remain candidates for later evidence-driven evaluation when they solve a measured problem for the SpongeTube device/network population.
 
+### 3.1 Provider isolation firewall
+
+Provider discovery and delivery evolve faster than Sponge Core. The boundary is therefore normative:
+
+```text
+YouTube / future provider
+        -> ProviderAdapter
+        -> PlaybackPlan
+        -> Sponge Core
+```
+
+Sponge Core contracts MUST NOT depend on provider-specific protocol vocabulary such as SABR/UMP framing, Innertube client names, PO-token context names, visitor-data shape, signed-URL structure or provider segment naming.
+
+Provider adapters normalize those details into stable media identity, playback requirements and provider/transport-independent fetch work. A new provider delivery protocol may require a new adapter/transport implementation, but it must not redefine already-published ExtentStore identity or CoverageIndex semantics.
+
 ## 4. Core domain model
 
 ### 4.1 MediaAsset
@@ -102,6 +117,22 @@ TrackVariant
 ```
 
 The core must not assume fMP4, WebM, fixed-duration chunks or a two-second segment cadence.
+
+### 4.2.1 PlaybackRequirementSet
+
+Playable output is defined by the exact components required by the selected `PlaybackPlan`, not by a hard-coded assumption that every provider returns one video track plus one audio track.
+
+```text
+PlaybackRequirementSet
+  requirements[]
+
+PlaybackRequirement
+  role
+  trackId
+  representationId
+```
+
+For the canonical M1 F1 fixture the requirement set is one VIDEO representation plus one AUDIO representation. A future muxed/interleaved provider representation may satisfy playback with a different requirement set. CoverageIndex intersects the coverage of every required component and does not interpret provider packaging.
 
 ### 4.3 FetchUnit
 
@@ -459,23 +490,26 @@ The store persists media extents, not "two-second segment files".
 Extent
   mediaId
   trackId
+  representationId
   mediaStartUs
   mediaEndUs
   storageLocation
   offset
   length
   integrityState
-  retentionClass
 ```
 
-State dimensions are orthogonal:
+M1 separates the publication lifecycle from persisted validity:
 
 ```text
-FetchState      MISSING | FETCHING | PRESENT
-IntegrityState  UNKNOWN | VALID | CORRUPT
-RetentionClass  EPHEMERAL | CACHED | PINNED
-Freshness       CURRENT | STALE_DESCRIPTOR
+LifecycleState    RECEIVING | SEALED | VERIFIED | DURABLE | PUBLISHED
+PublicationState  PUBLISHED | QUARANTINED
+IntegrityState    VALID | CORRUPT
 ```
+
+`RetentionClass = EPHEMERAL | CACHED | PINNED` is owned by later retention/offline work (M4/M6) and is not required in the M1 schema merely to avoid a future migration.
+
+Descriptor freshness is provider/session state, not a property of immutable stored media bytes. It must not be persisted as an Extent state dimension unless a later ADR demonstrates a concrete need.
 
 ### Storage backend — frozen M1 decision
 
@@ -486,7 +520,7 @@ The first M1 vertical slice uses a Sponge-owned extent store:
 - media bytes are immutable extent files under app-private durable storage (`filesDir/sponge/extents/`), sharded by generated extent identity;
 - every committed extent records an immutable byte length and SHA-256 digest; coverage is valid only when file length and digest match the published metadata;
 - a fetch writes only to a uniquely named temporary file on the same filesystem as its final extent, closes and fsyncs the file, computes/verifies length + SHA-256, atomically renames it to the immutable extent path, and fsyncs the containing directory before metadata publication where the platform/filesystem exposes that durability primitive;
-- Room/SQLite owns the durable metadata/index and journal: MediaAsset, TrackVariant, extent identity, media/range coverage, byte length, SHA-256, integrity state, retention class and commit/recovery state;
+- Room/SQLite owns the durable M1 metadata/index and journal: MediaAsset identity, track/representation identity, extent identity, media/range coverage, byte length, SHA-256, integrity/publication state and commit/recovery facts. Retention policy is not an M1 persistence requirement;
 - one Room transaction may publish the extent as `PRESENT + VALID` only after the storage commit barrier above completes; until then CoverageIndex must behave as if the bytes do not exist;
 - startup recovery deletes orphan temporary files, rejects/quarantines index rows whose immutable extent is missing, length-mismatched or digest-invalid, and never invents coverage;
 - PlaybackBridge reads only coverage published by the Sponge index; it never falls back to a second remote Media3 fetch for coverage owned or in-flight by Sponge Core.
@@ -509,6 +543,22 @@ TEMP
 A crash before the Room publish can leave at most an orphan immutable file, which recovery may adopt only after full identity/integrity validation or otherwise garbage-collect. A crash after the Room publish must not leave a row pointing at uncommitted bytes.
 
 Packed append-only containers are a later storage optimization only if measured file-count/I/O cost justifies them; adopting them must not change the ExtentStore/CoverageIndex contract.
+
+### Read surface and runtime index
+
+ExtentStore exposes media bytes through an opaque read handle rather than leaking filesystem paths as public API:
+
+```text
+ExtentStore.openRead(extentId) -> ExtentReadHandle
+```
+
+The handle owns validated access to the immutable extent and participates in store reader lifetime/close coordination. This keeps the public read contract stable if the backend later changes from file-per-extent to another measured storage layout.
+
+Room is the durable metadata authority. CoverageIndex is the read-optimized runtime view. Steady-state PlaybackBridge byte serving MUST NOT require a Room/SQLite query per Media3 read operation.
+
+### Metadata durability scope
+
+M1 distinguishes process death from device power loss/kernel reset. Metadata publication must use the strongest practical SQLite durability mode selected for the M1 contract on supported Android storage. The effective journal/synchronous settings used by acceptance runs must be observable in evidence. Filesystem/media corruption outside the guarantees of the underlying storage stack is not claimed to be recoverable.
 
 
 ### Partial extent lifecycle and publication
@@ -678,22 +728,20 @@ No Shorts navigation or vertical swipe feed exists in v0.x.
 
 ## 18. Observability
 
-Local structured events are required from M1:
+Local structured events are required when their owning subsystem exists. An event MUST NOT be emitted as a placeholder before its owner lands.
 
-```text
-resolve_started/completed
-fetch_started/completed/failed
-singleflight_joined
-coverage_committed
-reserve_target_changed
-network_changed
-vpn_state_changed
-descriptor_refreshed
-playback_stall
-recovery_started/completed
-eviction
-storage_error
-```
+| Event family | Owning milestone |
+| --- | --- |
+| `fetch_started/completed/failed` | M1 |
+| `singleflight_joined` | M1 |
+| `coverage_committed` | M1 |
+| `playback_stall` | M1 |
+| `recovery_started/completed` | M1 |
+| `storage_error` | M1 |
+| `network_changed` / `vpn_state_changed` | M2 |
+| `resolve_started/completed` / `descriptor_refreshed` | M2/M3 |
+| `reserve_target_changed` | M4 |
+| `eviction` | M6 |
 
 User-facing builds should default to privacy-preserving local diagnostics. Remote telemetry, if ever added, requires an explicit product/privacy decision.
 

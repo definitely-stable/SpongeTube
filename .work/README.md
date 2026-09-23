@@ -1,5 +1,7 @@
 # .work — SpongeTube project authority
 
+Status: **Normative project authority**
+
 This directory is the canonical project workspace.
 
 ## Authority order
@@ -64,4 +66,14 @@ No direct normal-development pushes to `main`.
 
 ## Repository state
 
-At architecture/governance v0.1 the repository contains no production implementation. The next code milestone is M0: Reproducible Android & Media Evidence Bootstrap, specified in `.work/milestones/M0.md`.
+M0 is complete. M1 — Persistent Playback Core is active.
+
+Current repository sequencing:
+
+- M1-A contract/evidence foundation — complete;
+- M1-B initial durable ExtentStore — complete;
+- M1-C CoverageIndex & deterministic seeds — active;
+- M1 evidence-kernel and ExtentStore hardening corrections identified by the 2026-09-22 audit are prerequisites for closing the affected M1 acceptance gates;
+- YouTube delivery feasibility is an explicit parallel risk track during M1 and may constrain provider/fetch contracts before M1-D is frozen.
+
+Analytical reports under `.analysis/` or externally supplied audit files are inputs, not authority. Accepted conclusions become normative only when consolidated into the authority chain above through the normal PR/ADR process.
