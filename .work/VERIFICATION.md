@@ -778,6 +778,8 @@ Missing evidence infrastructure is work for the owning slice, not deferred imple
 
 Deterministic correctness gates normally require one successful canonical execution plus targeted unit/state-machine coverage. No arbitrary performance repetition count is encoded into correctness acceptance.
 
+For M1-C, API 36 Android instrumentation must publish each canonical seed through the real ExtentStore, close the store, export the runtime \`coverage-snapshot-v2\` plus a consistent copied Room/storage-root bundle, and let the host #48 kernel independently export committed metadata, stat/SHA-256 the immutable files, reconstruct coverage and compare runtime semantics exactly. The seed construction verifier separately checks that the committed extent set matches \`seed-manifest-v2\`; it does not compute coverage. API 23/API 34 run the same storage/engine instrumentation as compatibility checks, while the canonical host-oracle evidence chain runs once on API 36.
+
 ### 22.5 SHOULD gates
 
 - \`N4R-FLAP\`;
