@@ -212,7 +212,7 @@ class PlaybackReadSession internal constructor(
     }
 
     private suspend fun makeLocal(unit: PlaybackFetchUnit) {
-        when (val resolution = runtime.coverageIndex.resolveExtent(unit.extentId)) {
+        when (val resolution = runtime.coverageIndex.resolveExtent(unit.extentSpec)) {
             ExtentResolution.Ready -> {
                 openReadCalls += 1
                 val opened = runtime.reader.openRead(unit.extentId)
@@ -246,6 +246,9 @@ class PlaybackReadSession internal constructor(
                 refresh()
             }
 
+            ExtentResolution.IdentityConflict ->
+                throw identityConflict(unit)
+
             ExtentResolution.Absent -> ensureFetched(unit)
         }
     }
@@ -271,7 +274,7 @@ class PlaybackReadSession internal constructor(
             extentId = dependentId,
             dependencyExtentId = dependencyId,
         )
-        when (val resolution = runtime.coverageIndex.resolveExtent(dependencyId)) {
+        when (val resolution = runtime.coverageIndex.resolveExtent(dependency.extentSpec)) {
             ExtentResolution.Ready -> Unit
             is ExtentResolution.PublishedNotReady -> {
                 requireRepairable(dependencyId, resolution)
@@ -280,6 +283,9 @@ class PlaybackReadSession internal constructor(
                 }
                 refresh()
             }
+            ExtentResolution.IdentityConflict ->
+                throw identityConflict(dependency)
+
             ExtentResolution.Absent -> ensureFetched(dependency)
         }
     }
@@ -333,16 +339,27 @@ class PlaybackReadSession internal constructor(
                 // Our projection was stale: another publisher committed the
                 // same immutable extent. Refresh once and re-resolve.
                 refresh()
-                if (
-                    runtime.coverageIndex.resolveExtent(unit.extentId) ==
-                    ExtentResolution.Absent
-                ) {
-                    throw fetchFailure(unit, outcome.kind)
+                when (runtime.coverageIndex.resolveExtent(unit.extentSpec)) {
+                    ExtentResolution.Absent ->
+                        throw fetchFailure(unit, outcome.kind)
+                    ExtentResolution.IdentityConflict ->
+                        throw identityConflict(unit)
+                    ExtentResolution.Ready,
+                    is ExtentResolution.PublishedNotReady,
+                    -> Unit
                 }
             }
             else -> throw fetchFailure(unit, outcome.kind)
         }
     }
+
+    private fun identityConflict(
+        unit: PlaybackFetchUnit,
+    ): PlaybackBridgeException =
+        PlaybackBridgeException(
+            failure = PlaybackBridgeFailure.FETCH_IDENTITY_CONFLICT,
+            message = "published extent ${unit.extentId} does not match playback plan identity",
+        )
 
     private fun fetchFailure(
         unit: PlaybackFetchUnit,
