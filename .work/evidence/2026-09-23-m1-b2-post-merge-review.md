@@ -141,7 +141,7 @@ A cleanup exception from the `finally` path could replace the producer/cancellat
 - preserve the original producer/cancellation/commit failure;
 - attach abort/delete/close cleanup failures as suppressed exceptions;
 - always release writer ownership on terminal commit failure;
-- mark the output closed in a `finally` around the durability-owned sync/close operation;
+- defensively retry stream close when a durability implementation throws before closing;
 - classify close I/O through the storage taxonomy.
 
 ### F8 — ExtentSink bounds validation was integer-overflow-prone
