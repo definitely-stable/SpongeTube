@@ -16,23 +16,35 @@ from m1_oracle import (
     compare_coverage_semantics,
     export_committed_snapshot,
     main,
+    SUPPORTED_DATABASE_SCHEMA_VERSIONS,
     verify_extent_files,
 )
 from schema_subset import validate_instance
 
 
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
-ROOM_SCHEMA = (
+ROOM_SCHEMA_DIR = (
     REPO_ROOT
     / "core"
     / "storage"
     / "schemas"
     / "io.github.definitelystable.spongetube.core.storage.ExtentDatabase"
-    / "1.json"
 )
+ROOM_SCHEMA_FILES = sorted(
+    ROOM_SCHEMA_DIR.glob("*.json"),
+    key=lambda path: int(path.stem),
+)
+if not ROOM_SCHEMA_FILES:
+    raise RuntimeError("no checked-in ExtentDatabase Room schemas found")
+ROOM_SCHEMA = ROOM_SCHEMA_FILES[-1]
 
 
 class M1EvidenceKernelTest(unittest.TestCase):
+    def test_latest_room_schema_is_explicitly_supported(self):
+        room_schema = json.loads(ROOM_SCHEMA.read_text(encoding="utf-8"))
+        version = int(room_schema["database"]["version"])
+        self.assertIn(version, SUPPORTED_DATABASE_SCHEMA_VERSIONS)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
