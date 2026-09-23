@@ -30,6 +30,7 @@ CONTRACTS = {
     "coverage-snapshot-v2.schema.json": "coverage-snapshot-v2.example.json",
     "extent-events-v1.schema.json": "extent-event-v1.example.json",
     "fetch-events-v1.schema.json": "fetch-event-v1.example.json",
+    "fetch-events-v2.schema.json": "fetch-event-v2.example.json",
     "recovery-summary-v1.schema.json": "recovery-summary-v1.example.json",
     "committed-extents-v1.schema.json": "committed-extents-v1.example.json",
     "committed-extents-v2.schema.json": "committed-extents-v2.example.json",
