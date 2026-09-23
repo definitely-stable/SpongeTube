@@ -9,8 +9,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpEngineDataSource
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 @UnstableApi
@@ -82,11 +83,11 @@ internal object BaselineTransportFactory {
                 effective = EffectiveTransport.HTTP_ENGINE,
             ),
             closeAction = {
-                try {
-                    engine.shutdown()
-                } finally {
-                    callbackExecutor.shutdown()
-                }
+                RetryingShutdownBarrier(
+                    shutdown = engine::shutdown,
+                    afterShutdown = callbackExecutor::shutdown,
+                    scheduleRetry = BaselineTransportCloser::scheduleRetry,
+                ).run()
             },
         )
     }
@@ -112,14 +113,59 @@ internal class BaselineTransportResources(
     }
 }
 
-private object BaselineTransportCloser {
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "spongetube-m0-transport-close").apply {
-            isDaemon = true
+/**
+ * HttpEngine refuses shutdown while any request is still active. Player
+ * release cancels Media3 loads, but the terminal network callback can arrive
+ * slightly later. Keep the callback executor alive and retry shutdown on this
+ * dedicated scheduler until the engine confirms that all requests drained.
+ */
+internal class RetryingShutdownBarrier(
+    private val shutdown: () -> Unit,
+    private val afterShutdown: () -> Unit,
+    private val scheduleRetry: ((() -> Unit) -> Unit),
+) {
+    private val completed = AtomicBoolean(false)
+
+    fun run() {
+        if (completed.get()) {
+            return
+        }
+
+        try {
+            shutdown()
+        } catch (_: IllegalStateException) {
+            // HttpEngine.shutdown() documents IllegalStateException while
+            // requests are active. Do not close the callback executor here:
+            // those terminal callbacks are what allow the request to drain.
+            scheduleRetry(::run)
+            return
+        }
+
+        if (completed.compareAndSet(false, true)) {
+            afterShutdown()
         }
     }
+}
+
+private object BaselineTransportCloser {
+    private val executor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "spongetube-m0-transport-close").apply {
+                isDaemon = true
+            }
+        }
 
     fun execute(action: () -> Unit) {
         executor.execute(action)
     }
+
+    fun scheduleRetry(action: () -> Unit) {
+        executor.schedule(
+            action,
+            HTTP_ENGINE_SHUTDOWN_RETRY_DELAY_MS,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private const val HTTP_ENGINE_SHUTDOWN_RETRY_DELAY_MS = 25L
 }
