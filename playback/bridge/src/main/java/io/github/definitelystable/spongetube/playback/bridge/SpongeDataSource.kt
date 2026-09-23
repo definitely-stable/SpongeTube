@@ -2,10 +2,14 @@ package io.github.definitelystable.spongetube.playback.bridge
 
 import android.net.Uri
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DataSpec
+import io.github.definitelystable.spongetube.core.engine.PlaybackBridgeException
+import io.github.definitelystable.spongetube.core.engine.PlaybackBridgeFailure
 import io.github.definitelystable.spongetube.core.engine.PlaybackBridgeRuntime
 import io.github.definitelystable.spongetube.core.engine.PlaybackReadSession
 import io.github.definitelystable.spongetube.core.engine.SpongeBridgeApi
@@ -36,14 +40,38 @@ class SpongeDataSource internal constructor(
 
         val readSession = runtime.newReadSession()
         session = readSession
-        val available = readSession.open(
-            resourceKey,
-            dataSpec.position,
-            dataSpec.length,
-        )
+        val resource = runtime.plan.resource(resourceKey)
+        val engineLength = if (
+            resource != null &&
+            dataSpec.length != C.LENGTH_UNSET &&
+            dataSpec.position <= resource.length
+        ) {
+            minOf(dataSpec.length, resource.length - dataSpec.position)
+        } else {
+            dataSpec.length
+        }
+        val available = try {
+            readSession.open(
+                resourceKey,
+                dataSpec.position,
+                engineLength,
+            )
+        } catch (error: PlaybackBridgeException) {
+            if (error.failure == PlaybackBridgeFailure.POSITION_OUT_OF_RANGE) {
+                throw DataSourceException(
+                    error,
+                    PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+                )
+            }
+            throw error
+        }
         transferStarted = true
         transferStarted(dataSpec)
-        return available
+        return if (dataSpec.length == C.LENGTH_UNSET) {
+            available
+        } else {
+            dataSpec.length
+        }
     }
 
     override fun read(
