@@ -236,7 +236,7 @@ class FetchBrokerOriginAndroidTest {
 
                 writeFetchEvents(events)
             } finally {
-                broker.close()
+                broker.shutdown()
                 store.close()
             }
         }
