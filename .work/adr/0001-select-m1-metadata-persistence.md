@@ -99,6 +99,24 @@ When Room is introduced:
 - retain constructor wiring rather than adding DI solely for Room;
 - validate minSdk/API compatibility in executable M1-B CI before treating it as proven.
 
+## Post-adoption durability profile — 2026-09-23
+
+M1-B2 makes the concrete Room/SQLite profile explicit:
+
+- `RoomDatabase.JournalMode.TRUNCATE`;
+- Room 3 effective `PRAGMA synchronous=FULL` for non-WAL mode;
+- effective `journal_mode`, `synchronous` and `busy_timeout` observed from the writer connection at open;
+- fail-closed store open when the effective journal/synchronous settings do not meet the M1 policy.
+
+Room 3 uses a single connection for `JournalMode.TRUNCATE`, which keeps the effective writer setting unambiguous for this M1 profile. Playback byte reads do not query Room per `readAt`; the DB lookup happens only when a store-owned extent read handle is opened.
+
+The code names this predicate as meeting the **M1 durability policy**. It deliberately does not claim unconditional power-loss immunity: SQLite durability still depends on the VFS, filesystem, kernel and storage device honoring synchronization semantics.
+
+References:
+- https://developer.android.com/reference/androidx/room3/RoomDatabase.Builder
+- https://android.googlesource.com/platform/frameworks/support/+/b50c25b00196bcc4bc2ae802a24cdae85084e6ac/room3/room3-runtime/src/commonMain/kotlin/androidx/room3/RoomConnectionManager.kt
+- https://www.sqlite.org/pragma.html#pragma_synchronous
+
 ## Consequences
 
 Positive:
