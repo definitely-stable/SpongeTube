@@ -1,6 +1,6 @@
 # M1-C implementation review — 2026-09-23
 
-Status: **replacement implementation**
+Status: **replacement implementation + executable acceptance wiring**
 Issue: #38
 Supersedes draft implementation: #47
 
@@ -50,9 +50,9 @@ Track/representation identity alone could allow another media item with the same
 
 ### R7 — legacy Room rows needed a safe migration domain
 
-Adding a non-null asset ID cannot pretend that existing v1 rows belong to a newly named media item.
+Adding a non-null asset ID cannot pretend that existing v1 rows belong to a newly named media item. Keeping a `PUBLISHED + VALID` v1 row under a reserved pseudo-asset was also unsafe: because `extent_id` is the Room primary key and filesystem identity, the legacy row could permanently block a named v2 re-download using the same ExtentId.
 
-**Resolution:** v1 -> v2 auto-migration assigns the reserved `__legacy_unscoped__` identity. New writes and playback requirement sets cannot use that identity. Migration instrumentation proves the old published row survives without becoming named coverage.
+**Resolution:** v1 -> v2 uses a Room 3 `AutoMigrationSpec.onPostMigrate` hook to delete unattributable v1 extent/dependency metadata transactionally. Normal ExtentStore startup recovery deletes the resulting orphan files. Instrumentation proves the old cache disappears and the same globally unique ExtentId can then be written for a named asset.
 
 ### R8 — dependency readiness must be conservative
 
@@ -82,7 +82,7 @@ Relabeling the same ExtentId as another representation creates an invalid identi
 
 ### Storage identity
 
-`MediaAssetId` is persisted in Room schema v2 and treated as part of immutable extent metadata.
+`MediaAssetId` is persisted in Room schema v2 and treated as part of immutable extent metadata. `ExtentId` is frozen as an opaque globally unique store identity; producers must derive it from an immutable identity domain that includes the media asset, and storage rejects rebinding one ExtentId across assets.
 
 ### Runtime projection
 
@@ -93,7 +93,8 @@ Relabeling the same ExtentId as another representation creates an invalid identi
 4. computes conservative dependency closure;
 5. groups only READY media intervals by exact asset/track/representation;
 6. normalizes exact half-open intervals;
-7. atomically installs the new projection.
+7. retains ordered immutable READY extent references in the same projection for later PlaybackBridge lookup;
+8. atomically installs the new projection and returns explicit refresh counts rather than an ambiguous bare integer.
 
 A failed refresh leaves the prior projection intact.
 
@@ -102,6 +103,8 @@ A failed refresh leaves the prior projection intact.
 - does not traverse the dependency graph;
 - intersects already-normalized requirement interval lists;
 - computes reserve from the exact playhead and stops at the first hole.
+
+An internal backing-ref lookup is served from that same immutable projection, so #40 can resolve coverage to ExtentIds without creating a second Room-backed index or exposing raw storage paths.
 
 ### Fixed seeds
 
@@ -119,7 +122,7 @@ Canonical negative construction:
 - S30_PARTIAL_TAIL
 - S30_WRONG_REPRESENTATION
 
-The planner derives boundaries from the real F1 DASH SegmentTimeline, not from a nominal ten-second assumption. Android instrumentation independently parses the committed MPD and verifies every selected resource against the fixture manifest before publishing through the real ExtentStore.
+The planner derives boundaries from the real F1 DASH SegmentTimeline, not from a nominal ten-second assumption, and hashes the actual fixture files rather than trusting manifest claims alone. Android instrumentation independently parses the committed MPD, verifies every selected resource against the fixture manifest before publishing through the real ExtentStore, exports the runtime coverage snapshot plus a closed Room/storage bundle, and the host #48 kernel reconstructs/compares coverage for all ten canonical seeds.
 
 ### Evidence generations
 
@@ -151,10 +154,11 @@ The repository remains on stable Room 3.0.3; no alpha upgrade is introduced for 
 
 M1-C is ready only when:
 - host interval/dependency/asset tests pass;
-- schema and seed producer tests pass;
-- Room v1 -> v2 migration passes;
+- schema and seed producer tests pass, including real fixture-byte hashing and construction falsification;
+- Room v1 -> v2 purge/rewrite migration passes;
 - Android canonical positive/negative seeds pass on the real ExtentStore;
-- API 23/API 34 compatibility remains green;
+- API 36 exports real runtime/Room/filesystem evidence and `verify-m1-c-evidence.sh` passes #48 oracle comparison for all ten seeds;
+- API 23/API 34 storage + engine compatibility remains green;
 - API 36 Android smoke remains green;
 - Linux and Windows strict Verify remain green;
 - the v2 independent kernel exactly rejects inflated/cross-asset runtime claims.
