@@ -1,5 +1,7 @@
+from dataclasses import replace
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,7 +11,12 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from m1_seed_planner import build_seed, load_f1_catalog
+from m1_seed_planner import (
+    build_seed,
+    load_f1_catalog,
+    validate_seed_plan,
+    verify_seed_state,
+)
 
 
 class M1SeedPlannerTest(unittest.TestCase):
@@ -115,6 +122,114 @@ class M1SeedPlannerTest(unittest.TestCase):
         self.assertNotIn("playableCoverage", artifact)
         self.assertNotIn("perTrackCoverage", artifact)
         self.assertNotIn("actualReserveUs", artifact)
+
+    def test_fixture_bytes_are_hashed_not_only_manifest_claims(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            media = root / "test-fixtures" / "media"
+            media.mkdir(parents=True)
+            shutil.copy2(
+                REPO_ROOT / "test-fixtures/media/manifest.json",
+                media / "manifest.json",
+            )
+            shutil.copytree(
+                REPO_ROOT / "test-fixtures/media/F1",
+                media / "F1",
+            )
+            corrupted = media / "F1" / "video-00001.m4s"
+            blob = bytearray(corrupted.read_bytes())
+            blob[0] ^= 0x01
+            corrupted.write_bytes(blob)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "sha256 mismatch",
+            ):
+                load_f1_catalog(root)
+
+    def test_seed_semantics_fail_closed_for_invalid_partial_tail(self):
+        plan = build_seed(REPO_ROOT, "S30_PARTIAL_TAIL")
+        attempt = plan.rejected_attempts[0]
+        broken = replace(
+            plan,
+            rejected_attempts=(
+                replace(
+                    attempt,
+                    received_length=attempt.expected_length,
+                ),
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "strictly truncated"):
+            validate_seed_plan(broken)
+
+    def test_committed_state_must_match_exact_seed_construction(self):
+        plan = build_seed(REPO_ROOT, "S30_WRONG_REPRESENTATION")
+        committed = self._committed_from_plan(plan)
+
+        verify_seed_state(plan, committed)
+
+        committed["extents"][0]["mediaAssetId"] = "other-asset"
+        with self.assertRaisesRegex(ValueError, "mediaAssetId mismatch"):
+            verify_seed_state(plan, committed)
+
+    def test_cli_can_verify_committed_seed_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            output = root / "seed.json"
+            committed_path = root / "committed.json"
+            plan = build_seed(REPO_ROOT, "S30_AUDIO_HOLE")
+            committed_path.write_text(
+                json.dumps(self._committed_from_plan(plan)),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_DIR / "m1_seed_planner.py"),
+                    "--repo-root",
+                    str(REPO_ROOT),
+                    "--seed-id",
+                    plan.seed_id,
+                    "--output",
+                    str(output),
+                    "--verify-committed",
+                    str(committed_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+
+    @staticmethod
+    def _committed_from_plan(plan):
+        return {
+            "schemaVersion": 2,
+            "snapshotId": "seed-state",
+            "sessionId": "seed-session",
+            "snapshotKind": "LIVE_COMMITTED",
+            "databaseSchemaVersion": 2,
+            "extents": [
+                {
+                    "extentId": unit.extent_id,
+                    "mediaAssetId": plan.media_asset_id,
+                    "state": "PUBLISHED",
+                    "integrityState": "VALID",
+                    "trackId": unit.track_id,
+                    "representationId": unit.representation_id,
+                    "mediaStartUs": unit.media_start_us,
+                    "mediaEndUs": unit.media_end_us,
+                    "dependencyExtentIds": list(unit.dependency_extent_ids),
+                    "length": unit.length,
+                    "sha256": unit.sha256,
+                    "storagePath": "ignored-by-seed-state-verifier",
+                }
+                for unit in plan.units
+            ],
+        }
 
     def test_cli_writes_deterministic_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
