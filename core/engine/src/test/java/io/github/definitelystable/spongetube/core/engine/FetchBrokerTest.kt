@@ -245,6 +245,79 @@ class FetchBrokerTest {
     }
 
     @Test
+    fun dependencyOrderingDoesNotCreateFalseFetchIdentityConflict() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var executions = 0
+        val dependencyA = ExtentId("dependency-a")
+        val dependencyB = ExtentId("dependency-b")
+        val firstRequest = REQUEST.copy(
+            extentSpec = REQUEST.extentSpec.copy(
+                dependencyExtentIds = listOf(dependencyA, dependencyB),
+            ),
+        )
+        val reorderedRequest = firstRequest.copy(
+            extentSpec = firstRequest.extentSpec.copy(
+                dependencyExtentIds = listOf(dependencyB, dependencyA),
+            ),
+        )
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                executions += 1
+                started.complete(Unit)
+                release.await()
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val first = broker.acquire(
+            firstRequest,
+            consumer("ordered-one", FetchConsumerKind.RESERVE),
+        )
+        started.await()
+        val second = broker.acquire(
+            reorderedRequest,
+            consumer("ordered-two", FetchConsumerKind.RESERVE),
+        )
+
+        assertEquals(first.fetchId, second.fetchId)
+        assertEquals(1, executions)
+        release.complete(Unit)
+        assertEquals(FetchOutcomeKind.SUCCESS, first.await().kind)
+        assertEquals(FetchOutcomeKind.SUCCESS, second.await().kind)
+    }
+
+    @Test
+    fun shutdownCancelsAndJoinsActiveOwnerBeforeReturning() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val events = mutableListOf<FetchEvent>()
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, _ ->
+                started.complete(Unit)
+                awaitCancellation()
+            },
+            events = events,
+        )
+
+        broker.acquire(
+            REQUEST,
+            consumer("shutdown", FetchConsumerKind.RESERVE),
+        )
+        started.await()
+
+        broker.shutdown()
+
+        assertEquals(0, broker.activeFetchCountForTest())
+        assertEquals(
+            FetchOutcomeKind.CANCELLED_BROKER_SHUTDOWN,
+            events.last {
+                it.event == FetchEventKind.OWNER_CANCELLED
+            }.outcome,
+        )
+    }
+
+    @Test
     fun rejectedRangeNeverPublishesAndIsCountedSeparately() = runTest {
         var committed = 0
         val publisher = FakePublisher { committed += 1 }
