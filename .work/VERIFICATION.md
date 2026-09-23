@@ -768,7 +768,7 @@ Missing evidence infrastructure is work for the owning slice, not deferred imple
 | M1-ACC-07 | cancel one joined consumer | ownership/cancellation log | remaining consumer is not cancelled; final-consumer cancellation keeps CANCELLING ownership until terminal; late demand does not reset request budget |
 | M1-ACC-08 | playback joins reserve in-flight fetch | attempt-correlated origin trace + broker events | same fetchId is retained, priority raises RESERVE -> PLAYBACK and no cancel/restart duplicate attempt occurs |
 | M1-ACC-09 | seek fully inside published coverage | Media3 + store trace | no remote media request is required |
-| M1-ACC-10 | seek into missing coverage | bridge/broker trace | remote request goes only through FetchBroker |
+| M1-ACC-10 | seek into missing coverage | bridge/broker trace | inside the seek marker window a bridge MISS owns a broker attempt, reaches SUCCESS, becomes LOCAL_SERVE, and every origin request goes only through FetchBroker |
 | M1-ACC-11 | process death after published coverage | restart + independent reconstruction | identical valid coverage survives restart |
 | M1-ACC-12 | N4R-SHORT | reserve/player/network timelines | outage shorter than durable reserve does not cause reserve-exhaustion rebuffer |
 | M1-ACC-13 | N4R-EXHAUST | same | any stall is consistent with actual reserve exhaustion; no coverage overclaim |
@@ -811,7 +811,7 @@ Canonical M1 evidence is versioned rather than silently rewriting an old contrac
 - `committed-extents-v2` for Room schema v2;
 - `verified-extent-files-v1` because independent file facts are unchanged by asset identity;
 - `fetch-events-v2` for new M1-D ownership/attempt/byte-accounting evidence; historical v1 remains valid;
-- `bridge-events-v1` for M1-E PlaybackBridge local-serve/miss/join evidence;
+- `bridge-events-v1` for M1-E PlaybackBridge local-serve/miss/running-join/cancellation-barrier-wait evidence;
 - `recovery-summary-v1`.
 
 Artifact ownership is incremental:
@@ -824,13 +824,13 @@ Artifact ownership is incremental:
 | `coverage-snapshot-v2` | runtime CoverageIndex / independent oracle | exact semantic comparator including MediaAssetId | M1-C |
 | `extent-events-v1` | ExtentStore instrumentation | reducer/schema checks | M1-B/M1-F |
 | `fetch-events-v2` | FetchBroker | schema validation first, then exact fetchId/attempt/transport-correlation cross-check against origin trace | M1-D |
-| `bridge-events-v1` | PlaybackBridge (`PlaybackReadSession`) | schema validation first; every MISS/JOIN joins a terminal `fetch-events-v2` owner by (sessionId, fetchId); bijection between origin data-plane requests and broker attempts (no hidden upstream); cached-seek windows checked by event sequence and broker sequence watermark, never by clock comparison | M1-E |
+| `bridge-events-v1` | PlaybackBridge (`PlaybackReadSession`) | schema validation first; every MISS/JOIN/WAIT_EXISTING correlates to a terminal `fetch-events-v2` owner by (sessionId, fetchId); JOIN means an actual RUNNING-owner join, while WAIT_EXISTING means a cancellation-barrier terminal handoff; bijection between origin data-plane requests and broker attempts (no hidden upstream); seek windows checked by event sequence and broker sequence watermark, never by clock comparison | M1-E |
 | `recovery-summary-v1` | recovery harness | schema + post-reopen oracle | M1-F |
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
 
 Every runtime `fetch-events-v2` row MUST validate against the checked-in schema before semantic/origin verification; a serializer/schema mismatch fails the run. The same rule applies to `bridge-events-v1`.
 
-For M1-E, M1-ACC-09 passes only when a harness-marked cached-seek window contains zero bridge MISS/JOIN rows and zero FetchBroker `ATTEMPT_STARTED` rows between the markers' broker sequence watermarks. M1-ACC-10 passes only when every origin data-plane request of the run correlates to exactly one broker attempt (`transportCorrelationId == requestId`), the attempt count equals the origin data-plane request count, the manifest is served from verified packaged bytes (zero manifest origin requests), and at least one bridge MISS is backed by a successful broker fetch.
+For M1-E, M1-ACC-09 passes only when a harness-marked cached-seek window contains zero bridge MISS/JOIN/WAIT_EXISTING rows and zero FetchBroker `ATTEMPT_STARTED` rows between the markers' broker sequence watermarks. M1-ACC-10 passes only when every origin data-plane request of the run correlates to exactly one broker attempt (`transportCorrelationId == requestId`), the attempt count equals the origin data-plane request count, the manifest is served from verified packaged bytes (zero manifest origin requests), and inside the SEEK_TO_MISSING_ISSUED..SEEK_TO_MISSING_SETTLED window at least one bridge MISS is followed by a broker `ATTEMPT_STARTED`, terminal SUCCESS and LOCAL_SERVE for the same read/extent.
 
 Historical `committed-extents-v1`, `seed-manifest-v1`, `coverage-snapshot-v1` and `fetch-events-v1` remain accepted by the evidence/schema suite for already-produced evidence; new M1-C runs use asset-scoped coverage v2 and new M1-D runs use fetch-events-v2.
 M1-G executes and publishes the already-working evidence path; it must not become the first place where missing producers or comparators are implemented.
