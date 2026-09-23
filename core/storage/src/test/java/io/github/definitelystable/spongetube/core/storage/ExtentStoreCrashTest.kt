@@ -683,6 +683,7 @@ class ExtentStoreCrashTest {
         includeExpectedSha256: Boolean = true,
     ): ExtentSpec =
         ExtentSpec(
+            mediaAssetId = MediaAssetId("asset-test"),
             extentId = ExtentId(id),
             trackId = "video",
             representationId = "v1",
