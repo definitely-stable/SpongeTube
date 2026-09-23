@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "eventSequence": 7,
+  "eventElapsedRealtimeNs": 3000000000,
+  "sessionId": "m1-e-E2",
+  "readId": "r12",
+  "resourceKey": "segment-0-00010.m4s",
+  "requestedRangeStart": 0,
+  "requestedRangeEndExclusive": 91244,
+  "event": "MISS",
+  "extentId": "f1:video:0:10",
+  "dependencyExtentId": null,
+  "fetchId": "fetch-3",
+  "fetchOutcome": null,
+  "bytesLocal": null,
+  "openReadCalls": null,
+  "coverageRefreshCalls": null,
+  "markerName": null,
+  "fetchEventSequenceWatermark": null
+}

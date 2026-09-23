@@ -221,6 +221,12 @@ internal class FetchBroker internal constructor(
         }
     }
 
+    /**
+     * Next FetchEvent sequence number. Evidence markers record it so that
+     * "no attempt inside a window" is checked by sequence, not by clocks.
+     */
+    internal fun eventSequenceWatermark(): Long = eventCounter.get()
+
     internal fun activeFetchCountForTest(): Int =
         synchronized(registryLock) { active.size }
 
