@@ -33,6 +33,8 @@ internal interface ExtentMetadataStore : Closeable {
 
     suspend fun snapshot(): List<StoredExtent>
 
+    suspend fun extentById(extentId: ExtentId): StoredExtent?
+
     suspend fun quarantine(
         extentId: ExtentId,
         reason: ExtentQuarantineReason,
