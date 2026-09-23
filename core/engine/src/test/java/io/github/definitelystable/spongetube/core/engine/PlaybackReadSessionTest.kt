@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
@@ -210,6 +211,28 @@ class PlaybackReadSessionTest {
             h.events(PlaybackBridgeEventKind.FETCH_WAIT_END).single().fetchOutcome,
         )
         assertEquals(1, h.events(PlaybackBridgeEventKind.LOCAL_SERVE).size)
+    }
+
+    @Test
+    fun publishedExtentIdCollisionFailsClosedBeforeReadOrFetch() {
+        val h = harness()
+        val f = h.fixture
+        f.seed(h.store, f.videoInit)
+        val expected = f.video[0]
+        val foreignSpec = expected.extentSpec.copy(
+            mediaAssetId = MediaAssetId("fixture:OTHER"),
+        )
+        h.store.seed(foreignSpec, f.bytesOf(expected))
+        h.start()
+
+        val error = assertThrows(PlaybackBridgeException::class.java) {
+            h.readAll("v-1")
+        }
+
+        assertEquals(PlaybackBridgeFailure.FETCH_IDENTITY_CONFLICT, error.failure)
+        assertTrue(h.origin.executions.isEmpty())
+        assertEquals(0, h.store.openReadCalls.get())
+        assertTrue(h.fetchEvents.isEmpty())
     }
 
     // 8
