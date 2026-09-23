@@ -875,8 +875,9 @@ private class FailOnceSyncDurabilityOps : ExtentDurabilityOps {
     override fun syncAndClose(output: FileOutputStream) {
         if (failNextSync) {
             failNextSync = false
-            output.close()
-            throw ExtentStoreException("simulated sync failure")
+            throw ExtentStoreException(
+                "simulated sync failure before close",
+            )
         }
         HostDurabilityOps.syncAndClose(output)
     }
