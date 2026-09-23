@@ -274,32 +274,24 @@ The previous "player fetch" and "prefetch fetch" model is rejected.
 FetchKey
    │
    ▼
-SharedFetch
-  ├── Player consumer
-  ├── Reserve consumer
-  └── Durable writer
-```
-
-Conceptually:
-
-```kotlin
-interface FetchBroker {
-    suspend fun acquire(
-        request: FetchRequest,
-        consumer: FetchConsumer
-    ): FetchHandle
-}
+SharedFetch(fetchId)
+  ├── Player consumer lease
+  ├── Reserve consumer lease
+  └── owner pipeline
+        ├── sequential origin attempt(s)
+        └── ExtentStore publication sink
 ```
 
 Properties:
 
-- single-flight per FetchKey;
+- single-flight owner pipeline per FetchKey;
+- physical retry attempts under one owner are sequential and carry explicit attempt correlation identity;
 - cancellation is reference-counted, not "cancel and restart";
-- critical playback can raise priority of an existing fetch;
-- persisted completion is atomic;
-- failed partial data follows an explicit resumability policy;
-- duplicate network bytes are a correctness metric.
-
+- final-consumer cancellation keeps the CANCELLING owner registered until its physical attempt is terminal, preventing overlap with a replacement owner;
+- critical playback can raise priority of an existing fetch monotonically without restart;
+- persisted completion is atomic through ExtentStore;
+- failed partial data follows an explicit resumability policy; M1 aborts failed retry writers rather than inventing persistent continuation identity;
+- network, unique-range, duplicate-range and rejected/unmapped bytes are explicit correctness evidence.
 ## 7. DeadlineScheduler
 
 Static priorities are insufficient.
