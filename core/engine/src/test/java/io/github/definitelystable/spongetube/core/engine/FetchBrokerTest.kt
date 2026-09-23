@@ -633,22 +633,22 @@ class FetchBrokerTest {
         }
     }
 
-    private fun committed(spec: ExtentSpec): CommittedExtent =
-        CommittedExtent(
-            mediaAssetId = spec.mediaAssetId,
-            extentId = spec.extentId,
-            trackId = spec.trackId,
-            representationId = spec.representationId,
-            mediaStartUs = spec.mediaStartUs,
-            mediaEndUs = spec.mediaEndUs,
-            byteStart = spec.byteStart,
-            byteEndExclusive = spec.byteEndExclusive,
-            dependencyExtentIds = spec.dependencyExtentIds,
-            length = spec.expectedLength,
-            sha256 = Sha256Digest("0".repeat(64)),
-        )
-
     private companion object {
+        fun committed(spec: ExtentSpec): CommittedExtent =
+            CommittedExtent(
+                mediaAssetId = spec.mediaAssetId,
+                extentId = spec.extentId,
+                trackId = spec.trackId,
+                representationId = spec.representationId,
+                mediaStartUs = spec.mediaStartUs,
+                mediaEndUs = spec.mediaEndUs,
+                byteStart = spec.byteStart,
+                byteEndExclusive = spec.byteEndExclusive,
+                dependencyExtentIds = spec.dependencyExtentIds,
+                length = spec.expectedLength,
+                sha256 = Sha256Digest("0".repeat(64)),
+            )
+
         val REQUEST = FetchRequest(
             fetchKey = FetchKey("fixture:F1/video/0-4"),
             extentSpec = ExtentSpec(
