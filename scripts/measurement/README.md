@@ -126,4 +126,17 @@ python3 scripts/measurement/m1_seed_planner.py \
   --output build/m1/seed-manifest.json
 ```
 
-The producer parses `F1/manifest.mpd`, cross-checks every selected resource against `test-fixtures/media/manifest.json`, and records exact length/SHA-256/dependency identity. It deliberately does not emit expected playable coverage or reserve. Those values come from runtime CoverageIndex and the independent host oracle.
+The producer parses `F1/manifest.mpd`, independently reads every selected fixture file and verifies its actual length/SHA-256 against `test-fixtures/media/manifest.json`. It records exact construction/dependency identity and deliberately does not emit expected playable coverage or reserve.
+
+To verify that a real committed snapshot is exactly the requested seed construction:
+
+```bash
+python3 scripts/measurement/m1_seed_planner.py \
+  --seed-id S30_AUDIO_HOLE \
+  --output build/m1/seed-manifest.json \
+  --verify-committed build/m1/committed-extents.json
+```
+
+This verification checks identity, dependencies, immutable byte facts and negative-seed construction only. Runtime CoverageIndex and `m1_oracle.py` still calculate coverage independently.
+
+The API 36 CI path executes all ten canonical seeds through the real Android ExtentStore, copies the closed Room database/storage root plus runtime coverage artifact, then runs `scripts/ci/verify-m1-c-evidence.sh`. The script invokes the #48 filesystem/oracle verifier and the construction verifier for every seed.
