@@ -235,6 +235,75 @@ class ExtentStoreCrashTest {
     }
 
     @Test
+    fun opaqueReadHandleSupportsPositionalReadAndEof() = runBlocking {
+        val root = File(tempDir, "read-handle")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "0123456789".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val committed = store.writeExtent(spec("readable", bytes)) {
+            write(bytes)
+        }
+
+        val handle = checkNotNull(store.openRead(committed.extentId))
+        assertEquals(committed, handle.extent)
+        assertEquals(bytes.size.toLong(), handle.length)
+
+        val buffer = ByteArray(4)
+        assertEquals(4, handle.readAt(3, buffer))
+        assertEquals("3456", buffer.decodeToString())
+        assertEquals(-1, handle.readAt(bytes.size.toLong(), buffer))
+
+        handle.close()
+        expectThrows<ExtentReadHandleClosedException> {
+            handle.readAt(0, buffer)
+        }
+        store.close()
+    }
+
+    @Test
+    fun readHandleOwnsStoreLifetimeUntilClosed() = runBlocking {
+        val root = File(tempDir, "read-lifetime")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "lease-read".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val committed = store.writeExtent(spec("lease-read", bytes)) {
+            write(bytes)
+        }
+
+        val handle = checkNotNull(store.openRead(committed.extentId))
+        expectThrows<ExtentConflictException> {
+            store.close()
+        }
+
+        handle.close()
+        store.close()
+    }
+
+    @Test
+    fun readHandleDoesNotTouchMetadataPerRead() = runBlocking {
+        val root = File(tempDir, "read-hot-path")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "metadata-on-open-only".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val committed = store.writeExtent(spec("metadata-on-open-only", bytes)) {
+            write(bytes)
+        }
+
+        val lookupsBeforeOpen = metadata.extentLookupCount
+        val handle = checkNotNull(store.openRead(committed.extentId))
+        assertEquals(lookupsBeforeOpen + 1, metadata.extentLookupCount)
+
+        val buffer = ByteArray(4)
+        repeat(3) { index ->
+            assertTrue(handle.readAt(index.toLong(), buffer) > 0)
+        }
+        assertEquals(lookupsBeforeOpen + 1, metadata.extentLookupCount)
+
+        handle.close()
+        store.close()
+    }
+
+    @Test
     fun noOriginDigestUsesDigestOfExactlyReceivedBytes() = runBlocking {
         val root = File(tempDir, "received-digest")
         val metadata = FakeExtentMetadataStore()
@@ -494,6 +563,8 @@ private class FakeExtentMetadataStore(
     var failNextPublish: Boolean = false,
 ) : ExtentMetadataStore {
     private val rows = linkedMapOf<ExtentId, StoredExtent>()
+    var extentLookupCount: Int = 0
+        private set
 
     override suspend fun assertWritable(
         spec: ExtentSpec,
@@ -544,6 +615,13 @@ private class FakeExtentMetadataStore(
 
     override suspend fun snapshot(): List<StoredExtent> =
         rows.values.toList()
+
+    override suspend fun extentById(
+        extentId: ExtentId,
+    ): StoredExtent? {
+        extentLookupCount += 1
+        return rows[extentId]
+    }
 
     override suspend fun quarantine(
         extentId: ExtentId,
