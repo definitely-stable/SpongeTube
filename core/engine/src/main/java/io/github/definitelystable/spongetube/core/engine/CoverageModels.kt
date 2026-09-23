@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import java.util.Collections
 
@@ -65,6 +66,39 @@ class PlaybackRequirementSet(
             PlaybackRequirement(trackId, representationId)
         },
     )
+}
+
+data class CoverageRefreshResult(
+    val loadedExtentCount: Int,
+    val readyExtentCount: Int,
+    val normalizedIntervalCount: Int,
+) {
+    init {
+        require(loadedExtentCount >= 0)
+        require(readyExtentCount >= 0)
+        require(normalizedIntervalCount >= 0)
+        require(readyExtentCount <= loadedExtentCount)
+    }
+}
+
+internal data class ReadyExtentRef(
+    val extentId: ExtentId,
+    val mediaStartUs: Long,
+    val mediaEndUs: Long,
+    val byteStart: Long?,
+    val byteEndExclusive: Long?,
+    val length: Long,
+) {
+    init {
+        require(mediaStartUs >= 0)
+        require(mediaEndUs > mediaStartUs)
+        require(length > 0)
+        require((byteStart == null) == (byteEndExclusive == null))
+        if (byteStart != null && byteEndExclusive != null) {
+            require(byteStart >= 0)
+            require(byteEndExclusive > byteStart)
+        }
+    }
 }
 
 data class CoverageSnapshot internal constructor(
