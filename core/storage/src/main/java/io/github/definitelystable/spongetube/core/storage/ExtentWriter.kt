@@ -122,7 +122,14 @@ internal class ExtentWriter(
             )
             store.hit(ExtentFaultPoint.AFTER_SEAL)
 
-            val fact = FileIntegrity.inspect(partFile)
+            val fact = try {
+                FileIntegrity.inspect(partFile)
+            } catch (error: IOException) {
+                throw storageFailure(
+                    operation = "verify-extent-temp",
+                    cause = error,
+                )
+            }
             val actualLength = fact.length ?: 0L
             val actualSha256 = fact.sha256
                 ?: throw ExtentStoreException(
