@@ -527,6 +527,10 @@ The first M1 vertical slice uses a Sponge-owned extent store:
 
 The M1 backend is intentionally immutable-file based rather than one file per provider segment. FetchBroker may coalesce adjacent coverage into one extent, so provider segmentation is not storage identity. Extent identity is independent of provider URL and descriptor lifetime; descriptor refresh must not invalidate already verified bytes.
 
+`ExtentId` is an opaque **globally unique store identity**. Storage does not parse it, but producers must derive it from immutable media/resource identity in a domain that includes `MediaAssetId`; the same `ExtentId` may not be rebound to another asset. Room and the filesystem therefore keep one primary/path identity without silently relying on track-local IDs.
+
+Room v1 did not persist `MediaAssetId`, so those cache rows have no trustworthy provenance. The v1 -> v2 migration deletes v1 extent/dependency metadata transactionally; normal startup recovery then removes the resulting orphan extent files. M1 deliberately prefers a rebuildable cache miss over inventing asset identity or permanently reserving a global `ExtentId`.
+
 Crash consistency uses an explicit publish barrier:
 
 ```text
@@ -554,7 +558,7 @@ ExtentStore.openRead(extentId) -> ExtentReadHandle
 
 The handle owns validated access to the immutable extent and participates in store reader lifetime/close coordination. This keeps the public read contract stable if the backend later changes from file-per-extent to another measured storage layout.
 
-Room is the durable metadata authority. CoverageIndex is the read-optimized runtime view. M1-C rebuilds its immutable projection explicitly from committed extents on refresh; dependency closure and interval normalization happen before the new projection is atomically installed. Snapshot/reserve queries use that in-memory projection and do not re-walk the extent graph or query Room. Steady-state PlaybackBridge byte serving MUST NOT require a Room/SQLite query per Media3 read operation.
+Room is the durable metadata authority. CoverageIndex is the read-optimized runtime view. M1-C rebuilds its immutable projection explicitly from committed extents on refresh; dependency closure and interval normalization happen before the new projection is atomically installed. The same atomic projection retains ordered immutable backing extent references for READY media coverage, so later PlaybackBridge lookup can resolve semantic coverage to `ExtentId` without creating a second Room-backed index or exposing filesystem paths. Snapshot/reserve queries use normalized intervals; bridge lookup uses backing refs; neither re-walks the dependency graph nor queries Room. Steady-state PlaybackBridge byte serving MUST NOT require a Room/SQLite query per Media3 read operation.
 
 ### Metadata durability scope
 
