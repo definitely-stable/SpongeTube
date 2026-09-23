@@ -31,6 +31,12 @@ class M1FetchEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "single-flight"):
             verify(events, [self.origin()])
 
+    def test_rejects_runtime_row_that_does_not_match_fetch_schema(self):
+        events = self.events()
+        events[0]["unexpectedField"] = "schema-drift"
+        with self.assertRaisesRegex(ValueError, "unexpected property"):
+            verify(events, [self.origin()])
+
     def test_rejects_transport_origin_correlation_mismatch(self):
         events = self.events()
         completed = next(
