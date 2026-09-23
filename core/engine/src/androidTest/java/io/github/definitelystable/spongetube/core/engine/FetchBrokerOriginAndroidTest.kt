@@ -146,7 +146,7 @@ class FetchBrokerOriginAndroidTest {
                 },
                 attemptBudget = FetchAttemptBudget(1),
                 sessionId = SESSION_ID,
-                eventListener = FetchEventListener(events::add),
+                eventListener = FetchEventListener { event -> events += event },
             )
 
             try {
