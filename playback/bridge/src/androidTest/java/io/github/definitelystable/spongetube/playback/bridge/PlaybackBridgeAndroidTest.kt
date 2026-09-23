@@ -154,13 +154,43 @@ class PlaybackBridgeAndroidTest {
             quiesce()
         }
 
+        val issued = scenario.events(PlaybackBridgeEventKind.HARNESS_MARKER)
+            .single { it.markerName == "SEEK_TO_MISSING_ISSUED" }
+        val settled = scenario.events(PlaybackBridgeEventKind.HARNESS_MARKER)
+            .single { it.markerName == "SEEK_TO_MISSING_SETTLED" }
         val misses = scenario.events(PlaybackBridgeEventKind.MISS)
-        assertTrue(misses.isNotEmpty())
+            .filter {
+                issued.eventSequence < it.eventSequence &&
+                    it.eventSequence < settled.eventSequence
+            }
+        assertTrue("seek window must contain a bridge miss", misses.isNotEmpty())
         assertTrue(misses.none { it.extentId in scenario.seededExtentIds })
+
         val completed = scenario.fetchRows("OWNER_COMPLETED")
             .map { it["fetchId"] }
             .toSet()
         assertTrue(misses.all { it.fetchId in completed })
+
+        val low = checkNotNull(issued.fetchEventSequenceWatermark)
+        val high = checkNotNull(settled.fetchEventSequenceWatermark)
+        val missFetchIds = misses.mapNotNull { it.fetchId }.toSet()
+        val attemptsInWindow = scenario.fetchRows("ATTEMPT_STARTED").filter { row ->
+            val sequence = (row["eventSequence"] as Number).toLong()
+            sequence >= low && sequence < high && row["fetchId"] in missFetchIds
+        }
+        assertTrue("seek miss must own a broker attempt in the seek window", attemptsInWindow.isNotEmpty())
+
+        assertTrue(
+            "seek miss must become local coverage before seek settles",
+            misses.any { miss ->
+                scenario.events(PlaybackBridgeEventKind.LOCAL_SERVE).any { local ->
+                    local.readId == miss.readId &&
+                        local.extentId == miss.extentId &&
+                        miss.eventSequence < local.eventSequence &&
+                        local.eventSequence < settled.eventSequence
+                }
+            },
+        )
     }
 
     /** E3 / M1-ACC-08: playback joins an in-flight RESERVE fetch. */
