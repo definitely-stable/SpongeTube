@@ -50,6 +50,65 @@ class M1EvidenceKernelTest(unittest.TestCase):
         version = int(room_schema["database"]["version"])
         self.assertIn(version, SUPPORTED_DATABASE_SCHEMA_VERSIONS)
 
+    def test_v1_database_still_exports_v1_artifact(self):
+        schema_path = ROOM_SCHEMA_DIR / "1.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        database = pathlib.Path(self.temp.name) / "legacy-v1.db"
+
+        with sqlite3.connect(database) as connection:
+            connection.execute("PRAGMA user_version = 1")
+            for entity in schema["database"]["entities"]:
+                connection.execute(
+                    entity["createSql"]
+                    .replace("${TABLE_NAME}", entity["tableName"])
+                )
+            connection.execute(
+                """
+                INSERT INTO extents(
+                    extent_id,
+                    track_id,
+                    representation_id,
+                    media_start_us,
+                    media_end_us,
+                    byte_start,
+                    byte_end_exclusive,
+                    length,
+                    sha256,
+                    storage_path,
+                    publication_state,
+                    integrity_state,
+                    quarantine_reason,
+                    published_at_epoch_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "legacy-v1",
+                    "video",
+                    "v1",
+                    0,
+                    10_000_000,
+                    None,
+                    None,
+                    1,
+                    "0" * 64,
+                    self._canonical_storage_path("legacy-v1"),
+                    "PUBLISHED",
+                    "VALID",
+                    None,
+                    1,
+                ),
+            )
+
+        snapshot = export_committed_snapshot(
+            database,
+            snapshot_id="legacy-v1",
+            session_id="legacy-session",
+            snapshot_kind="POST_RECOVERY",
+        )
+        self.assertEqual(1, snapshot["schemaVersion"])
+        self.assertEqual(1, snapshot["databaseSchemaVersion"])
+        self.assertNotIn("mediaAssetId", snapshot["extents"][0])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
