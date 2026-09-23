@@ -1,6 +1,6 @@
 # M1-E PlaybackBridge implementation — 2026-09-23
 
-Status: implementation in the M1-E PR
+Status: review-hardened M1-E implementation; merge is gated on the full PR CI
 Issue: #40 (parent #35, blocks #41)
 Decision record: `.work/adr/0002-playback-bridge-media3-seam.md`
 
@@ -14,7 +14,7 @@ With the M1-E bridge, (a) seeks inside published coverage produce zero broker at
 
 ## Build
 
-- Commits: the three commits of the M1-E PR on `feat/40-playback-bridge` (base `main @ 33b5e84`).
+- Change set: PR #60 on `feat/40-playback-bridge` (base `main @ 33b5e84`), including post-review correctness hardening.
 - Media3 1.11.1 (unchanged), DASH MediaSource, default Media3 buffer constants.
 - Bridge runtime (Provisional): `maxAttemptsPerFetch=2`, connect timeout 10 s, read timeout 15 s.
 - `SpongeLoadErrorHandlingPolicy` (Provisional): `maxRetries=3`, `retryDelayMs=1000`, retryable outcomes `RETRYABLE_TRANSPORT_FAILURE`, `TERMINAL_TRANSPORT_FAILURE`, `CANCELLED_NO_CONSUMERS`; no fallback selection.
@@ -45,18 +45,18 @@ Cases:
 
 | Case | Setup | Pass condition (host verifier) |
 | --- | --- | --- |
-| E1 / M1-ACC-09 | S120; play, seek 30 s and 60 s, pause until loading stops | no MISS/JOIN between SEEK_ISSUED/SEEK_SETTLED (event sequence); no broker ATTEMPT_STARTED between the markers' broker watermarks; no fetch at all |
-| E2 / M1-ACC-10 | S30; seek to 90 s | ≥1 MISS backed by a successful broker fetch correlated to an origin request |
+| E1 / M1-ACC-09 | S120; play, seek 30 s and 60 s, pause until loading stops | no MISS/JOIN/WAIT_EXISTING between SEEK_ISSUED/SEEK_SETTLED (event sequence); no broker ATTEMPT_STARTED between the markers' broker watermarks; no fetch at all |
+| E2 / M1-ACC-10 | S30; quiesce, then seek to 90 s | inside SEEK_TO_MISSING_ISSUED..SETTLED: MISS -> broker ATTEMPT_STARTED -> terminal SUCCESS -> LOCAL_SERVE for the same read/extent; origin request is correlated to the broker attempt |
 | E3 / M1-ACC-08 | S30; harness RESERVE lease on video segment 4 held at the transport gate until the bridge JOIN | JOIN onto the reserve owner, one PRIORITY_RAISED, exactly one physical attempt |
 | E4 | S10; video segment 2 planned as 3 ranged FetchUnits | ranged misses, mid-resource Range requests in the origin trace, one open read across ranged extents |
 | E5 | S30_MISSING_INIT | exactly one video init MISS; published segment 1 served locally |
 | E6 | S10; all attempts gated forever; `player.release()` during the blocked miss | blocked reads CLOSE and owners end `CANCELLED_NO_CONSUMERS` within 1 s; ExtentStore closes without `ExtentConflictException` |
-| all | — | schema-valid rows; MISS/JOIN join a terminal broker owner; no fetch of a pre-run committed extent; zero duplicate range bytes; origin data-plane requests ↔ completed broker attempts 1:1; zero manifest origin requests; post-run runtime coverage == `m1_oracle.py` reconstruction |
+| all | — | schema-valid rows; MISS/JOIN/WAIT_EXISTING correlate to a terminal broker owner; JOIN means a true RUNNING-owner join; no fetch of a pre-run committed extent; zero duplicate range bytes; origin data-plane requests ↔ completed broker attempts 1:1; zero manifest origin requests; post-run runtime coverage == `m1_oracle.py` reconstruction |
 
 ## Results
 
-- JVM (local, Windows, JDK 25 Gradle daemon): engine `PlaybackReadSessionTest` 14/14, `HttpRangeFetchExecutorTest` 6/6, `CoverageIndexTest` 19/19, `FetchBrokerTest` 14/14; bridge `SpongeUrisTest` 3/3, `SpongeBridgeGuardTest` 2/2, `SpongeLoadErrorHandlingPolicyTest` 4/4; `F1FixtureCatalogTest` 3/3; verifier `test_m1_bridge_evidence` 12/12; contract suite 17/17.
-- Instrumented E1-E6: **pending the Android Smoke run of the PR**; no instrumented result is claimed by this record.
+- Review hardening adds: fail-closed immutable ExtentSpec admission for same-ExtentId collisions; explicit NEW_OWNER/JOINED_RUNNING/WAITED_CANCELLING acquisition causality; Media3 DataSource EOF/range contract coverage; and a negative verifier test proving a pre-seek fetch cannot satisfy E2.
+- Host/JVM and schema/verifier checks are owned by the PR Verify workflow. Instrumented E1-E6 plus the DataSource edge-range contract are owned by Android Smoke. This record does not claim a device PASS independently of those retained CI artifacts.
 
 ## Raw artifacts
 
@@ -71,7 +71,7 @@ The PlaybackBridge seam (ADR-0002) is accepted for M1. Retry and timeout paramet
 - No performance, latency or resource claim; emulator timing is non-representative.
 - A miss waits for the whole FetchUnit before the decoder receives bytes.
 - Failed broker attempts carry no transport correlation; any origin request that is not matched to a completed attempt fails the run (conservative).
-- `openRead` verifies length only; same-length corruption is caught by the next recovery scan, not at read time.
+- Immutable committed metadata is matched against the playback plan before `openRead`. The handle itself still checks length only; same-length on-disk corruption after admission is caught by the next recovery scan, not at read time.
 - The E3/E6 transport gate is an evidence hook: it only delays or cancels an attempt before the request is opened and cannot create one.
 - Ranged units in E4 claim no media interval (conservative coverage) and exist to exercise Range fetch and boundary reads.
 - N4 recovery, process death and bounded-retry proof under outage are M1-F.
