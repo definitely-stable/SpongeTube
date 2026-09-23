@@ -22,6 +22,14 @@ from schema_subset import validate_instance
 
 
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
+ROOM_SCHEMA = (
+    REPO_ROOT
+    / "core"
+    / "storage"
+    / "schemas"
+    / "io.github.definitelystable.spongetube.core.storage.ExtentDatabase"
+    / "1.json"
+)
 
 
 class M1EvidenceKernelTest(unittest.TestCase):
@@ -55,37 +63,20 @@ class M1EvidenceKernelTest(unittest.TestCase):
         path.write_bytes(data)
 
     def _create_database(self):
+        room_schema = json.loads(ROOM_SCHEMA.read_text(encoding="utf-8"))
+        database_schema = room_schema["database"]
+
         with sqlite3.connect(self.database) as connection:
-            connection.execute("PRAGMA user_version = 1")
             connection.execute(
-                """
-                CREATE TABLE extents (
-                    extent_id TEXT PRIMARY KEY NOT NULL,
-                    track_id TEXT NOT NULL,
-                    representation_id TEXT NOT NULL,
-                    media_start_us INTEGER,
-                    media_end_us INTEGER,
-                    byte_start INTEGER,
-                    byte_end_exclusive INTEGER,
-                    length INTEGER NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    storage_path TEXT NOT NULL,
-                    publication_state TEXT NOT NULL,
-                    integrity_state TEXT NOT NULL,
-                    quarantine_reason TEXT,
-                    published_at_epoch_ms INTEGER NOT NULL
-                )
-                """
+                f"PRAGMA user_version = {int(database_schema['version'])}"
             )
-            connection.execute(
-                """
-                CREATE TABLE extent_dependencies (
-                    extent_id TEXT NOT NULL,
-                    dependency_extent_id TEXT NOT NULL,
-                    PRIMARY KEY(extent_id, dependency_extent_id)
+            for entity in database_schema["entities"]:
+                create_sql = entity["createSql"].replace(
+                    "${TABLE_NAME}",
+                    entity["tableName"],
                 )
-                """
-            )
+                connection.execute(create_sql)
+
             self._insert_row(
                 connection,
                 "v-init",
@@ -287,6 +278,33 @@ class M1EvidenceKernelTest(unittest.TestCase):
             fact["sha256"],
         )
         self.assertNotEqual("f" * 64, fact["sha256"])
+
+        oracle = build_canonical_oracle_snapshot(
+            committed,
+            verified,
+            {"video": "v1"},
+            0,
+        )
+        self.assertEqual([], oracle["playableIntervals"])
+
+    def test_database_length_claim_is_not_treated_as_file_truth(self):
+        with sqlite3.connect(self.database) as connection:
+            connection.execute(
+                "UPDATE extents SET length = length + 1 WHERE extent_id = ?",
+                ("v-0",),
+            )
+
+        committed = self._committed()
+        verified = self._verified(committed)
+        fact = next(
+            item for item in verified["files"] if item["extentId"] == "v-0"
+        )
+        self.assertEqual(len(self.media_bytes), fact["length"])
+
+        committed_row = next(
+            item for item in committed["extents"] if item["extentId"] == "v-0"
+        )
+        self.assertNotEqual(committed_row["length"], fact["length"])
 
         oracle = build_canonical_oracle_snapshot(
             committed,
