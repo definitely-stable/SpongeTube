@@ -2,14 +2,10 @@
 set -euo pipefail
 
 OUTPUT_ROOT="${1:-build/m1-c-evidence}"
-DEVICE_ROOT="/data/local/tmp/spongetube-m1-c"
 PULLED_ROOT="$OUTPUT_ROOT/device"
 
 rm -rf "$OUTPUT_ROOT"
-mkdir -p "$OUTPUT_ROOT"
-
-adb pull "$DEVICE_ROOT" "$PULLED_ROOT"
-test -d "$PULLED_ROOT"
+mkdir -p "$PULLED_ROOT"
 
 SEEDS=(
   S0
@@ -23,6 +19,28 @@ SEEDS=(
   S30_PARTIAL_TAIL
   S30_WRONG_REPRESENTATION
 )
+
+mapfile -t DEVICE_ROOTS < <(
+  adb shell 'find /sdcard/Android/media -type d -path "*/additional_test_output/m1-c-evidence" -print' \
+    | tr -d '\r' \
+    | sed '/^$/d'
+)
+
+if [[ "${#DEVICE_ROOTS[@]}" -ne 1 ]]; then
+  printf 'expected exactly one M1-C evidence root, found %s\n' \
+    "${#DEVICE_ROOTS[@]}" >&2
+  printf '%s\n' "${DEVICE_ROOTS[@]}" >&2
+  exit 1
+fi
+DEVICE_ROOT="${DEVICE_ROOTS[0]}"
+
+for seed in "${SEEDS[@]}"; do
+  case_root="$PULLED_ROOT/$seed"
+  mkdir -p "$case_root"
+  adb pull "$DEVICE_ROOT/$seed/storage" "$case_root/"
+  adb pull "$DEVICE_ROOT/$seed/runtime-coverage.json" \
+    "$case_root/runtime-coverage.json"
+done
 
 for seed in "${SEEDS[@]}"; do
   case_root="$PULLED_ROOT/$seed"
