@@ -3,7 +3,9 @@ package io.github.definitelystable.spongetube.core.storage
 import android.content.Context
 import java.io.Closeable
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -19,6 +21,7 @@ class ExtentStore private constructor(
     internal val ioDispatcher: CoroutineDispatcher,
     private val lifecycleListener: ExtentLifecycleListener?,
     internal val faultInjector: ExtentFaultInjector,
+    val metadataDurability: ExtentMetadataDurability?,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
     private val activeWriterIds = mutableSetOf<ExtentId>()
@@ -81,6 +84,27 @@ class ExtentStore private constructor(
         }
     }
 
+    suspend fun openRead(
+        extentId: ExtentId,
+    ): ExtentReadHandle? {
+        beginReadOperation()
+        var ownershipTransferred = false
+
+        try {
+            val handle = withContext(ioDispatcher) {
+                openReadInternal(extentId)
+            }
+            if (handle != null) {
+                ownershipTransferred = true
+            }
+            return handle
+        } finally {
+            if (!ownershipTransferred) {
+                endReadOperation()
+            }
+        }
+    }
+
     override fun close() {
         synchronized(this) {
             if (closed) {
@@ -125,6 +149,93 @@ class ExtentStore private constructor(
         }
     }
 
+    private suspend fun openReadInternal(
+        extentId: ExtentId,
+    ): ExtentReadHandle? {
+        val stored = metadataStore.extentById(extentId) ?: return null
+        if (
+            stored.publicationState != ExtentPublicationState.PUBLISHED ||
+            stored.integrityState != ExtentIntegrityState.VALID
+        ) {
+            return null
+        }
+
+        val expectedPath = layout.finalRelativePath(extentId)
+        if (stored.storagePath != expectedPath) {
+            metadataStore.quarantine(
+                extentId,
+                ExtentQuarantineReason.UNEXPECTED_PATH,
+            )
+            return null
+        }
+
+        val file = try {
+            layout.resolveStoredPath(stored.storagePath)
+        } catch (_: IllegalArgumentException) {
+            metadataStore.quarantine(
+                extentId,
+                ExtentQuarantineReason.UNEXPECTED_PATH,
+            )
+            return null
+        }
+
+        if (!file.exists()) {
+            metadataStore.quarantine(
+                extentId,
+                ExtentQuarantineReason.MISSING_FILE,
+            )
+            return null
+        }
+        if (!file.isFile) {
+            metadataStore.quarantine(
+                extentId,
+                ExtentQuarantineReason.UNEXPECTED_PATH,
+            )
+            return null
+        }
+
+        val channel = try {
+            FileInputStream(file).channel
+        } catch (error: IOException) {
+            if (!file.exists()) {
+                metadataStore.quarantine(
+                    extentId,
+                    ExtentQuarantineReason.MISSING_FILE,
+                )
+                return null
+            }
+            throw storageFailure(
+                operation = "open-extent-read",
+                cause = error,
+            )
+        }
+
+        val persistedLength = try {
+            channel.size()
+        } catch (error: IOException) {
+            runCatching { channel.close() }
+            throw storageFailure(
+                operation = "stat-extent-read",
+                cause = error,
+            )
+        }
+
+        if (persistedLength != stored.length) {
+            runCatching { channel.close() }
+            metadataStore.quarantine(
+                extentId,
+                ExtentQuarantineReason.LENGTH_MISMATCH,
+            )
+            return null
+        }
+
+        return ExtentReadHandle(
+            extent = stored.toCommitted(),
+            channel = channel,
+            onClosed = ::endReadOperation,
+        )
+    }
+
     private suspend fun createWriter(spec: ExtentSpec): ExtentWriter {
         reserveWriter(spec.extentId)
 
@@ -151,7 +262,14 @@ class ExtentStore private constructor(
                 spec.extentId,
                 durabilityOps,
             )
-            output = FileOutputStream(partFile, false)
+            output = try {
+                FileOutputStream(partFile, false)
+            } catch (error: IOException) {
+                throw storageFailure(
+                    operation = "open-extent-temp",
+                    cause = error,
+                )
+            }
 
             emit(
                 ExtentLifecycleEvent(
@@ -391,6 +509,7 @@ class ExtentStore private constructor(
                         ioDispatcher = Dispatchers.IO,
                         lifecycleListener = lifecycleListener,
                         faultInjector = ExtentFaultInjector.NONE,
+                        metadataDurability = openedMetadata.durability,
                     )
                     store = openedStore
                     openedStore.initialRecoveryReport =
@@ -432,6 +551,7 @@ class ExtentStore private constructor(
                 ioDispatcher = ioDispatcher,
                 lifecycleListener = null,
                 faultInjector = faultInjector,
+                metadataDurability = null,
             )
             store.initialRecoveryReport = store.recoverInternal()
             store
@@ -467,6 +587,7 @@ class ExtentStore private constructor(
                     ioDispatcher = Dispatchers.IO,
                     lifecycleListener = null,
                     faultInjector = ExtentFaultInjector.NONE,
+                    metadataDurability = openedMetadata.durability,
                 )
                 store = openedStore
                 openedStore.initialRecoveryReport =
