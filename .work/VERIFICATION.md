@@ -1,7 +1,7 @@
 # SpongeTube Verification & Benchmark Plan v0.2
 
 Status: **Normative — evidence and acceptance policy**
-Date: **2026-09-21**
+Date: **2026-09-23**
 
 ## 1. Rule: architecture must be falsifiable
 
