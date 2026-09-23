@@ -14,7 +14,7 @@ value class FetchKey(val value: String) {
 }
 
 @JvmInline
-value class FetchId(val value: String) {
+internal value class FetchId(val value: String) {
     init {
         require(value.isNotBlank()) { "fetch id must not be blank" }
     }
@@ -23,7 +23,7 @@ value class FetchId(val value: String) {
 }
 
 @JvmInline
-value class FetchConsumerId(val value: String) {
+internal value class FetchConsumerId(val value: String) {
     init {
         require(value.isNotBlank()) { "fetch consumer id must not be blank" }
         require(value.length <= 256) {
@@ -34,12 +34,12 @@ value class FetchConsumerId(val value: String) {
     override fun toString(): String = value
 }
 
-enum class FetchPriority {
+internal enum class FetchPriority {
     RESERVE,
     PLAYBACK,
 }
 
-enum class FetchConsumerKind {
+internal enum class FetchConsumerKind {
     RESERVE,
     PLAYBACK;
 
@@ -50,17 +50,17 @@ enum class FetchConsumerKind {
         }
 }
 
-data class FetchConsumer(
+internal data class FetchConsumer(
     val id: FetchConsumerId,
     val kind: FetchConsumerKind,
 )
 
-data class FetchRequest(
+internal data class FetchRequest(
     val fetchKey: FetchKey,
     val extentSpec: ExtentSpec,
 )
 
-data class FetchAttemptBudget(
+internal data class FetchAttemptBudget(
     val maxAttempts: Int,
 ) {
     init {
@@ -68,7 +68,7 @@ data class FetchAttemptBudget(
     }
 }
 
-data class FetchByteAccounting(
+internal data class FetchByteAccounting(
     val networkBytes: Long,
     val uniqueRangeBytes: Long,
     val duplicateRangeBytes: Long,
@@ -94,7 +94,7 @@ data class FetchByteAccounting(
     }
 }
 
-enum class FetchOutcomeKind {
+internal enum class FetchOutcomeKind {
     SUCCESS,
     RETRYABLE_TRANSPORT_FAILURE,
     TERMINAL_TRANSPORT_FAILURE,
@@ -109,7 +109,7 @@ enum class FetchOutcomeKind {
     INTERNAL_FAILURE,
 }
 
-data class FetchOutcome(
+internal data class FetchOutcome(
     val kind: FetchOutcomeKind,
     val attempts: Int,
     val bytes: FetchByteAccounting,
@@ -126,11 +126,11 @@ data class FetchOutcome(
         get() = kind == FetchOutcomeKind.SUCCESS
 }
 
-class FetchIdentityConflictException(
+internal class FetchIdentityConflictException(
     message: String,
 ) : IllegalArgumentException(message)
 
-interface FetchHandle : AutoCloseable {
+internal interface FetchHandle : AutoCloseable {
     val fetchKey: FetchKey
     val fetchId: FetchId
 
