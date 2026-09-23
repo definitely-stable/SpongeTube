@@ -126,6 +126,43 @@ The predicate is now `meetsM1DurabilityPolicy`. The adopted policy remains:
 
 This is configuration evidence, not a physical-storage guarantee.
 
+### F7 — writer cleanup could mask the primary failure or retain ownership
+
+**Scenario**
+
+A producer/cancellation failure triggered `writeExtent()` cleanup, or commit failed while closing/sealing the temporary stream. Cleanup itself then failed.
+
+**Impact**
+
+A cleanup exception from the `finally` path could replace the producer/cancellation error. In `commitLocked()`, a close failure could also prevent `finishTerminal()`, retaining the writer reservation and blocking later close/retry.
+
+**Correction**
+
+- preserve the original producer/cancellation/commit failure;
+- attach abort/delete/close cleanup failures as suppressed exceptions;
+- always release writer ownership on terminal commit failure;
+- mark the output closed in a `finally` around the durability-owned sync/close operation;
+- classify close I/O through the storage taxonomy.
+
+### F8 — ExtentSink bounds validation was integer-overflow-prone
+
+**Scenario**
+
+A caller supplied non-negative `offset` and `length` values whose integer sum overflowed.
+
+**Impact**
+
+The precondition `offset + length <= bytes.size` was not mathematically safe and could accept an invalid range before the underlying stream rejected it.
+
+**Correction**
+
+Use subtraction-based validation:
+
+- `offset <= bytes.size`;
+- `length <= bytes.size - offset`.
+
+This matches the already hardened read-handle bounds logic.
+
 ## Findings deliberately not changed
 
 - **No per-open SHA-256 rehash.** Startup recovery already verifies SHA-256. Rehashing every playback open would add O(extent bytes) latency without a measured need. Background/incremental integrity remains M6.
@@ -139,6 +176,9 @@ This is configuration evidence, not a physical-storage guarantee.
 Host:
 - cancelled read admission releases store ownership;
 - runtime length corruption is deleted/quarantined and immediately repairable;
+- producer failure remains primary when abort cleanup fails;
+- sync failure releases writer ownership and permits same-id retry;
+- ExtentSink bounds validation rejects overflow-prone ranges;
 - existing positional/no-DB-per-read tests remain unchanged.
 
 Android:
