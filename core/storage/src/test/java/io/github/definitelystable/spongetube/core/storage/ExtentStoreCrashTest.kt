@@ -282,6 +282,73 @@ class ExtentStoreCrashTest {
     }
 
     @Test
+    fun runtimeLengthMismatchIsCleanedAndRepairableWithoutRestart() =
+        runBlocking {
+            val root = File(tempDir, "read-length-repair")
+            val metadata = FakeExtentMetadataStore()
+            val bytes = "repair-after-read-admission".encodeToByteArray()
+            val spec = spec("repair-after-read-admission", bytes)
+            val store = openStore(root, metadata)
+            val committed = store.writeExtent(spec) {
+                write(bytes)
+            }
+
+            val finalFile = ExtentPathLayout(root).finalFile(
+                committed.extentId,
+                HostDurabilityOps,
+            )
+            finalFile.writeBytes("short".encodeToByteArray())
+
+            assertEquals(null, store.openRead(committed.extentId))
+            assertFalse(finalFile.exists())
+            assertTrue(store.committedExtents().isEmpty())
+
+            val repaired = store.writeExtent(spec) {
+                write(bytes)
+            }
+            assertEquals(committed.extentId, repaired.extentId)
+
+            store.openRead(repaired.extentId)?.use { handle ->
+                val actual = ByteArray(bytes.size)
+                assertEquals(bytes.size, handle.readAt(0, actual))
+                assertEquals(bytes.toList(), actual.toList())
+            } ?: throw AssertionError("repaired extent is not readable")
+
+            store.close()
+        }
+
+    @Test
+    fun cancelledOpenReadReleasesStoreLease() = runBlocking {
+        val root = File(tempDir, "cancelled-read-admission")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "cancelled-read-admission".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val committed = store.writeExtent(
+            spec("cancelled-read-admission", bytes),
+        ) {
+            write(bytes)
+        }
+
+        val lookupStarted = CompletableDeferred<Unit>()
+        val releaseLookup = CompletableDeferred<Unit>()
+        metadata.lookupStarted = lookupStarted
+        metadata.releaseLookup = releaseLookup
+
+        val opening = async(Dispatchers.Default) {
+            store.openRead(committed.extentId)
+        }
+        lookupStarted.await()
+        opening.cancel()
+        releaseLookup.complete(Unit)
+
+        expectThrows<CancellationException> {
+            opening.await()
+        }
+
+        store.close()
+    }
+
+    @Test
     fun readHandleOwnsStoreLifetimeUntilClosed() = runBlocking {
         val root = File(tempDir, "read-lifetime")
         val metadata = FakeExtentMetadataStore()
@@ -586,6 +653,8 @@ private class FakeExtentMetadataStore(
     private val rows = linkedMapOf<ExtentId, StoredExtent>()
     var extentLookupCount: Int = 0
         private set
+    var lookupStarted: CompletableDeferred<Unit>? = null
+    var releaseLookup: CompletableDeferred<Unit>? = null
 
     override suspend fun assertWritable(
         spec: ExtentSpec,
@@ -641,6 +710,8 @@ private class FakeExtentMetadataStore(
         extentId: ExtentId,
     ): StoredExtent? {
         extentLookupCount += 1
+        lookupStarted?.complete(Unit)
+        releaseLookup?.await()
         return rows[extentId]
     }
 
