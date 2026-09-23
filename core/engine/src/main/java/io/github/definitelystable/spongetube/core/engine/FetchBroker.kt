@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-internal class FetchBroker private constructor(
+internal class FetchBroker internal constructor(
     private val publisher: FetchPublisher,
     private val executor: FetchAttemptExecutor,
     private val attemptBudget: FetchAttemptBudget,
