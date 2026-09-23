@@ -193,6 +193,9 @@ private class CoverageProjection private constructor(
                     .add(
                         ReadyExtentRef(
                             extentId = extent.extentId,
+                            dependencyExtentIds = Collections.unmodifiableList(
+                                extent.dependencyExtentIds.toList(),
+                            ),
                             mediaStartUs = interval.startUs,
                             mediaEndUs = interval.endUs,
                             byteStart = extent.byteStart,
