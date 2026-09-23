@@ -21,7 +21,7 @@ class ExtentStore private constructor(
     internal val ioDispatcher: CoroutineDispatcher,
     private val lifecycleListener: ExtentLifecycleListener?,
     internal val faultInjector: ExtentFaultInjector,
-    val metadataDurability: ExtentMetadataDurability,
+    internal val metadataDurability: ExtentMetadataDurability,
 ) : Closeable {
     internal val layout = ExtentPathLayout(rootDirectory)
     private val activeWriterIds = mutableSetOf<ExtentId>()
