@@ -6,6 +6,7 @@ import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -136,10 +137,10 @@ class FetchBrokerTest {
         assertEquals(listOf(1, 2), attempts)
         assertEquals(FetchOutcomeKind.SUCCESS, outcome.kind)
         assertEquals(2, outcome.attempts)
-        assertEquals(6, outcome.bytes.networkBytes)
-        assertEquals(4, outcome.bytes.uniqueRangeBytes)
-        assertEquals(2, outcome.bytes.duplicateRangeBytes)
-        assertEquals(0, outcome.bytes.rejectedOrUnmappedBytes)
+        assertEquals(6L, outcome.bytes.networkBytes)
+        assertEquals(4L, outcome.bytes.uniqueRangeBytes)
+        assertEquals(2L, outcome.bytes.duplicateRangeBytes)
+        assertEquals(0L, outcome.bytes.rejectedOrUnmappedBytes)
     }
 
     @Test
@@ -201,13 +202,13 @@ class FetchBrokerTest {
         ).await()
 
         assertEquals(FetchOutcomeKind.RANGE_REJECTED, outcome.kind)
-        assertEquals(2, outcome.bytes.networkBytes)
-        assertEquals(0, outcome.bytes.uniqueRangeBytes)
-        assertEquals(2, outcome.bytes.rejectedOrUnmappedBytes)
+        assertEquals(2L, outcome.bytes.networkBytes)
+        assertEquals(0L, outcome.bytes.uniqueRangeBytes)
+        assertEquals(2L, outcome.bytes.rejectedOrUnmappedBytes)
         assertEquals(0, committed)
     }
 
-    private fun broker(
+    private fun TestScope.broker(
         executor: FetchAttemptExecutor,
         budget: FetchAttemptBudget = FetchAttemptBudget(1),
         events: MutableList<FetchEvent> = mutableListOf(),
@@ -216,7 +217,7 @@ class FetchBrokerTest {
         executor = executor,
         attemptBudget = budget,
         sessionId = "test-session",
-        eventListener = FetchEventListener(events::add),
+        eventListener = FetchEventListener { event -> events += event },
         ownerScope = backgroundScope,
         ownsScope = false,
         monotonicClockNs = { events.size.toLong() },
