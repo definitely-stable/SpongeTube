@@ -422,7 +422,7 @@ class CoverageSeedAndroidTest {
                 var currentTicks = 0L
                 var previousEndUs: Long? = null
 
-                for (segmentIndex in 0 until segments.length()) {
+                for (segmentIndex in 0 until segments.length) {
                     val segment = segments.item(segmentIndex) as Element
                     if (segment.hasAttribute("t")) {
                         currentTicks = segment.getAttribute("t").toLong()
