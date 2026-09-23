@@ -3,10 +3,12 @@ package io.github.definitelystable.spongetube.benchmark
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import android.os.SystemClock
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -46,12 +48,10 @@ class M0AndroidSmokeTest {
             launch.contains("Status: ok"),
         )
 
-        val loadButton = device.wait(
-            Until.findObject(By.text("Load canonical F1")),
-            10_000,
+        device.clickFresh(
+            selector = By.text("Load canonical F1"),
+            timeoutMs = 10_000,
         )
-        assertNotNull("smoke load button was not found", loadButton)
-        loadButton.click()
 
         val playing = device.wait(
             Until.hasObject(By.textContains("playing")),
@@ -89,6 +89,35 @@ class M0AndroidSmokeTest {
                 file.isFile && file.length() > 0L,
             )
         }
+    }
+
+    private fun UiDevice.clickFresh(
+        selector: BySelector,
+        timeoutMs: Long,
+    ) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        var lastStale: StaleObjectException? = null
+
+        while (SystemClock.uptimeMillis() < deadline) {
+            val remainingMs = deadline - SystemClock.uptimeMillis()
+            val candidate = wait(
+                Until.findObject(selector),
+                minOf(1_000L, remainingMs),
+            ) ?: continue
+
+            try {
+                candidate.click()
+                return
+            } catch (error: StaleObjectException) {
+                lastStale = error
+                SystemClock.sleep(50)
+            }
+        }
+
+        throw AssertionError(
+            "smoke load button was not stably clickable within ${timeoutMs}ms",
+            lastStale,
+        )
     }
 
     private companion object {
