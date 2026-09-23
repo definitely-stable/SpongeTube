@@ -163,6 +163,19 @@ def _validate_artifact(
     validate_instance(_load_schema(schema_name), dict(artifact))
 
 
+def _require_supported_database_schema_version(
+    value: object,
+) -> int:
+    version = int(value)
+    if version not in SUPPORTED_DATABASE_SCHEMA_VERSIONS:
+        raise ValueError(
+            "unsupported ExtentStore database schema version: "
+            f"{version}; supported="
+            f"{sorted(SUPPORTED_DATABASE_SCHEMA_VERSIONS)}"
+        )
+    return version
+
+
 def _write_json(path: pathlib.Path, payload: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
@@ -347,15 +360,9 @@ def export_committed_snapshot(
                 + "; ".join(quick_check)
             )
 
-        database_schema_version = int(
+        database_schema_version = _require_supported_database_schema_version(
             connection.execute("PRAGMA user_version").fetchone()[0]
         )
-        if database_schema_version not in SUPPORTED_DATABASE_SCHEMA_VERSIONS:
-            raise ValueError(
-                "unsupported ExtentStore database schema version: "
-                f"{database_schema_version}; supported="
-                f"{sorted(SUPPORTED_DATABASE_SCHEMA_VERSIONS)}"
-            )
 
         dependencies: dict[str, list[str]] = {}
         for row in connection.execute(
@@ -492,6 +499,10 @@ def verify_extent_files(
     if not storage_root.is_dir():
         raise ValueError(f"storage root is not a directory: {storage_root}")
 
+    database_schema_version = _require_supported_database_schema_version(
+        committed_snapshot["databaseSchemaVersion"]
+    )
+
     raw_extents = committed_snapshot["extents"]
     assert isinstance(raw_extents, list)
 
@@ -510,7 +521,7 @@ def verify_extent_files(
 
         expected_storage_path = _expected_storage_path(
             extent_id,
-            int(committed_snapshot["databaseSchemaVersion"]),
+            database_schema_version,
         )
         if storage_path != expected_storage_path:
             raise ValueError(
@@ -591,6 +602,10 @@ def build_canonical_oracle_snapshot(
     _validate_artifact(
         verified_snapshot,
         "verified-extent-files-v1.schema.json",
+    )
+
+    _require_supported_database_schema_version(
+        committed_snapshot["databaseSchemaVersion"]
     )
 
     if committed_snapshot["sessionId"] != verified_snapshot["sessionId"]:
