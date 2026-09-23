@@ -10,8 +10,14 @@ data class ExtentMetadataDurability(
             journalMode.equals("truncate", ignoreCase = true) &&
                 synchronous >= SQLITE_SYNCHRONOUS_FULL
 
-    private companion object {
+    internal companion object {
         const val SQLITE_SYNCHRONOUS_FULL = 2
+
+        val UNVERIFIED_TEST = ExtentMetadataDurability(
+            journalMode = "test-unverified",
+            synchronous = 0,
+            busyTimeoutMs = 0,
+        )
     }
 }
 
