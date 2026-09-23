@@ -65,6 +65,7 @@ jobs:
             :app:assembleBenchmark \
             :benchmark:assembleBenchmark \
             :core:storage:assembleDebug \
+            :core:engine:assembleDebug \
             :tools:media-lab:installDist
 
       - name: Prepare emulator
@@ -80,7 +81,8 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew --dependency-verification=strict \
-            :core:storage:connectedDebugAndroidTest
+            :core:storage:connectedDebugAndroidTest \
+            :core:engine:connectedDebugAndroidTest
 
       - name: Run N0 compatibility smoke
         shell: bash
