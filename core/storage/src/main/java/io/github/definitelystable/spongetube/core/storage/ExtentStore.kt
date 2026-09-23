@@ -223,8 +223,8 @@ class ExtentStore private constructor(
             FileInputStream(file).channel
         } catch (error: IOException) {
             if (!file.exists()) {
-                metadataStore.quarantine(
-                    extentId,
+                quarantineReadFailure(
+                    stored,
                     ExtentQuarantineReason.MISSING_FILE,
                 )
                 return null
