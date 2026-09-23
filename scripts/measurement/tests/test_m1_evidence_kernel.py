@@ -496,6 +496,52 @@ class M1EvidenceKernelTest(unittest.TestCase):
         self.assertTrue(verified_output.is_file())
         self.assertTrue(oracle_output.is_file())
 
+    def test_cli_verify_run_returns_nonzero_for_inflated_runtime(self):
+        runtime = self._oracle()
+        runtime["playableIntervals"][0]["endUs"] += 1_000_000
+        runtime["durablePlayableEndUs"] += 1_000_000
+        runtime["durableReserveUs"] += 1_000_000
+
+        runtime_path = self.root / "runtime-inflated.json"
+        runtime_path.write_text(json.dumps(runtime), encoding="utf-8")
+
+        committed_output = self.root / "mismatch" / "committed.json"
+        verified_output = self.root / "mismatch" / "files.json"
+        oracle_output = self.root / "mismatch" / "oracle.json"
+
+        status = main(
+            [
+                "verify-run",
+                "--database",
+                str(self.database),
+                "--storage-root",
+                str(self.storage_root),
+                "--runtime",
+                str(runtime_path),
+                "--snapshot-id",
+                "run-mismatch",
+                "--session-id",
+                "session-1",
+                "--snapshot-kind",
+                "POST_RECOVERY",
+                "--playhead-us",
+                "5000000",
+                "--required",
+                "video=v1",
+                "--committed-output",
+                str(committed_output),
+                "--verified-output",
+                str(verified_output),
+                "--oracle-output",
+                str(oracle_output),
+            ]
+        )
+
+        self.assertEqual(1, status)
+        self.assertTrue(committed_output.is_file())
+        self.assertTrue(verified_output.is_file())
+        self.assertTrue(oracle_output.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
