@@ -66,6 +66,7 @@ class PlaybackRequirementSet(
 
 data class CoverageSnapshot(
     val mediaAssetId: MediaAssetId,
+    val playheadUs: Long,
     val requiredRepresentations: Map<String, String>,
     val perTrackPublishedIntervals: Map<String, List<MediaInterval>>,
     val playableIntervals: List<MediaInterval>,
