@@ -19,6 +19,13 @@ value class MediaAssetId(val value: String) {
     }
 }
 
+/**
+ * Opaque globally unique identity of one immutable extent in an ExtentStore.
+ *
+ * Storage does not parse this value. Producers must derive it from immutable
+ * resource identity that includes the MediaAssetId domain; reusing the same
+ * ExtentId for another asset is an identity conflict by design.
+ */
 @JvmInline
 value class ExtentId(val value: String) {
     init {
