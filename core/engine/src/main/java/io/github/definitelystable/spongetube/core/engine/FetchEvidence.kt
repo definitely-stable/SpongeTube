@@ -1,6 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine
 
-enum class FetchEventKind {
+internal enum class FetchEventKind {
     OWNER_REGISTERED,
     CONSUMER_JOINED,
     PRIORITY_RAISED,
@@ -13,7 +13,7 @@ enum class FetchEventKind {
     OWNER_CANCELLED,
 }
 
-data class FetchEvent(
+internal data class FetchEvent(
     val eventSequence: Long,
     val eventElapsedRealtimeNs: Long,
     val sessionId: String,
@@ -74,6 +74,6 @@ data class FetchEvent(
     )
 }
 
-fun interface FetchEventListener {
+internal fun interface FetchEventListener {
     fun onEvent(event: FetchEvent)
 }
