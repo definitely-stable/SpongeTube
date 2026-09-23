@@ -1,6 +1,8 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import android.content.Context
+import android.system.ErrnoException
+import android.system.OsConstants
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -60,6 +62,59 @@ class ExtentStoreAndroidTest {
     }
 
     @Test
+    fun roomMetadataUsesExplicitTruncateFullDurability() = runBlocking {
+        val first = openStore()
+        val firstDurability = checkNotNull(first.metadataDurability)
+        assertEquals("truncate", firstDurability.journalMode.lowercase())
+        assertEquals(2, firstDurability.synchronous)
+        assertTrue(firstDurability.busyTimeoutMs >= 3_000L)
+        assertTrue(firstDurability.isPowerLossHardened)
+        first.close()
+
+        val reopened = openStore()
+        val reopenedDurability = checkNotNull(reopened.metadataDurability)
+        assertEquals("truncate", reopenedDurability.journalMode.lowercase())
+        assertEquals(2, reopenedDurability.synchronous)
+        assertTrue(reopenedDurability.isPowerLossHardened)
+        reopened.close()
+    }
+
+    @Test
+    fun opaqueReadHandleSurvivesReopenAndReturnsExactBytes() = runBlocking {
+        val bytes = "android-read-surface".encodeToByteArray()
+        val first = openStore()
+        val committed = first.writeExtent(spec("android-read", bytes)) {
+            write(bytes)
+        }
+        first.close()
+
+        val reopened = openStore()
+        val handle = checkNotNull(reopened.openRead(committed.extentId))
+        val actual = ByteArray(bytes.size)
+
+        assertEquals(bytes.size, handle.readAt(0, actual))
+        assertEquals(bytes.toList(), actual.toList())
+        assertEquals(-1, handle.readAt(bytes.size.toLong(), actual))
+
+        expectThrows<ExtentConflictException> {
+            reopened.close()
+        }
+
+        handle.close()
+        reopened.close()
+    }
+
+    @Test
+    fun storageFailureClassifiesEnospc() {
+        val failure = storageFailure(
+            operation = "test-write",
+            cause = ErrnoException("write", OsConstants.ENOSPC),
+        )
+        assertEquals(ExtentStorageFailureKind.NO_SPACE, failure.kind)
+        assertEquals("test-write", failure.operation)
+    }
+
+    @Test
     fun committedExtentSurvivesCloseAndStartupRecovery() = runBlocking {
         val bytes = "android-persisted-extent".encodeToByteArray()
         val spec = spec("persisted", bytes)
@@ -104,6 +159,7 @@ class ExtentStoreAndroidTest {
             reopened.initialRecoveryReport.quarantinedExtents,
         )
         assertTrue(reopened.committedExtents().isEmpty())
+        assertEquals(null, reopened.openRead(committed.extentId))
         assertFalse(extentFile(committed.extentId).exists())
         reopened.close()
     }
