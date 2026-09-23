@@ -55,7 +55,9 @@ internal class FetchBroker internal constructor(
         ownerScope: CoroutineScope =
             CoroutineScope(SupervisorJob() + Dispatchers.IO),
         ownsScope: Boolean = true,
-        monotonicClockNs: () -> Long = System::nanoTime,
+        monotonicClockNs: () -> Long = {
+            SystemClock.elapsedRealtimeNanos()
+        },
     ) : this(
         publisher = ExtentStoreFetchPublisher(extentStore),
         executor = executor,
@@ -151,10 +153,7 @@ internal class FetchBroker internal constructor(
 
             val waiting = checkNotNull(waitingShared)
             val terminal = waiting.result.await()
-            if (
-                terminal.kind ==
-                FetchOutcomeKind.CANCELLED_NO_CONSUMERS
-            ) {
+            if (terminal.shouldRestartAfterCancellationBarrier()) {
                 continue
             }
             return TerminalHandle(
@@ -312,7 +311,7 @@ internal class FetchBroker internal constructor(
                     bytes = shared.accounting.snapshot(),
                 ),
             )
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             completeTerminal(
                 shared,
                 FetchOutcome(
@@ -321,6 +320,16 @@ internal class FetchBroker internal constructor(
                     bytes = shared.accounting.snapshot(),
                 ),
             )
+        } catch (fatal: Error) {
+            completeTerminal(
+                shared,
+                FetchOutcome(
+                    kind = FetchOutcomeKind.INTERNAL_FAILURE,
+                    attempts = shared.attemptsStarted,
+                    bytes = shared.accounting.snapshot(),
+                ),
+            )
+            throw fatal
         }
     }
 
@@ -408,7 +417,7 @@ internal class FetchBroker internal constructor(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             AttemptRunResult.Failure(
                 kind = FetchOutcomeKind.INTERNAL_FAILURE,
                 retryable = false,
@@ -720,6 +729,9 @@ private sealed interface AttemptRunResult {
 private class FetchAttemptAbort(
     val failure: FetchAttemptDisposition.Failure,
 ) : RuntimeException()
+
+private fun FetchOutcome.shouldRestartAfterCancellationBarrier(): Boolean =
+    kind == FetchOutcomeKind.CANCELLED_NO_CONSUMERS
 
 private fun ExtentSpec.isCompatibleWith(other: ExtentSpec): Boolean =
     mediaAssetId == other.mediaAssetId &&
