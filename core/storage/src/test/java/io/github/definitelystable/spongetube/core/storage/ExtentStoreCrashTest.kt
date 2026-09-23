@@ -392,6 +392,86 @@ class ExtentStoreCrashTest {
     }
 
     @Test
+    fun producerFailureRemainsPrimaryWhenAbortCleanupFails() = runBlocking {
+        val root = File(tempDir, "producer-primary-failure")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "producer-primary".encodeToByteArray()
+        val store = openStore(
+            root = root,
+            metadata = metadata,
+            durabilityOps = DeleteFailingDurabilityOps,
+        )
+
+        val failure = expectThrows<IllegalStateException> {
+            store.writeExtent(spec("producer-primary", bytes)) {
+                write(bytes)
+                error("producer failed")
+            }
+        }
+
+        assertEquals("producer failed", failure.message)
+        assertTrue(
+            failure.suppressed.any {
+                it.message?.contains("simulated delete failure") == true
+            },
+        )
+
+        // Abort cleanup failed, but writer ownership must still be released.
+        store.close()
+    }
+
+    @Test
+    fun syncFailureReleasesWriterReservationForRetry() = runBlocking {
+        val root = File(tempDir, "sync-failure-retry")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "sync-failure-retry".encodeToByteArray()
+        val durability = FailOnceSyncDurabilityOps()
+        val store = openStore(
+            root = root,
+            metadata = metadata,
+            durabilityOps = durability,
+        )
+        val spec = spec("sync-failure-retry", bytes)
+
+        expectThrows<ExtentStoreException> {
+            store.writeExtent(spec) {
+                write(bytes)
+            }
+        }
+
+        assertTrue(metadata.snapshot().isEmpty())
+        assertFalse(hasPartFiles(root))
+
+        val committed = store.writeExtent(spec) {
+            write(bytes)
+        }
+        assertEquals(spec.extentId, committed.extentId)
+        store.close()
+    }
+
+    @Test
+    fun extentSinkBoundsCheckCannotOverflow() = runBlocking {
+        val root = File(tempDir, "write-bounds-overflow")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = byteArrayOf(1)
+        val store = openStore(root, metadata)
+
+        expectThrows<IllegalArgumentException> {
+            store.writeExtent(spec("write-bounds-overflow", bytes)) {
+                write(
+                    bytes = bytes,
+                    offset = Int.MAX_VALUE,
+                    length = 1,
+                )
+            }
+        }
+
+        assertTrue(metadata.snapshot().isEmpty())
+        assertFalse(hasPartFiles(root))
+        store.close()
+    }
+
+    @Test
     fun noOriginDigestUsesDigestOfExactlyReceivedBytes() = runBlocking {
         val root = File(tempDir, "received-digest")
         val metadata = FakeExtentMetadataStore()
@@ -578,11 +658,12 @@ class ExtentStoreCrashTest {
         root: File,
         metadata: FakeExtentMetadataStore,
         crashAt: ExtentFaultPoint? = null,
+        durabilityOps: ExtentDurabilityOps = HostDurabilityOps,
     ): ExtentStore =
         ExtentStore.openForTest(
             rootDirectory = root,
             metadataStore = metadata,
-            durabilityOps = HostDurabilityOps,
+            durabilityOps = durabilityOps,
             ioDispatcher = Dispatchers.Unconfined,
             faultInjector = if (crashAt == null) {
                 ExtentFaultInjector.NONE
@@ -767,6 +848,47 @@ private fun StoredExtent.isRepairCompatible(
         length == candidate.length &&
         sha256 == candidate.sha256 &&
         storagePath == candidate.storagePath
+
+private object DeleteFailingDurabilityOps : ExtentDurabilityOps {
+    override fun ensureDirectory(directory: File) =
+        HostDurabilityOps.ensureDirectory(directory)
+
+    override fun syncAndClose(output: FileOutputStream) =
+        HostDurabilityOps.syncAndClose(output)
+
+    override fun installAtomically(
+        source: File,
+        destination: File,
+    ) = HostDurabilityOps.installAtomically(source, destination)
+
+    override fun deleteDurably(file: File) {
+        throw ExtentStoreException("simulated delete failure")
+    }
+}
+
+private class FailOnceSyncDurabilityOps : ExtentDurabilityOps {
+    private var failNextSync = true
+
+    override fun ensureDirectory(directory: File) =
+        HostDurabilityOps.ensureDirectory(directory)
+
+    override fun syncAndClose(output: FileOutputStream) {
+        if (failNextSync) {
+            failNextSync = false
+            output.close()
+            throw ExtentStoreException("simulated sync failure")
+        }
+        HostDurabilityOps.syncAndClose(output)
+    }
+
+    override fun installAtomically(
+        source: File,
+        destination: File,
+    ) = HostDurabilityOps.installAtomically(source, destination)
+
+    override fun deleteDurably(file: File) =
+        HostDurabilityOps.deleteDurably(file)
+}
 
 private object HostDurabilityOps : ExtentDurabilityOps {
     override fun ensureDirectory(directory: File) {
