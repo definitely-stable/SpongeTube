@@ -36,6 +36,7 @@ from schema_subset import SchemaContractError, validate_instance
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
+SUPPORTED_DATABASE_SCHEMA_VERSIONS = frozenset({1})
 
 SEMANTIC_COVERAGE_FIELDS = (
     "sessionId",
@@ -334,13 +335,26 @@ def export_committed_snapshot(
     uri = database.resolve().as_uri() + "?mode=ro"
     with sqlite3.connect(uri, uri=True) as connection:
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only = ON")
+
+        quick_check = [
+            str(row[0])
+            for row in connection.execute("PRAGMA quick_check")
+        ]
+        if quick_check != ["ok"]:
+            raise ValueError(
+                "SQLite snapshot failed PRAGMA quick_check: "
+                + "; ".join(quick_check)
+            )
+
         database_schema_version = int(
             connection.execute("PRAGMA user_version").fetchone()[0]
         )
-        if database_schema_version < 1:
+        if database_schema_version not in SUPPORTED_DATABASE_SCHEMA_VERSIONS:
             raise ValueError(
-                "SQLite snapshot has invalid user_version "
-                f"{database_schema_version}"
+                "unsupported ExtentStore database schema version: "
+                f"{database_schema_version}; supported="
+                f"{sorted(SUPPORTED_DATABASE_SCHEMA_VERSIONS)}"
             )
 
         dependencies: dict[str, list[str]] = {}
@@ -450,6 +464,19 @@ def _sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def _expected_storage_path(
+    extent_id: str,
+    database_schema_version: int,
+) -> str:
+    if database_schema_version not in SUPPORTED_DATABASE_SCHEMA_VERSIONS:
+        raise ValueError(
+            "unsupported ExtentStore database schema version for path layout: "
+            f"{database_schema_version}"
+        )
+    key = hashlib.sha256(extent_id.encode("utf-8")).hexdigest()
+    return f"extents/{key[:2]}/{key}.extent"
+
+
 def verify_extent_files(
     committed_snapshot: Mapping[str, object],
     storage_root: pathlib.Path,
@@ -479,6 +506,17 @@ def verify_extent_files(
         seen.add(extent_id)
 
         storage_path = str(value["storagePath"])
+        expected_storage_path = _expected_storage_path(
+            extent_id,
+            int(committed_snapshot["databaseSchemaVersion"]),
+        )
+        if storage_path != expected_storage_path:
+            raise ValueError(
+                f"extent {extent_id}: storagePath does not match canonical "
+                f"layout: metadata={storage_path!r} "
+                f"expected={expected_storage_path!r}"
+            )
+
         file_path = _safe_storage_path(storage_root, storage_path)
         if not file_path.exists():
             files.append(
@@ -569,10 +607,26 @@ def build_canonical_oracle_snapshot(
 
     raw_extents = committed_snapshot["extents"]
     assert isinstance(raw_extents, list)
+
+    committed_ids = [str(value["extentId"]) for value in raw_extents]
+    if len(set(committed_ids)) != len(committed_ids):
+        raise ValueError("committed snapshot contains duplicate extent ids")
+
+    verified_file_map = _verified_file_map(verified_snapshot)
+    committed_id_set = set(committed_ids)
+    verified_id_set = set(verified_file_map)
+    if committed_id_set != verified_id_set:
+        missing = sorted(committed_id_set - verified_id_set)
+        extra = sorted(verified_id_set - committed_id_set)
+        raise ValueError(
+            "committed/verified extent-id set mismatch: "
+            f"missing={missing!r} extra={extra!r}"
+        )
+
     semantic = oracle_snapshot(
         raw_extents,
         required_representations,
-        _verified_file_map(verified_snapshot),
+        verified_file_map,
         playhead_us,
     )
 
