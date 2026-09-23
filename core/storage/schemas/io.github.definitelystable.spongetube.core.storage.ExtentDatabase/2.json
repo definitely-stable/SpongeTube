@@ -1,0 +1,170 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "0b90dbb5f2b8bac3152dc01fddcef026",
+    "entities": [
+      {
+        "tableName": "extents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`extent_id` TEXT NOT NULL, `media_asset_id` TEXT NOT NULL DEFAULT '__legacy_unscoped__', `track_id` TEXT NOT NULL, `representation_id` TEXT NOT NULL, `media_start_us` INTEGER, `media_end_us` INTEGER, `byte_start` INTEGER, `byte_end_exclusive` INTEGER, `length` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `storage_path` TEXT NOT NULL, `publication_state` TEXT NOT NULL, `integrity_state` TEXT NOT NULL, `quarantine_reason` TEXT, `published_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`extent_id`))",
+        "fields": [
+          {
+            "fieldPath": "extentId",
+            "columnName": "extent_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaAssetId",
+            "columnName": "media_asset_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'__legacy_unscoped__'"
+          },
+          {
+            "fieldPath": "trackId",
+            "columnName": "track_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "representationId",
+            "columnName": "representation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaStartUs",
+            "columnName": "media_start_us",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mediaEndUs",
+            "columnName": "media_end_us",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "byteStart",
+            "columnName": "byte_start",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "byteEndExclusive",
+            "columnName": "byte_end_exclusive",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "length",
+            "columnName": "length",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storagePath",
+            "columnName": "storage_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicationState",
+            "columnName": "publication_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "integrityState",
+            "columnName": "integrity_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quarantineReason",
+            "columnName": "quarantine_reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "publishedAtEpochMs",
+            "columnName": "published_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "extent_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_extents_media_asset_id_track_id_representation_id",
+            "unique": false,
+            "columnNames": [
+              "media_asset_id",
+              "track_id",
+              "representation_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_extents_media_asset_id_track_id_representation_id` ON `${TABLE_NAME}` (`media_asset_id`, `track_id`, `representation_id`)"
+          },
+          {
+            "name": "index_extents_publication_state_integrity_state",
+            "unique": false,
+            "columnNames": [
+              "publication_state",
+              "integrity_state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_extents_publication_state_integrity_state` ON `${TABLE_NAME}` (`publication_state`, `integrity_state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "extent_dependencies",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`extent_id` TEXT NOT NULL, `dependency_extent_id` TEXT NOT NULL, PRIMARY KEY(`extent_id`, `dependency_extent_id`))",
+        "fields": [
+          {
+            "fieldPath": "extentId",
+            "columnName": "extent_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dependencyExtentId",
+            "columnName": "dependency_extent_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "extent_id",
+            "dependency_extent_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_extent_dependencies_dependency_extent_id",
+            "unique": false,
+            "columnNames": [
+              "dependency_extent_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_extent_dependencies_dependency_extent_id` ON `${TABLE_NAME}` (`dependency_extent_id`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0b90dbb5f2b8bac3152dc01fddcef026')"
+    ]
+  }
+}
