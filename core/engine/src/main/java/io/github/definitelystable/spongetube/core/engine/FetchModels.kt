@@ -130,16 +130,25 @@ internal class FetchIdentityConflictException(
     message: String,
 ) : IllegalArgumentException(message)
 
+internal enum class FetchAcquireDisposition {
+    NEW_OWNER,
+    JOINED_RUNNING,
+    WAITED_CANCELLING,
+}
+
 internal interface FetchHandle : AutoCloseable {
     val fetchKey: FetchKey
     val fetchId: FetchId
 
+    val acquireDisposition: FetchAcquireDisposition
+
     /**
-     * True when this acquire attached to an owner pipeline that already
-     * existed (single-flight join, or a wait on a CANCELLING owner's terminal
-     * result); false when this acquire registered a new owner.
+     * Compatibility convenience for harness/tests. Evidence must use
+     * [acquireDisposition] so a RUNNING join is never conflated with waiting
+     * behind a CANCELLING owner's terminal barrier.
      */
     val joinedExisting: Boolean
+        get() = acquireDisposition != FetchAcquireDisposition.NEW_OWNER
 
     suspend fun await(): FetchOutcome
 
