@@ -119,6 +119,13 @@ internal sealed interface ExtentResolution {
         val missingDependencyIds: List<ExtentId>,
     ) : ExtentResolution
 
+    /**
+     * The ExtentId is already published, but its immutable metadata does not
+     * match the requested ExtentSpec. Callers must fail closed and must not
+     * read, repair or refetch this identity.
+     */
+    data object IdentityConflict : ExtentResolution
+
     /** No committed PUBLISHED + VALID row in this projection. */
     data object Absent : ExtentResolution
 }
