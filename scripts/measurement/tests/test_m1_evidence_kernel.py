@@ -387,6 +387,22 @@ class M1EvidenceKernelTest(unittest.TestCase):
         ):
             self._committed()
 
+    def test_reconstruct_rejects_unsupported_database_schema_version(self):
+        committed = self._committed()
+        verified = self._verified(committed)
+        committed["databaseSchemaVersion"] = 2
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "unsupported ExtentStore database schema version",
+        ):
+            build_canonical_oracle_snapshot(
+                committed,
+                verified,
+                {"video": "v1"},
+                0,
+            )
+
     def test_safe_but_noncanonical_storage_path_is_rejected(self):
         noncanonical = "extents/aa/not-the-layout.extent"
         self._write_extent(noncanonical, self.media_bytes)
