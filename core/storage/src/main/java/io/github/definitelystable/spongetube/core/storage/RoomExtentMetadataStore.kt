@@ -16,13 +16,15 @@ internal class RoomExtentMetadataStore private constructor(
     override suspend fun assertWritable(
         spec: ExtentSpec,
         storagePath: String,
-    ) {
+    ) = metadataStorageOperation("metadata-preflight") {
         dao.assertWritable(
             candidate = spec.toPreflight(storagePath),
         )
     }
 
-    override suspend fun assertPublishable(extent: StoredExtent) {
+    override suspend fun assertPublishable(
+        extent: StoredExtent,
+    ) = metadataStorageOperation("metadata-assert-publishable") {
         val entity = extent.toEntity(
             publishedAtEpochMs = 0L,
         )
@@ -34,7 +36,9 @@ internal class RoomExtentMetadataStore private constructor(
         )
     }
 
-    override suspend fun publish(extent: StoredExtent) {
+    override suspend fun publish(
+        extent: StoredExtent,
+    ) = metadataStorageOperation("metadata-publish") {
         val entity = extent.toEntity(
             publishedAtEpochMs = System.currentTimeMillis(),
         )
@@ -48,34 +52,38 @@ internal class RoomExtentMetadataStore private constructor(
         dao.publish(entity, dependencies)
     }
 
-    override suspend fun snapshot(): List<StoredExtent> {
-        val snapshot = dao.snapshot()
-        val dependenciesByExtent = snapshot.dependencies
-            .groupBy(ExtentDependencyEntity::extentId)
-            .mapValues { (_, rows) ->
-                rows.map { ExtentId(it.dependencyExtentId) }
-            }
+    override suspend fun snapshot(): List<StoredExtent> =
+        metadataStorageOperation("metadata-snapshot") {
+            val snapshot = dao.snapshot()
+            val dependenciesByExtent = snapshot.dependencies
+                .groupBy(ExtentDependencyEntity::extentId)
+                .mapValues { (_, rows) ->
+                    rows.map { ExtentId(it.dependencyExtentId) }
+                }
 
-        return snapshot.extents.map { entity ->
-            entity.toStoredExtent(
-                dependencies = dependenciesByExtent[entity.extentId].orEmpty(),
-            )
+            snapshot.extents.map { entity ->
+                entity.toStoredExtent(
+                    dependencies =
+                        dependenciesByExtent[entity.extentId].orEmpty(),
+                )
+            }
         }
-    }
 
     override suspend fun extentById(
         extentId: ExtentId,
-    ): StoredExtent? {
-        val snapshot = dao.snapshotById(extentId.value) ?: return null
-        return snapshot.extent.toStoredExtent(
-            dependencies = snapshot.dependencyIds.map(::ExtentId),
-        )
-    }
+    ): StoredExtent? =
+        metadataStorageOperation("metadata-lookup") {
+            val snapshot = dao.snapshotById(extentId.value)
+                ?: return@metadataStorageOperation null
+            snapshot.extent.toStoredExtent(
+                dependencies = snapshot.dependencyIds.map(::ExtentId),
+            )
+        }
 
     override suspend fun quarantine(
         extentId: ExtentId,
         reason: ExtentQuarantineReason,
-    ) {
+    ) = metadataStorageOperation("metadata-quarantine") {
         dao.quarantine(extentId.value, reason.name)
     }
 
@@ -99,7 +107,7 @@ internal class RoomExtentMetadataStore private constructor(
 
             try {
                 val durability = database.readDurability()
-                if (!durability.isPowerLossHardened) {
+                if (!durability.meetsM1DurabilityPolicy) {
                     throw ExtentMetadataDurabilityException(durability)
                 }
                 return RoomExtentMetadataStore(
@@ -107,12 +115,17 @@ internal class RoomExtentMetadataStore private constructor(
                     durability = durability,
                 )
             } catch (error: Throwable) {
+                val failure =
+                    metadataStorageFailureOrNull(
+                        operation = "metadata-open",
+                        cause = error,
+                    ) ?: error
                 try {
                     database.close()
                 } catch (closeError: Throwable) {
-                    error.addSuppressed(closeError)
+                    failure.addSuppressed(closeError)
                 }
-                throw error
+                throw failure
             }
         }
     }
@@ -200,3 +213,18 @@ private suspend fun ExtentDatabase.readDurability(): ExtentMetadataDurability =
             busyTimeoutMs = busyTimeoutMs,
         )
     }
+
+
+private suspend inline fun <T> metadataStorageOperation(
+    operation: String,
+    block: suspend () -> T,
+): T {
+    try {
+        return block()
+    } catch (error: Throwable) {
+        throw metadataStorageFailureOrNull(
+            operation = operation,
+            cause = error,
+        ) ?: error
+    }
+}
