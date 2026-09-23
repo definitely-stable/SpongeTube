@@ -56,6 +56,21 @@ class CoverageIndex private constructor(
         )
 
     /**
+     * Internal bridge seam: classifies one immutable extent identity against
+     * the current atomic projection.
+     *
+     * READY means PUBLISHED + VALID with a satisfied dependency closure.
+     * PUBLISHED_NOT_READY means a committed row exists but at least one
+     * dependency is not READY; fetching the extent itself again would collide
+     * with the committed row, so callers must satisfy the listed dependencies.
+     * ABSENT means no committed row is visible in this projection.
+     *
+     * Pure in-memory lookup: no Room/SQLite access and no graph walk.
+     */
+    internal fun resolveExtent(extentId: ExtentId): ExtentResolution =
+        projection.resolveExtent(extentId)
+
+    /**
      * Pure in-memory query. No Room/SQLite access and no dependency-graph walk.
      */
     fun snapshot(
@@ -82,11 +97,26 @@ private data class CoverageKey(
 private class CoverageProjection private constructor(
     private val intervalsByKey: Map<CoverageKey, List<MediaInterval>>,
     private val readyExtentsByKey: Map<CoverageKey, List<ReadyExtentRef>>,
+    private val readyExtentIds: Set<ExtentId>,
+    private val publishedDependencies: Map<ExtentId, List<ExtentId>>,
     val readyExtentCount: Int,
     val normalizedIntervalCount: Int,
 ) {
     fun readyExtentRefs(key: CoverageKey): List<ReadyExtentRef> =
         readyExtentsByKey[key].orEmpty()
+
+    fun resolveExtent(extentId: ExtentId): ExtentResolution {
+        if (extentId in readyExtentIds) {
+            return ExtentResolution.Ready
+        }
+        val dependencies = publishedDependencies[extentId]
+            ?: return ExtentResolution.Absent
+        return ExtentResolution.PublishedNotReady(
+            missingDependencyIds = Collections.unmodifiableList(
+                dependencies.filterNot { it in readyExtentIds },
+            ),
+        )
+    }
 
     fun snapshot(
         requirements: PlaybackRequirementSet,
@@ -131,6 +161,8 @@ private class CoverageProjection private constructor(
         val EMPTY = CoverageProjection(
             intervalsByKey = emptyMap(),
             readyExtentsByKey = emptyMap(),
+            readyExtentIds = emptySet(),
+            publishedDependencies = emptyMap(),
             readyExtentCount = 0,
             normalizedIntervalCount = 0,
         )
@@ -226,6 +258,14 @@ private class CoverageProjection private constructor(
             return CoverageProjection(
                 intervalsByKey = normalized,
                 readyExtentsByKey = readyExtents,
+                readyExtentIds = Collections.unmodifiableSet(ready.toSet()),
+                publishedDependencies = Collections.unmodifiableMap(
+                    rows.mapValues { (_, extent) ->
+                        Collections.unmodifiableList(
+                            extent.dependencyExtentIds.toList(),
+                        )
+                    },
+                ),
                 readyExtentCount = ready.size,
                 normalizedIntervalCount = normalized.values.sumOf { it.size },
             )

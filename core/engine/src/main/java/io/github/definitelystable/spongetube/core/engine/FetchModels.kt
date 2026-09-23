@@ -134,6 +134,13 @@ internal interface FetchHandle : AutoCloseable {
     val fetchKey: FetchKey
     val fetchId: FetchId
 
+    /**
+     * True when this acquire attached to an owner pipeline that already
+     * existed (single-flight join, or a wait on a CANCELLING owner's terminal
+     * result); false when this acquire registered a new owner.
+     */
+    val joinedExisting: Boolean
+
     suspend fun await(): FetchOutcome
 
     override fun close()

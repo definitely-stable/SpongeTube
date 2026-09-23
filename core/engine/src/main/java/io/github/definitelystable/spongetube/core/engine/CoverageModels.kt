@@ -102,6 +102,27 @@ internal data class ReadyExtentRef(
     }
 }
 
+/**
+ * Classification of one ExtentId against a single CoverageIndex projection.
+ */
+internal sealed interface ExtentResolution {
+    /** PUBLISHED + VALID and every dependency is READY. */
+    data object Ready : ExtentResolution
+
+    /**
+     * A committed row exists, but it cannot contribute until the listed
+     * dependencies become READY. An empty list means the row can never become
+     * READY through dependency repair (for example a dependency of another
+     * representation) and callers must fail closed.
+     */
+    data class PublishedNotReady(
+        val missingDependencyIds: List<ExtentId>,
+    ) : ExtentResolution
+
+    /** No committed PUBLISHED + VALID row in this projection. */
+    data object Absent : ExtentResolution
+}
+
 @ConsistentCopyVisibility
 data class CoverageSnapshot internal constructor(
     val mediaAssetId: MediaAssetId,

@@ -132,7 +132,12 @@ internal class FetchBroker internal constructor(
                     joined = false,
                 )
                 startOwner(shared)
-                return Handle(this, shared, consumer.id)
+                return Handle(
+                    broker = this,
+                    shared = shared,
+                    consumerId = consumer.id,
+                    joinedExisting = false,
+                )
             }
 
             if (joined != null) {
@@ -149,7 +154,12 @@ internal class FetchBroker internal constructor(
                         joined = true,
                     )
                 }
-                return Handle(this, shared, consumer.id)
+                return Handle(
+                    broker = this,
+                    shared = shared,
+                    consumerId = consumer.id,
+                    joinedExisting = true,
+                )
             }
 
             val waiting = checkNotNull(waitingShared)
@@ -584,6 +594,9 @@ internal class FetchBroker internal constructor(
         override val fetchId: FetchId,
         private val outcome: FetchOutcome,
     ) : FetchHandle {
+        override val joinedExisting: Boolean
+            get() = true
+
         override suspend fun await(): FetchOutcome = outcome
 
         override fun close() = Unit
@@ -593,6 +606,7 @@ internal class FetchBroker internal constructor(
         private val broker: FetchBroker,
         private val shared: SharedFetch,
         private val consumerId: FetchConsumerId,
+        override val joinedExisting: Boolean,
     ) : FetchHandle {
         private val released = AtomicBoolean()
 

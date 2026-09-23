@@ -36,6 +36,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testRuntimeOnly(libs.junit.platform.launcher)
 
+    androidTestImplementation(project(":test-support:fixture-f1"))
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
 }

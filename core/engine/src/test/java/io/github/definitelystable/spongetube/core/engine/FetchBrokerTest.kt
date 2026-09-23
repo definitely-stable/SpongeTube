@@ -20,6 +20,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class FetchBrokerTest {
@@ -46,6 +48,8 @@ class FetchBrokerTest {
         val playback = broker.acquire(REQUEST, consumer("playback", FetchConsumerKind.PLAYBACK))
 
         assertEquals(reserve.fetchId, playback.fetchId)
+        assertFalse(reserve.joinedExisting)
+        assertTrue(playback.joinedExisting)
         assertEquals(1, executions)
         release.complete(Unit)
 

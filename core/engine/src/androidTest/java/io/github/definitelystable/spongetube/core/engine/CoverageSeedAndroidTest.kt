@@ -5,16 +5,12 @@ import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
-import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentIntegrityException
-import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
-import io.github.definitelystable.spongetube.core.storage.MediaAssetId
-import io.github.definitelystable.spongetube.core.storage.Sha256Digest
-import java.io.ByteArrayInputStream
+import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FetchUnit
+import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureAssets
+import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureCatalog
 import java.io.File
-import java.security.MessageDigest
-import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -24,17 +20,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.w3c.dom.Element
 
 @RunWith(AndroidJUnit4::class)
 class CoverageSeedAndroidTest {
     private lateinit var context: Context
-    private lateinit var resources: Map<String, ResourceFact>
+    private lateinit var fixture: F1FixtureAssets
 
     @Before
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
-        resources = loadResourceFacts()
+        fixture = F1FixtureAssets(context.assets)
         cleanStoreRoot()
     }
 
@@ -46,7 +41,7 @@ class CoverageSeedAndroidTest {
     @Test
     fun canonicalSeedsPublishThroughRealStoreAndExportOracleEvidence() =
         runBlocking {
-            val catalog = loadCatalog()
+            val catalog = fixture.catalog().units.map(::SeedUnit)
 
             for (case in canonicalCases(catalog)) {
                 cleanStoreRoot()
@@ -135,8 +130,8 @@ class CoverageSeedAndroidTest {
         case: SeedCase,
     ) {
         for (unit in case.units) {
-            val bytes = verifiedResourceBytes(unit.resourcePath)
-            val spec = unit.toExtentSpec()
+            val bytes = fixture.verifiedBytes(unit.unit.resourcePath)
+            val spec = unit.unit.toExtentSpec()
 
             if (unit.partialWrite) {
                 expectThrows<ExtentIntegrityException> {
@@ -154,21 +149,6 @@ class CoverageSeedAndroidTest {
             }
         }
     }
-
-    private fun SeedUnit.toExtentSpec(): ExtentSpec =
-        ExtentSpec(
-            mediaAssetId = ASSET,
-            extentId = ExtentId(extentId),
-            trackId = trackId,
-            representationId = representationId,
-            mediaStartUs = mediaStartUs,
-            mediaEndUs = mediaEndUs,
-            byteStart = null,
-            byteEndExclusive = null,
-            dependencyExtentIds = dependencyExtentIds.map(::ExtentId),
-            expectedLength = length,
-            expectedSha256 = Sha256Digest(sha256),
-        )
 
     private fun canonicalCases(
         catalog: List<SeedUnit>,
@@ -309,9 +289,11 @@ class CoverageSeedAndroidTest {
         val originalInit = units.single {
             it.extentId == "f1:video:0:init"
         }
-        val wrongInit = originalInit.copy(
-            extentId = "f1:video:alt:init",
-            representationId = "f1-video-alt",
+        val wrongInit = SeedUnit(
+            originalInit.unit.copy(
+                extentId = "f1:video:alt:init",
+                representationId = "f1-video-alt",
+            ),
         )
 
         return copy(
@@ -322,10 +304,12 @@ class CoverageSeedAndroidTest {
                         val number = unit.extentId.substringAfterLast(':')
                         add(
                             unit.copy(
-                                extentId = "f1:video:alt:$number",
-                                representationId = "f1-video-alt",
-                                dependencyExtentIds = listOf(
-                                    wrongInit.extentId,
+                                unit = unit.unit.copy(
+                                    extentId = "f1:video:alt:$number",
+                                    representationId = "f1-video-alt",
+                                    dependencyExtentIds = listOf(
+                                        wrongInit.extentId,
+                                    ),
                                 ),
                             ),
                         )
@@ -351,164 +335,6 @@ class CoverageSeedAndroidTest {
             durablePlayableEndUs = end,
             durableReserveUs = reserve,
         )
-
-    private fun loadCatalog(): List<SeedUnit> {
-        val mpdBytes = verifiedResourceBytes("F1/manifest.mpd")
-        val factory = DocumentBuilderFactory.newInstance()
-        factory.isNamespaceAware = true
-        val document = factory.newDocumentBuilder().parse(
-            ByteArrayInputStream(mpdBytes),
-        )
-        val adaptations = document.getElementsByTagNameNS(
-            "*",
-            "AdaptationSet",
-        )
-
-        return buildList {
-            for (index in 0 until adaptations.length) {
-                val adaptation = adaptations.item(index) as Element
-                val kind = adaptation.getAttribute("contentType")
-                val trackId = when (kind) {
-                    "video" -> "video-main"
-                    "audio" -> "audio-main"
-                    else -> continue
-                }
-
-                val representations = adaptation.getElementsByTagNameNS(
-                    "*",
-                    "Representation",
-                )
-                require(representations.length == 1)
-                val representation = representations.item(0) as Element
-                val repId = representation.getAttribute("id")
-                val representationId = "f1-$kind-$repId"
-
-                val template = representation
-                    .getElementsByTagNameNS("*", "SegmentTemplate")
-                    .item(0) as Element
-                val timescale = template.getAttribute("timescale").toLong()
-                require(timescale > 0)
-
-                val initPath = "F1/" +
-                    template.getAttribute("initialization")
-                        .replace("\$RepresentationID\$", repId)
-                val initFact = resources.getValue(initPath)
-                val initId = "f1:$kind:$repId:init"
-                add(
-                    SeedUnit(
-                        extentId = initId,
-                        resourcePath = initPath,
-                        trackId = trackId,
-                        representationId = representationId,
-                        mediaStartUs = null,
-                        mediaEndUs = null,
-                        dependencyExtentIds = emptyList(),
-                        length = initFact.length,
-                        sha256 = initFact.sha256,
-                    ),
-                )
-
-                val timeline = template
-                    .getElementsByTagNameNS("*", "SegmentTimeline")
-                    .item(0) as Element
-                val segments = timeline.getElementsByTagNameNS("*", "S")
-                val mediaTemplate = template.getAttribute("media")
-                var number = template.getAttribute("startNumber")
-                    .ifBlank { "1" }
-                    .toInt()
-                var currentTicks = 0L
-                var previousEndUs: Long? = null
-
-                for (segmentIndex in 0 until segments.length) {
-                    val segment = segments.item(segmentIndex) as Element
-                    if (segment.hasAttribute("t")) {
-                        currentTicks = segment.getAttribute("t").toLong()
-                    }
-                    val duration = segment.getAttribute("d").toLong()
-                    val repeatCount = segment.getAttribute("r")
-                        .ifBlank { "0" }
-                        .toInt()
-                    require(duration > 0)
-                    require(repeatCount >= 0)
-
-                    repeat(repeatCount + 1) {
-                        val startTicks = currentTicks
-                        val endTicks = startTicks + duration
-                        val startUs =
-                            startTicks * 1_000_000L / timescale
-                        val endUs =
-                            endTicks * 1_000_000L / timescale
-                        previousEndUs?.let { previous ->
-                            require(startUs == previous)
-                        }
-
-                        val relativePath = mediaTemplate
-                            .replace("\$RepresentationID\$", repId)
-                            .replace(
-                                "\$Number%05d\$",
-                                number.toString().padStart(5, '0'),
-                            )
-                        val resourcePath = "F1/$relativePath"
-                        val fact = resources.getValue(resourcePath)
-
-                        add(
-                            SeedUnit(
-                                extentId = "f1:$kind:$repId:$number",
-                                resourcePath = resourcePath,
-                                trackId = trackId,
-                                representationId = representationId,
-                                mediaStartUs = startUs,
-                                mediaEndUs = endUs,
-                                dependencyExtentIds = listOf(initId),
-                                length = fact.length,
-                                sha256 = fact.sha256,
-                            ),
-                        )
-                        previousEndUs = endUs
-                        currentTicks = endTicks
-                        number += 1
-                    }
-                }
-            }
-        }
-    }
-
-    private fun loadResourceFacts(): Map<String, ResourceFact> {
-        val raw = context.assets.open("manifest.json").bufferedReader().use {
-            it.readText()
-        }
-        val root = JSONObject(raw)
-        val fixtures = root.getJSONArray("fixtures")
-        var fixture: JSONObject? = null
-        for (index in 0 until fixtures.length()) {
-            val candidate = fixtures.getJSONObject(index)
-            if (candidate.getString("fixtureId") == "F1") {
-                fixture = candidate
-                break
-            }
-        }
-
-        val f1 = checkNotNull(fixture)
-        val result = linkedMapOf<String, ResourceFact>()
-        val array = f1.getJSONArray("resources")
-        for (index in 0 until array.length()) {
-            val resource = array.getJSONObject(index)
-            val path = resource.getString("relativePath")
-            result[path] = ResourceFact(
-                length = resource.getLong("sizeBytes"),
-                sha256 = resource.getString("sha256"),
-            )
-        }
-        return result
-    }
-
-    private fun verifiedResourceBytes(path: String): ByteArray {
-        val fact = resources.getValue(path)
-        val bytes = context.assets.open(path).use { it.readBytes() }
-        assertEquals(path + " length", fact.length, bytes.size.toLong())
-        assertEquals(path + " sha256", fact.sha256, sha256(bytes))
-        return bytes
-    }
 
     private fun writeEvidence(
         seedId: String,
@@ -542,39 +368,20 @@ class CoverageSeedAndroidTest {
         }
     }
 
-    private fun sha256(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        val alphabet = "0123456789abcdef"
-        val chars = CharArray(digest.size * 2)
-        digest.forEachIndexed { index, value ->
-            val unsigned = value.toInt() and 0xff
-            chars[index * 2] = alphabet[unsigned ushr 4]
-            chars[index * 2 + 1] = alphabet[unsigned and 0x0f]
-        }
-        return chars.concatToString()
-    }
-
     private fun cleanStoreRoot() {
         File(context.filesDir, "sponge").deleteRecursively()
     }
 
-    private data class ResourceFact(
-        val length: Long,
-        val sha256: String,
-    )
-
     private data class SeedUnit(
-        val extentId: String,
-        val resourcePath: String,
-        val trackId: String,
-        val representationId: String,
-        val mediaStartUs: Long?,
-        val mediaEndUs: Long?,
-        val dependencyExtentIds: List<String>,
-        val length: Long,
-        val sha256: String,
+        val unit: F1FetchUnit,
         val partialWrite: Boolean = false,
-    )
+    ) {
+        val extentId: String
+            get() = unit.extentId
+
+        val mediaStartUs: Long?
+            get() = unit.mediaStartUs
+    }
 
     private data class SeedCase(
         val seedId: String,
@@ -587,11 +394,8 @@ class CoverageSeedAndroidTest {
     )
 
     private companion object {
-        val ASSET = MediaAssetId("fixture:F1")
-        val REQUIRED = mapOf(
-            "video-main" to "f1-video-0",
-            "audio-main" to "f1-audio-1",
-        )
+        val ASSET = F1FixtureCatalog.ASSET
+        val REQUIRED = F1FixtureCatalog.REQUIRED_REPRESENTATIONS
     }
 }
 
