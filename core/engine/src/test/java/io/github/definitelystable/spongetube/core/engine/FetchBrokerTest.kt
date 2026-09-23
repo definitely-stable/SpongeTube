@@ -6,9 +6,15 @@ import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -81,6 +87,43 @@ class FetchBrokerTest {
 
         first.close()
         runCurrent()
+        assertEquals(1, executions)
+        release.complete(Unit)
+
+        assertEquals(FetchOutcomeKind.SUCCESS, second.await().kind)
+        assertEquals(0, broker.activeFetchCountForTest())
+    }
+
+    @Test
+    fun cancellingAwaitingConsumerReleasesOnlyItsLease() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var executions = 0
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                executions += 1
+                started.complete(Unit)
+                release.await()
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val first = broker.acquire(
+            REQUEST,
+            consumer("await-one", FetchConsumerKind.RESERVE),
+        )
+        started.await()
+        val second = broker.acquire(
+            REQUEST,
+            consumer("await-two", FetchConsumerKind.RESERVE),
+        )
+
+        val waiter = async { first.await() }
+        runCurrent()
+        waiter.cancelAndJoin()
+        runCurrent()
+
         assertEquals(1, executions)
         release.complete(Unit)
 
@@ -174,6 +217,136 @@ class FetchBrokerTest {
     }
 
     @Test
+    fun cancellingBarrierHandsLateSuccessToReplacementWithoutRefetch() = runTest {
+        val commitStarted = CompletableDeferred<Unit>()
+        val releaseCommit = CompletableDeferred<Unit>()
+        var executions = 0
+        val publisher = object : FetchPublisher {
+            override suspend fun publish(
+                spec: ExtentSpec,
+                producer: suspend (FetchPublishSink) -> Unit,
+            ): CommittedExtent {
+                val bytes = mutableListOf<Byte>()
+                producer(
+                    object : FetchPublishSink {
+                        override suspend fun write(bytesToWrite: ByteArray) {
+                            bytes += bytesToWrite.toList()
+                        }
+                    },
+                )
+                check(bytes.size.toLong() == spec.expectedLength)
+                withContext(NonCancellable) {
+                    commitStarted.complete(Unit)
+                    releaseCommit.await()
+                }
+                return committed(spec)
+            }
+        }
+        val broker = FetchBroker(
+            publisher = publisher,
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                executions += 1
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+            attemptBudget = FetchAttemptBudget(1),
+            sessionId = "test-session",
+            ownerScope = backgroundScope,
+            ownsScope = false,
+        )
+
+        val first = broker.acquire(
+            REQUEST,
+            consumer("late-success-owner", FetchConsumerKind.RESERVE),
+        )
+        commitStarted.await()
+        first.close()
+
+        val replacement = async {
+            broker.acquire(
+                REQUEST,
+                consumer("late-success-replacement", FetchConsumerKind.PLAYBACK),
+            )
+        }
+        runCurrent()
+        assertEquals(false, replacement.isCompleted)
+
+        releaseCommit.complete(Unit)
+        runCurrent()
+
+        val replacementHandle = replacement.await()
+        assertEquals(first.fetchId, replacementHandle.fetchId)
+        assertEquals(1, executions)
+        assertEquals(
+            FetchOutcomeKind.SUCCESS,
+            replacementHandle.await().kind,
+        )
+    }
+
+    @Test
+    fun cancellingBarrierPreservesTerminalFailureWithoutResettingBudget() = runTest {
+        val commitStarted = CompletableDeferred<Unit>()
+        val releaseCommit = CompletableDeferred<Unit>()
+        var executions = 0
+        val publisher = object : FetchPublisher {
+            override suspend fun publish(
+                spec: ExtentSpec,
+                producer: suspend (FetchPublishSink) -> Unit,
+            ): CommittedExtent {
+                producer(
+                    object : FetchPublishSink {
+                        override suspend fun write(bytes: ByteArray) = Unit
+                    },
+                )
+                withContext(NonCancellable) {
+                    commitStarted.complete(Unit)
+                    releaseCommit.await()
+                    throw IllegalStateException("terminal publish failure")
+                }
+            }
+        }
+        val broker = FetchBroker(
+            publisher = publisher,
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                executions += 1
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+            attemptBudget = FetchAttemptBudget(1),
+            sessionId = "test-session",
+            ownerScope = backgroundScope,
+            ownsScope = false,
+        )
+
+        val first = broker.acquire(
+            REQUEST,
+            consumer("late-failure-owner", FetchConsumerKind.RESERVE),
+        )
+        commitStarted.await()
+        first.close()
+
+        val replacement = async {
+            broker.acquire(
+                REQUEST,
+                consumer("late-failure-replacement", FetchConsumerKind.PLAYBACK),
+            )
+        }
+        runCurrent()
+        assertEquals(false, replacement.isCompleted)
+
+        releaseCommit.complete(Unit)
+        runCurrent()
+
+        val replacementHandle = replacement.await()
+        assertEquals(first.fetchId, replacementHandle.fetchId)
+        assertEquals(1, executions)
+        assertEquals(
+            FetchOutcomeKind.INTERNAL_FAILURE,
+            replacementHandle.await().kind,
+        )
+    }
+
+    @Test
     fun retryIsSequentialBoundedAndAccountsDuplicateRanges() = runTest {
         val attempts = mutableListOf<Int>()
         val broker = broker(
@@ -205,6 +378,37 @@ class FetchBrokerTest {
         assertEquals(4L, outcome.bytes.uniqueRangeBytes)
         assertEquals(2L, outcome.bytes.duplicateRangeBytes)
         assertEquals(0L, outcome.bytes.rejectedOrUnmappedBytes)
+    }
+
+    @Test
+    fun retryBudgetExhaustionStopsAtConfiguredAttemptCount() = runTest {
+        val attempts = mutableListOf<Int>()
+        val broker = broker(
+            budget = FetchAttemptBudget(2),
+            executor = FetchAttemptExecutor { _, attempt, _, emit ->
+                attempts += attempt
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2)))
+                FetchAttemptDisposition.Failure(
+                    FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
+                    retryable = true,
+                )
+            },
+        )
+
+        val outcome = broker.acquire(
+            REQUEST,
+            consumer("retry-exhausted", FetchConsumerKind.RESERVE),
+        ).await()
+
+        assertEquals(listOf(1, 2), attempts)
+        assertEquals(
+            FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
+            outcome.kind,
+        )
+        assertEquals(2, outcome.attempts)
+        assertEquals(4L, outcome.bytes.networkBytes)
+        assertEquals(2L, outcome.bytes.uniqueRangeBytes)
+        assertEquals(2L, outcome.bytes.duplicateRangeBytes)
     }
 
     @Test
@@ -286,6 +490,49 @@ class FetchBrokerTest {
         release.complete(Unit)
         assertEquals(FetchOutcomeKind.SUCCESS, first.await().kind)
         assertEquals(FetchOutcomeKind.SUCCESS, second.await().kind)
+    }
+
+    @Test
+    fun fatalErrorCleansRegistryButIsNotSwallowed() = runTest {
+        val fatal = CompletableDeferred<Throwable>()
+        val handler = CoroutineExceptionHandler { _, error ->
+            fatal.complete(error)
+        }
+        val scope = CoroutineScope(
+            SupervisorJob() +
+                StandardTestDispatcher(testScheduler) +
+                handler,
+        )
+        val broker = FetchBroker(
+            publisher = FakePublisher(),
+            executor = FetchAttemptExecutor { _, _, _, _ ->
+                throw AssertionError("fatal-owner")
+            },
+            attemptBudget = FetchAttemptBudget(1),
+            sessionId = "test-session",
+            ownerScope = scope,
+            ownsScope = false,
+        )
+
+        try {
+            val handle = broker.acquire(
+                REQUEST,
+                consumer("fatal", FetchConsumerKind.RESERVE),
+            )
+            runCurrent()
+
+            assertEquals(
+                FetchOutcomeKind.INTERNAL_FAILURE,
+                handle.await().kind,
+            )
+            assertEquals(
+                AssertionError::class.java,
+                fatal.await().javaClass,
+            )
+            assertEquals(0, broker.activeFetchCountForTest())
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -382,21 +629,24 @@ class FetchBrokerTest {
             )
             check(bytes.size.toLong() == spec.expectedLength)
             onCommit()
-            return CommittedExtent(
-                mediaAssetId = spec.mediaAssetId,
-                extentId = spec.extentId,
-                trackId = spec.trackId,
-                representationId = spec.representationId,
-                mediaStartUs = spec.mediaStartUs,
-                mediaEndUs = spec.mediaEndUs,
-                byteStart = spec.byteStart,
-                byteEndExclusive = spec.byteEndExclusive,
-                dependencyExtentIds = spec.dependencyExtentIds,
-                length = spec.expectedLength,
-                sha256 = Sha256Digest("0".repeat(64)),
-            )
+            return committed(spec)
         }
     }
+
+    private fun committed(spec: ExtentSpec): CommittedExtent =
+        CommittedExtent(
+            mediaAssetId = spec.mediaAssetId,
+            extentId = spec.extentId,
+            trackId = spec.trackId,
+            representationId = spec.representationId,
+            mediaStartUs = spec.mediaStartUs,
+            mediaEndUs = spec.mediaEndUs,
+            byteStart = spec.byteStart,
+            byteEndExclusive = spec.byteEndExclusive,
+            dependencyExtentIds = spec.dependencyExtentIds,
+            length = spec.expectedLength,
+            sha256 = Sha256Digest("0".repeat(64)),
+        )
 
     private companion object {
         val REQUEST = FetchRequest(
