@@ -112,12 +112,8 @@ internal class ExtentWriter(
         try {
             store.hit(ExtentFaultPoint.AFTER_RECEIVING)
 
-            try {
-                store.durabilityOps.syncAndClose(output)
-            } finally {
-                // ExtentDurabilityOps owns closing the stream even when sync fails.
-                outputClosed = true
-            }
+            store.durabilityOps.syncAndClose(output)
+            outputClosed = true
             phase = CommitPhase.SEALED
             store.emit(
                 ExtentLifecycleEvent(
