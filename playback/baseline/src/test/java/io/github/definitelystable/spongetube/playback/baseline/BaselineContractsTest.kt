@@ -87,6 +87,45 @@ class BaselineContractsTest {
     }
 
     @Test
+    fun httpEngineShutdownBarrierKeepsCallbacksAliveUntilRequestsDrain() {
+        var shutdownAttempts = 0
+        var callbackExecutorShutdowns = 0
+        val scheduled = ArrayDeque<() -> Unit>()
+
+        val barrier = RetryingShutdownBarrier(
+            shutdown = {
+                shutdownAttempts += 1
+                if (shutdownAttempts < 3) {
+                    throw IllegalStateException("active request")
+                }
+            },
+            afterShutdown = {
+                callbackExecutorShutdowns += 1
+            },
+            scheduleRetry = { retry ->
+                scheduled.addLast(retry)
+            },
+        )
+
+        barrier.run()
+
+        assertEquals(1, shutdownAttempts)
+        assertEquals(0, callbackExecutorShutdowns)
+        assertEquals(1, scheduled.size)
+
+        while (scheduled.isNotEmpty()) {
+            scheduled.removeFirst().invoke()
+        }
+
+        assertEquals(3, shutdownAttempts)
+        assertEquals(1, callbackExecutorShutdowns)
+
+        barrier.run()
+        assertEquals(3, shutdownAttempts)
+        assertEquals(1, callbackExecutorShutdowns)
+    }
+
+    @Test
     fun cacheQuotaComfortablyContainsCanonicalF1() {
         val canonicalF1Bytes = 13_956_166L
         assertTrue(BaselineCacheContract.QUOTA_BYTES > canonicalF1Bytes * 4L)
