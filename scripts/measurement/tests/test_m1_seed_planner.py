@@ -136,7 +136,20 @@ class M1SeedPlannerTest(unittest.TestCase):
                 REPO_ROOT / "test-fixtures/media/F1",
                 media / "F1",
             )
-            corrupted = media / "F1" / "video-00001.m4s"
+            copied_manifest = json.loads(
+                (media / "manifest.json").read_text(encoding="utf-8")
+            )
+            copied_f1 = next(
+                fixture
+                for fixture in copied_manifest["fixtures"]
+                if fixture["fixtureId"] == "F1"
+            )
+            video_resource = next(
+                resource
+                for resource in copied_f1["resources"]
+                if resource["role"] == "video-segment"
+            )
+            corrupted = media / video_resource["relativePath"]
             blob = bytearray(corrupted.read_bytes())
             blob[0] ^= 0x01
             corrupted.write_bytes(blob)
