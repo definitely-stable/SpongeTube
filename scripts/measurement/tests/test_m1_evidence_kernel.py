@@ -35,14 +35,19 @@ class M1EvidenceKernelTest(unittest.TestCase):
 
         self.init_bytes = b"init-bytes"
         self.media_bytes = b"0123456789"
-        self.init_path = "extents/aa/init.extent"
-        self.media_path = "extents/bb/media.extent"
+        self.init_path = self._canonical_storage_path("v-init")
+        self.media_path = self._canonical_storage_path("v-0")
         self._write_extent(self.init_path, self.init_bytes)
         self._write_extent(self.media_path, self.media_bytes)
         self._create_database()
 
     def tearDown(self):
         self.temp.cleanup()
+
+    @staticmethod
+    def _canonical_storage_path(extent_id):
+        key = hashlib.sha256(extent_id.encode("utf-8")).hexdigest()
+        return f"extents/{key[:2]}/{key}.extent"
 
     def _write_extent(self, relative_path, data):
         path = self.storage_root / relative_path
@@ -340,6 +345,82 @@ class M1EvidenceKernelTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "unsafe storagePath"):
             self._verified(self._committed())
+
+    def test_unsupported_database_schema_version_fails_closed(self):
+        with sqlite3.connect(self.database) as connection:
+            connection.execute("PRAGMA user_version = 2")
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "unsupported ExtentStore database schema version",
+        ):
+            self._committed()
+
+    def test_safe_but_noncanonical_storage_path_is_rejected(self):
+        noncanonical = "extents/aa/not-the-layout.extent"
+        self._write_extent(noncanonical, self.media_bytes)
+        with sqlite3.connect(self.database) as connection:
+            connection.execute(
+                "UPDATE extents SET storage_path = ? WHERE extent_id = ?",
+                (noncanonical, "v-0"),
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "storagePath does not match canonical layout",
+        ):
+            self._verified(self._committed())
+
+    def test_committed_and_verified_session_mismatch_is_rejected(self):
+        committed = self._committed()
+        verified = self._verified(committed)
+        verified["sessionId"] = "different-session"
+
+        with self.assertRaisesRegex(ValueError, "sessionId mismatch"):
+            build_canonical_oracle_snapshot(
+                committed,
+                verified,
+                {"video": "v1"},
+                0,
+            )
+
+    def test_missing_verified_extent_fact_is_rejected(self):
+        committed = self._committed()
+        verified = self._verified(committed)
+        verified["files"] = [
+            item
+            for item in verified["files"]
+            if item["extentId"] != "v-0"
+        ]
+
+        with self.assertRaisesRegex(ValueError, "extent-id set mismatch"):
+            build_canonical_oracle_snapshot(
+                committed,
+                verified,
+                {"video": "v1"},
+                0,
+            )
+
+    def test_extra_verified_extent_fact_is_rejected(self):
+        committed = self._committed()
+        verified = self._verified(committed)
+        verified["files"].append(
+            {
+                "extentId": "not-committed",
+                "exists": False,
+                "length": None,
+                "sha256": None,
+                "storagePath": self._canonical_storage_path("not-committed"),
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "extent-id set mismatch"):
+            build_canonical_oracle_snapshot(
+                committed,
+                verified,
+                {"video": "v1"},
+                0,
+            )
 
     def test_exact_comparator_rejects_inflated_runtime_coverage(self):
         oracle = self._oracle()
