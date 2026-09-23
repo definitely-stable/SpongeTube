@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.platform.io.PlatformTestStorageRegistry
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentIntegrityException
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
@@ -29,24 +30,12 @@ import org.w3c.dom.Element
 class CoverageSeedAndroidTest {
     private lateinit var context: Context
     private lateinit var resources: Map<String, ResourceFact>
-    private lateinit var evidenceRoot: File
 
     @Before
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         resources = loadResourceFacts()
-        evidenceRoot = if (Build.VERSION.SDK_INT >= 29) {
-            File(
-                "/sdcard/Android/media/${context.packageName}" +
-                    "/additional_test_output/m1-c-evidence",
-            )
-        } else {
-            requireNotNull(context.getExternalFilesDir(null))
-                .resolve("m1-c-evidence")
-        }
         cleanStoreRoot()
-        evidenceRoot.deleteRecursively()
-        evidenceRoot.mkdirs()
     }
 
     @After
@@ -103,7 +92,9 @@ class CoverageSeedAndroidTest {
                     store.close()
                 }
 
-                writeEvidence(case.seedId, runtimeArtifact)
+                if (Build.VERSION.SDK_INT >= 36) {
+                    writeEvidence(case.seedId, runtimeArtifact)
+                }
             }
 
         }
@@ -523,19 +514,32 @@ class CoverageSeedAndroidTest {
         seedId: String,
         runtimeArtifact: Map<String, Any?>,
     ) {
-        val caseRoot = evidenceRoot.resolve(seedId)
-        val storageCopy = caseRoot.resolve("storage")
-        caseRoot.deleteRecursively()
-        caseRoot.mkdirs()
-
+        val output = PlatformTestStorageRegistry.getInstance()
         val storeRoot = File(context.filesDir, "sponge")
-        check(storeRoot.copyRecursively(storageCopy, overwrite = true)) {
-            "failed to copy ExtentStore evidence for $seedId"
+        check(storeRoot.isDirectory) {
+            "ExtentStore root missing for evidence: $storeRoot"
         }
 
-        caseRoot.resolve("runtime-coverage.json").writeText(
-            JSONObject(runtimeArtifact).toString(2) + "\n",
-        )
+        storeRoot.walkTopDown()
+            .filter(File::isFile)
+            .forEach { source ->
+                val relative = source.relativeTo(storeRoot)
+                    .invariantSeparatorsPath
+                output.openOutputFile(
+                    "m1-c-evidence/$seedId/storage/$relative",
+                ).use { destination ->
+                    source.inputStream().use { input ->
+                        input.copyTo(destination)
+                    }
+                }
+            }
+
+        output.openOutputFile(
+            "m1-c-evidence/$seedId/runtime-coverage.json",
+        ).bufferedWriter().use { writer ->
+            writer.write(JSONObject(runtimeArtifact).toString(2))
+            writer.newLine()
+        }
     }
 
     private fun sha256(bytes: ByteArray): String {
