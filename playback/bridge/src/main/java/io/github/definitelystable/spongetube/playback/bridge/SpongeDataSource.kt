@@ -43,7 +43,7 @@ class SpongeDataSource internal constructor(
         val resource = runtime.plan.resource(resourceKey)
         val engineLength = if (
             resource != null &&
-            dataSpec.length != C.LENGTH_UNSET &&
+            dataSpec.length != C.LENGTH_UNSET.toLong() &&
             dataSpec.position <= resource.length
         ) {
             minOf(dataSpec.length, resource.length - dataSpec.position)
@@ -67,7 +67,7 @@ class SpongeDataSource internal constructor(
         }
         transferStarted = true
         transferStarted(dataSpec)
-        return if (dataSpec.length == C.LENGTH_UNSET) {
+        return if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
             available
         } else {
             dataSpec.length
