@@ -765,7 +765,7 @@ Missing evidence infrastructure is work for the owning slice, not deferred imple
 | M1-ACC-04 | fixed S0/S10/S30/S60/S120 | seed manifest + independent verifier | runtime and reconstructed coverage agree exactly on interval semantics |
 | M1-ACC-05 | holed/partial/wrong-representation seeds | interval reconstruction | reserve ends at first required-track hole; invalid extent contributes zero |
 | M1-ACC-06 | two consumers request same FetchKey concurrently | fetch ownership log + attempt-correlated origin trace | one SharedFetch/fetchId owns the key; both consumers join and no physical attempts overlap |
-| M1-ACC-07 | cancel one joined consumer | ownership/cancellation log | remaining consumer is not cancelled; final-consumer cancellation keeps CANCELLING ownership until terminal |
+| M1-ACC-07 | cancel one joined consumer | ownership/cancellation log | remaining consumer is not cancelled; final-consumer cancellation keeps CANCELLING ownership until terminal; late demand does not reset request budget |
 | M1-ACC-08 | playback joins reserve in-flight fetch | attempt-correlated origin trace + broker events | same fetchId is retained, priority raises RESERVE -> PLAYBACK and no cancel/restart duplicate attempt occurs |
 | M1-ACC-09 | seek fully inside published coverage | Media3 + store trace | no remote media request is required |
 | M1-ACC-10 | seek into missing coverage | bridge/broker trace | remote request goes only through FetchBroker |
@@ -822,9 +822,11 @@ Artifact ownership is incremental:
 | `seed-manifest-v2` | deterministic seed construction producer | fixture manifest + MPD identity; never a coverage oracle | M1-C |
 | `coverage-snapshot-v2` | runtime CoverageIndex / independent oracle | exact semantic comparator including MediaAssetId | M1-C |
 | `extent-events-v1` | ExtentStore instrumentation | reducer/schema checks | M1-B/M1-F |
-| `fetch-events-v2` | FetchBroker | exact fetchId/attempt-correlation cross-check against origin trace | M1-D |
+| `fetch-events-v2` | FetchBroker | schema validation first, then exact fetchId/attempt/transport-correlation cross-check against origin trace | M1-D |
 | `recovery-summary-v1` | recovery harness | schema + post-reopen oracle | M1-F |
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
+
+Every runtime `fetch-events-v2` row MUST validate against the checked-in schema before semantic/origin verification; a serializer/schema mismatch fails the run.
 
 Historical `committed-extents-v1`, `seed-manifest-v1`, `coverage-snapshot-v1` and `fetch-events-v1` remain accepted by the evidence/schema suite for already-produced evidence; new M1-C runs use asset-scoped coverage v2 and new M1-D runs use fetch-events-v2.
 M1-G executes and publishes the already-working evidence path; it must not become the first place where missing producers or comparators are implemented.
