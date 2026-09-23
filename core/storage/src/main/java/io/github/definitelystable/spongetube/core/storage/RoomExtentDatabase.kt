@@ -13,6 +13,9 @@ import androidx.room3.Query
 import androidx.room3.RoomDatabase
 import androidx.room3.Transaction
 import androidx.room3.Update
+import androidx.room3.migration.AutoMigrationSpec
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 
 @Entity(
     tableName = "extents",
@@ -273,6 +276,17 @@ private fun requireRepairableMatch(
     }
 }
 
+internal class PurgeUnscopedV1CacheMigration : AutoMigrationSpec {
+    override suspend fun onPostMigrate(connection: SQLiteConnection) {
+        // v1 did not persist MediaAssetId. Retaining those rows would either
+        // invent provenance or permanently reserve their global ExtentId.
+        // The payload is rebuildable cache: drop only metadata here and let
+        // normal ExtentStore recovery remove the resulting orphan files.
+        connection.execSQL("DELETE FROM extent_dependencies")
+        connection.execSQL("DELETE FROM extents")
+    }
+}
+
 @Database(
     entities = [
         ExtentEntity::class,
@@ -280,7 +294,11 @@ private fun requireRepairableMatch(
     ],
     version = 2,
     autoMigrations = [
-        AutoMigration(from = 1, to = 2),
+        AutoMigration(
+            from = 1,
+            to = 2,
+            spec = PurgeUnscopedV1CacheMigration::class,
+        ),
     ],
     exportSchema = true,
 )
