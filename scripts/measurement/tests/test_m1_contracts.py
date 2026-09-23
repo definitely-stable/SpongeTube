@@ -16,7 +16,7 @@ from m1_oracle import (
     oracle_snapshot,
     reconstruct_committed_coverage,
 )
-from schema_subset import SchemaContractError, validate_instance
+from schema_subset import SchemaContractError, validate_instance, validate_schema_definition
 
 
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
@@ -104,6 +104,52 @@ class M1SchemaContractTest(unittest.TestCase):
 
         with self.assertRaises(SchemaContractError):
             validate_instance(schema, broken)
+
+
+
+class RepositorySchemaSubsetTest(unittest.TestCase):
+    def test_every_canonical_schema_uses_only_supported_keywords(self):
+        schemas = sorted(SCHEMAS.glob("*.schema.json"))
+        self.assertGreater(len(schemas), 0)
+        for schema_path in schemas:
+            with self.subTest(schema=schema_path.name):
+                schema = json.loads(schema_path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    "https://json-schema.org/draft/2020-12/schema",
+                    schema["$schema"],
+                )
+                validate_schema_definition(schema)
+
+    def test_validator_rejects_unknown_keyword(self):
+        with self.assertRaises(SchemaContractError):
+            validate_schema_definition(
+                {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "silentlyIgnoredWouldBeBad": True,
+                }
+            )
+
+    def test_validator_supports_local_defs_ref(self):
+        schema = json.loads(
+            (SCHEMAS / "perfetto-trace-summary-v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        validate_schema_definition(schema)
+
+    def test_validator_enforces_maximum_and_datetime(self):
+        with self.assertRaises(SchemaContractError):
+            validate_instance({"type": "number", "maximum": 1}, 1.1)
+        with self.assertRaises(SchemaContractError):
+            validate_instance(
+                {"type": "string", "format": "date-time"},
+                "2026-09-23T02:00:00",
+            )
+        validate_instance(
+            {"type": "string", "format": "date-time"},
+            "2026-09-23T02:00:00Z",
+        )
 
 
 class M1CoverageOracleTest(unittest.TestCase):
