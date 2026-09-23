@@ -2,7 +2,10 @@ package io.github.definitelystable.spongetube.playback.bridge
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceException
+import androidx.media3.datasource.DataSpec
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.definitelystable.spongetube.core.engine.FetchKey
@@ -12,6 +15,7 @@ import io.github.definitelystable.spongetube.core.engine.SpongeBridgeApi
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FetchUnit
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureAssets
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -58,6 +62,56 @@ class PlaybackBridgeAndroidTest {
     fun tearDown() {
         if (this::context.isInitialized) {
             cleanStoreRoot()
+        }
+    }
+
+    @Test
+    fun dataSourceHonorsMedia3OpenRangeContract() {
+        val target = plans.catalog.unit("f1:video:0:1")
+        val scenario = scenario("DATASOURCE_CONTRACT", plans.seed(10_000_000L))
+        run(scenario) {
+            val source = SpongeDataSource(runtime, AUTHORITY)
+            val uri = SpongeUris.uri(AUTHORITY, target.resourceName)
+            val buffer = ByteArray(16)
+
+            val beyondEofLength = 10L
+            val nearEnd = DataSpec.Builder()
+                .setUri(uri)
+                .setPosition(target.length - 2)
+                .setLength(beyondEofLength)
+                .build()
+            assertEquals(beyondEofLength, source.open(nearEnd))
+            assertEquals(2, source.read(buffer, 0, buffer.size))
+            assertEquals(C.RESULT_END_OF_INPUT, source.read(buffer, 0, buffer.size))
+            source.close()
+
+            val atEofLength = 5L
+            val atEof = DataSpec.Builder()
+                .setUri(uri)
+                .setPosition(target.length)
+                .setLength(atEofLength)
+                .build()
+            assertEquals(atEofLength, source.open(atEof))
+            assertEquals(C.RESULT_END_OF_INPUT, source.read(buffer, 0, buffer.size))
+            source.close()
+
+            val pastEof = DataSpec.Builder()
+                .setUri(uri)
+                .setPosition(target.length + 1)
+                .setLength(1)
+                .build()
+            val failure = try {
+                source.open(pastEof)
+                null
+            } catch (error: IOException) {
+                error
+            } finally {
+                source.close()
+            }
+            assertTrue(
+                "position > EOF must use Media3 position-out-of-range semantics",
+                DataSourceException.isCausedByPositionOutOfRange(checkNotNull(failure)),
+            )
         }
     }
 
