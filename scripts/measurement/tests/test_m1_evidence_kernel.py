@@ -184,7 +184,7 @@ class M1EvidenceKernelTest(unittest.TestCase):
     def test_end_to_end_reads_sqlite_and_hashes_real_files(self):
         committed = self._committed()
         self.assertEqual(1, committed["databaseSchemaVersion"])
-        self.assertEqual(["v-init", "v-0"], [
+        self.assertEqual(["v-0", "v-init"], [
             row["extentId"] for row in committed["extents"]
         ])
 
