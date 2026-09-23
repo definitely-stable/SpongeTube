@@ -5,6 +5,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 internal data class StoredExtent(
+    val mediaAssetId: MediaAssetId,
     val extentId: ExtentId,
     val trackId: String,
     val representationId: String,
