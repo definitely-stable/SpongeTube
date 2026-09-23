@@ -288,6 +288,10 @@ class CoverageIndexTest {
             listOf(ExtentId("v0"), ExtentId("v1")),
             refs.map(ReadyExtentRef::extentId),
         )
+        assertEquals(
+            listOf(ExtentId("v-init")),
+            refs.first().dependencyExtentIds,
+        )
 
         index.snapshot(
             PlaybackRequirementSet(
