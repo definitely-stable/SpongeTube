@@ -21,8 +21,8 @@ android {
     }
 
     sourceSets {
-        getByName("androidTest").assets.srcDir(
-            rootProject.file("test-fixtures/media"),
+        getByName("androidTest").assets.directories.add(
+            rootProject.file("test-fixtures/media").absolutePath,
         )
     }
 }
