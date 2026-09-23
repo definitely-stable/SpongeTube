@@ -4,7 +4,6 @@ data class CoverageEvidenceSnapshot(
     val eventSequence: Long,
     val eventElapsedRealtimeNs: Long,
     val sessionId: String,
-    val playheadUs: Long,
     val coverage: CoverageSnapshot,
     val playerBufferedAheadUs: Long? = null,
 ) {
@@ -14,7 +13,6 @@ data class CoverageEvidenceSnapshot(
             "eventElapsedRealtimeNs must be >= 0"
         }
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
-        require(playheadUs >= 0) { "playheadUs must be >= 0" }
         require(playerBufferedAheadUs == null || playerBufferedAheadUs >= 0) {
             "playerBufferedAheadUs must be >= 0 when present"
         }
@@ -28,7 +26,7 @@ data class CoverageEvidenceSnapshot(
             "eventElapsedRealtimeNs" to eventElapsedRealtimeNs,
             "sessionId" to sessionId,
             "mediaAssetId" to coverage.mediaAssetId.value,
-            "playheadUs" to playheadUs,
+            "playheadUs" to coverage.playheadUs,
             "requiredTrackIds" to trackIds,
             "requiredRepresentations" to trackIds.associateWith { trackId ->
                 coverage.requiredRepresentations.getValue(trackId)
