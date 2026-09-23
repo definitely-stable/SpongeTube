@@ -107,7 +107,11 @@ internal class RoomExtentMetadataStore private constructor(
                     durability = durability,
                 )
             } catch (error: Throwable) {
-                database.close()
+                try {
+                    database.close()
+                } catch (closeError: Throwable) {
+                    error.addSuppressed(closeError)
+                }
                 throw error
             }
         }
@@ -174,7 +178,6 @@ private fun ExtentEntity.toStoredExtent(
             ExtentQuarantineReason::valueOf,
         ),
     )
-
 
 private suspend fun ExtentDatabase.readDurability(): ExtentMetadataDurability =
     useWriterConnection { connection ->
