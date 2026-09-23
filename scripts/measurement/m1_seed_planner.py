@@ -334,9 +334,11 @@ def build_seed(repo_root: Path, seed_id: str) -> SeedPlan:
         units: list[SeedUnit] = [wrong_init]
         for unit in base.units:
             if unit.extent_id in {"f1:video:0:2", "f1:video:0:3"}:
+                number = unit.extent_id.rsplit(":", 1)[1]
                 units.append(
                     replace(
                         unit,
+                        extent_id=f"f1:video:alt:{number}",
                         representation_id="f1-video-alt",
                         dependency_extent_ids=(wrong_init_id,),
                     )
