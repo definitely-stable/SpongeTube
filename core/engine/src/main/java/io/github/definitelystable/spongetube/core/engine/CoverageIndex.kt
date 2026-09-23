@@ -72,7 +72,7 @@ private class CoverageProjection private constructor(
             ].orEmpty()
         }
 
-        val playable = CoverageAlgebra.intersectRequired(
+        val playable = CoverageAlgebra.intersectNormalizedRequired(
             perTrack = perTrack,
             requiredTrackIds = requirements.requirements.map(
                 PlaybackRequirement::trackId,
@@ -188,6 +188,17 @@ internal object CoverageAlgebra {
     fun intersectRequired(
         perTrack: Map<String, List<MediaInterval>>,
         requiredTrackIds: List<String>,
+    ): List<MediaInterval> =
+        intersectNormalizedRequired(
+            perTrack = perTrack.mapValues { (_, intervals) ->
+                normalize(intervals)
+            },
+            requiredTrackIds = requiredTrackIds,
+        )
+
+    fun intersectNormalizedRequired(
+        perTrack: Map<String, List<MediaInterval>>,
+        requiredTrackIds: List<String>,
     ): List<MediaInterval> {
         require(requiredTrackIds.isNotEmpty()) {
             "at least one required track is required"
@@ -196,9 +207,9 @@ internal object CoverageAlgebra {
             "required track ids must be unique"
         }
 
-        var result = normalize(perTrack[requiredTrackIds.first()].orEmpty())
+        var result = perTrack[requiredTrackIds.first()].orEmpty()
         for (trackId in requiredTrackIds.drop(1)) {
-            result = intersectTwo(
+            result = intersectNormalizedTwo(
                 result,
                 perTrack[trackId].orEmpty(),
             )
@@ -209,37 +220,35 @@ internal object CoverageAlgebra {
         return result
     }
 
-    private fun intersectTwo(
+    private fun intersectNormalizedTwo(
         left: List<MediaInterval>,
         right: List<MediaInterval>,
     ): List<MediaInterval> {
-        val a = normalize(left)
-        val b = normalize(right)
         val result = mutableListOf<MediaInterval>()
         var leftIndex = 0
         var rightIndex = 0
 
-        while (leftIndex < a.size && rightIndex < b.size) {
+        while (leftIndex < left.size && rightIndex < right.size) {
             val start = maxOf(
-                a[leftIndex].startUs,
-                b[rightIndex].startUs,
+                left[leftIndex].startUs,
+                right[rightIndex].startUs,
             )
             val end = minOf(
-                a[leftIndex].endUs,
-                b[rightIndex].endUs,
+                left[leftIndex].endUs,
+                right[rightIndex].endUs,
             )
             if (start < end) {
                 result += MediaInterval(start, end)
             }
 
-            if (a[leftIndex].endUs <= b[rightIndex].endUs) {
+            if (left[leftIndex].endUs <= right[rightIndex].endUs) {
                 leftIndex += 1
             } else {
                 rightIndex += 1
             }
         }
 
-        return result
+        return result.toList()
     }
 }
 
