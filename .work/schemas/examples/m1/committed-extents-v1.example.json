@@ -16,7 +16,7 @@
       "dependencyExtentIds": [],
       "length": 1024,
       "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-      "storagePath": "filesDir/sponge/extents/aa/v-init"
+      "storagePath": "extents/54/54c7e8a25d3c7338b4e1480347624d1f51fa3896dd1cd1130a3c335f3655463b.extent"
     },
     {
       "extentId": "v-0",
@@ -31,7 +31,7 @@
       ],
       "length": 700000,
       "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-      "storagePath": "filesDir/sponge/extents/ab/v-0"
+      "storagePath": "extents/f4/f4178e3fc0799932dfc5d02fba143c73c8166702a32250dbc21b60a7b4a71df2.extent"
     }
   ]
 }
