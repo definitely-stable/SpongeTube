@@ -48,9 +48,9 @@ Option A.
 - MediaSource form for M1: `DashMediaSource` over the F1 fixture with `sponge://<authority>/<resourceKey>` URIs. The player's only `MediaSource.Factory` is this DASH factory; any other scheme or authority is refused by the DataSource. The YouTube MediaSource shape (DASH/progressive/merging/SABR) is an adapter decision after #50 on top of the same engine seam.
 - The DASH manifest is served from packaged, length/SHA-256 verified bytes (`InlinePlaybackResource`); the origin never serves the manifest, so every origin data-plane request is a broker attempt without exceptions.
 - Miss semantics: acquire the whole FetchUnit as a PLAYBACK consumer, wait for durable publication, refresh CoverageIndex, read locally. No in-flight bytes are exposed.
-- `CoverageIndex.resolveExtent` distinguishes READY / PUBLISHED_NOT_READY(missing dependencies) / ABSENT so a published segment with a missing init repairs only the dependency instead of colliding with its own committed row.
+- `CoverageIndex.resolveExtent` is identity-aware and distinguishes READY / PUBLISHED_NOT_READY(missing dependencies) / IDENTITY_CONFLICT / ABSENT. A matching ExtentId is never enough to admit local bytes: immutable asset/track/representation/range/dependency/length/digest metadata must match the playback plan before read or repair.
 - `SpongeLoadErrorHandlingPolicy` retries only bridge fetch failures that may clear (retryable/terminal transport failure, cancelled shared owner), at most `maxRetries` times with a fixed delay; everything else is fatal; no fallback selection. Parameters are **Provisional** (3 retries, 1000 ms) and recorded in evidence; M1-F proves boundedness under N4. Media3 buffer constants are not changed.
-- The DataSource reports `isNetwork = false`; network work is FetchBroker's.
+- The DataSource reports `isNetwork = false`; network work is FetchBroker's. The Media3 adapter preserves `DataSource.open` edge semantics: bounded requests may extend past EOF, `position == EOF` opens and reads EOF immediately, and only `position > EOF` maps to `ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE`.
 - `HttpRangeFetchExecutor` is the minimal deterministic-origin transport for M1 (206 + exact Content-Range only). Production transport selection stays M2.
 
 ## Consequences
@@ -58,12 +58,13 @@ Option A.
 Positive:
 - one remote owner is structural, and a static guard plus the origin bijection check it;
 - cached seeks are local by construction (no network DataSource exists);
+- FetchBroker acquisition causality is explicit: NEW_OWNER, JOINED_RUNNING and WAITED_CANCELLING are distinct; bridge JOIN evidence is emitted only for JOINED_RUNNING;
 - no Room access on `read`; one metadata lookup per extent open.
 
 Negative:
 - a miss waits for a whole FetchUnit before any byte reaches the decoder (latency cost for large units; not optimized in M1);
 - `@SpongeBridgeApi` is an opt-in public surface that #50 may reshape;
-- `openRead` checks length only; same-length corruption reaches the decoder until the next recovery scan (accepted M1 limitation).
+- immutable committed metadata is matched against the playback plan before `openRead`; the read handle itself still checks length only, so same-length on-disk corruption after admission reaches the decoder until the next recovery scan (accepted M1 limitation).
 
 Operational/recovery implications:
 - close order is `player.release()` -> `PlaybackBridgeRuntime.shutdown()` -> `ExtentStore.close()`;
@@ -71,7 +72,7 @@ Operational/recovery implications:
 
 ## Verification
 
-- engine JVM tests 1-13 (M1-E plan §8) and bridge JVM tests (scheme refusal, static no-upstream guard, bounded policy);
+- engine JVM tests include local/miss/join/cancellation and same-ExtentId foreign-identity rejection; bridge tests include scheme refusal, static no-upstream guard, bounded policy and Media3 `DataSource.open` EOF/range contract;
 - instrumented E1-E6 on API 36 with Media Lab, verified by `scripts/ci/verify-m1-e-evidence.sh` (`m1_bridge_evidence.py` + `m1_oracle.py`);
 - evidence summary: `.work/evidence/2026-09-23-m1-e-playback-bridge.md`.
 
