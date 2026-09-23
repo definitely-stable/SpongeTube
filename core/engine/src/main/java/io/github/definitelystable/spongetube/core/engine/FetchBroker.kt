@@ -39,6 +39,7 @@ internal class FetchBroker internal constructor(
     },
 ) {
     private val registryLock = Any()
+    private val eventDeliveryLock = Any()
     private val active = mutableMapOf<FetchKey, SharedFetch>()
     private val fetchCounter = AtomicLong()
     private val eventCounter = AtomicLong()
@@ -483,20 +484,16 @@ internal class FetchBroker internal constructor(
         shared: SharedFetch,
         outcome: FetchOutcome,
     ) {
-        val shouldEmit = synchronized(registryLock) {
+        val shouldComplete = synchronized(registryLock) {
             if (shared.state == SharedFetchState.TERMINAL) {
                 false
             } else {
                 shared.state = SharedFetchState.TERMINAL
-                if (active[shared.request.fetchKey] === shared) {
-                    active.remove(shared.request.fetchKey)
-                }
-                shared.result.complete(outcome)
                 true
             }
         }
 
-        if (!shouldEmit) {
+        if (!shouldComplete) {
             return
         }
 
@@ -515,8 +512,13 @@ internal class FetchBroker internal constructor(
             event = event,
             outcome = outcome.kind,
         )
+
         synchronized(registryLock) {
+            if (active[shared.request.fetchKey] === shared) {
+                active.remove(shared.request.fetchKey)
+            }
             shared.consumers.clear()
+            shared.result.complete(outcome)
         }
     }
 
@@ -541,38 +543,40 @@ internal class FetchBroker internal constructor(
         transportCorrelationId: String? = null,
     ) {
         val listener = eventListener ?: return
-        val snapshot = synchronized(registryLock) {
-            val accounting = shared.accounting.snapshot()
-            FetchEvent(
-                eventSequence = eventCounter.getAndIncrement(),
-                eventElapsedRealtimeNs = monotonicClockNs(),
-                sessionId = sessionId,
-                fetchId = shared.fetchId,
-                fetchKey = shared.request.fetchKey,
-                attempt = attempt,
-                attemptCorrelationId = attempt?.let {
-                    shared.fetchId.value + ":attempt-" + it
-                },
-                transportCorrelationId = transportCorrelationId,
-                event = event,
-                consumerIds = shared.consumers.keys
-                    .map(FetchConsumerId::value)
-                    .sorted(),
-                effectivePriority = shared.priority.value,
-                requestedByteStart =
-                    shared.request.extentSpec.byteStart,
-                requestedByteEndExclusive =
-                    shared.request.extentSpec.byteEndExclusive,
-                networkBytes = accounting.networkBytes,
-                uniqueRangeBytes = accounting.uniqueRangeBytes,
-                duplicateRangeBytes = accounting.duplicateRangeBytes,
-                rejectedOrUnmappedBytes =
-                    accounting.rejectedOrUnmappedBytes,
-                singleFlightJoined = joined,
-                outcome = outcome,
-            )
+        synchronized(eventDeliveryLock) {
+            val snapshot = synchronized(registryLock) {
+                val accounting = shared.accounting.snapshot()
+                FetchEvent(
+                    eventSequence = eventCounter.getAndIncrement(),
+                    eventElapsedRealtimeNs = monotonicClockNs(),
+                    sessionId = sessionId,
+                    fetchId = shared.fetchId,
+                    fetchKey = shared.request.fetchKey,
+                    attempt = attempt,
+                    attemptCorrelationId = attempt?.let {
+                        shared.fetchId.value + ":attempt-" + it
+                    },
+                    transportCorrelationId = transportCorrelationId,
+                    event = event,
+                    consumerIds = shared.consumers.keys
+                        .map(FetchConsumerId::value)
+                        .sorted(),
+                    effectivePriority = shared.priority.value,
+                    requestedByteStart =
+                        shared.request.extentSpec.byteStart,
+                    requestedByteEndExclusive =
+                        shared.request.extentSpec.byteEndExclusive,
+                    networkBytes = accounting.networkBytes,
+                    uniqueRangeBytes = accounting.uniqueRangeBytes,
+                    duplicateRangeBytes = accounting.duplicateRangeBytes,
+                    rejectedOrUnmappedBytes =
+                        accounting.rejectedOrUnmappedBytes,
+                    singleFlightJoined = joined,
+                    outcome = outcome,
+                )
+            }
+            runCatching { listener.onEvent(snapshot) }
         }
-        runCatching { listener.onEvent(snapshot) }
     }
 
     private class TerminalHandle(
