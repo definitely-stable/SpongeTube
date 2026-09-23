@@ -506,6 +506,8 @@ def verify_extent_files(
         seen.add(extent_id)
 
         storage_path = str(value["storagePath"])
+        file_path = _safe_storage_path(storage_root, storage_path)
+
         expected_storage_path = _expected_storage_path(
             extent_id,
             int(committed_snapshot["databaseSchemaVersion"]),
@@ -517,7 +519,6 @@ def verify_extent_files(
                 f"expected={expected_storage_path!r}"
             )
 
-        file_path = _safe_storage_path(storage_root, storage_path)
         if not file_path.exists():
             files.append(
                 {
