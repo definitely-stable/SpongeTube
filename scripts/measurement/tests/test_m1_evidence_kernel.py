@@ -3,6 +3,7 @@ import hashlib
 import json
 import pathlib
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -525,6 +526,61 @@ class M1EvidenceKernelTest(unittest.TestCase):
         self.assertTrue(committed_output.is_file())
         self.assertTrue(verified_output.is_file())
         self.assertTrue(oracle_output.is_file())
+
+    def test_script_entrypoint_verify_run_executes_as_process(self):
+        oracle = self._oracle()
+        runtime_path = self.root / "subprocess-runtime.json"
+        runtime_path.write_text(json.dumps(oracle), encoding="utf-8")
+
+        output_root = self.root / "subprocess"
+        command = [
+            sys.executable,
+            str(SCRIPT_DIR / "m1_oracle.py"),
+            "verify-run",
+            "--database",
+            str(self.database),
+            "--storage-root",
+            str(self.storage_root),
+            "--runtime",
+            str(runtime_path),
+            "--snapshot-id",
+            "run-subprocess",
+            "--session-id",
+            "session-1",
+            "--snapshot-kind",
+            "POST_RECOVERY",
+            "--playhead-us",
+            "5000000",
+            "--required",
+            "video=v1",
+            "--committed-output",
+            str(output_root / "committed.json"),
+            "--verified-output",
+            str(output_root / "files.json"),
+            "--oracle-output",
+            str(output_root / "oracle.json"),
+        ]
+
+        completed = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(
+            0,
+            completed.returncode,
+            msg=completed.stderr,
+        )
+        self.assertIn(
+            "M1 evidence verified",
+            completed.stdout,
+        )
+        self.assertTrue((output_root / "committed.json").is_file())
+        self.assertTrue((output_root / "files.json").is_file())
+        self.assertTrue((output_root / "oracle.json").is_file())
 
     def test_cli_verify_run_returns_nonzero_for_inflated_runtime(self):
         runtime = self._oracle()
