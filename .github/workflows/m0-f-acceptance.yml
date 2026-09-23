@@ -3,6 +3,7 @@ name: M0 Acceptance
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - ".github/workflows/m0-f-acceptance.yml"
       - "app/**"
@@ -13,6 +14,8 @@ on:
       - "scripts/measurement/**"
       - "test-fixtures/media/**"
       - "gradle/**"
+  schedule:
+    - cron: "17 4 1 * *"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +27,10 @@ concurrency:
 
 jobs:
   acceptance:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/9-m0-f-acceptance'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      contains(github.event.pull_request.labels.*.name, 'evidence:m0-acceptance')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 

@@ -123,12 +123,20 @@ jobs:
 
           jq empty "$GITHUB_WORKSPACE/dashif-result.json"
 
+          CHECKS="$(jq '[.. | objects | select(has("state") and (.state | type == "string"))] | length' \
+            "$GITHUB_WORKSPACE/dashif-result.json")"
           FAILURES="$(jq '[.. | objects | select(.state? == "FAIL" and has("messages"))] | length' \
             "$GITHUB_WORKSPACE/dashif-result.json")"
           WARNINGS="$(jq '[.. | objects | select(.state? == "WARN" and has("messages"))] | length' \
             "$GITHUB_WORKSPACE/dashif-result.json")"
 
-          echo "DASH-IF failures=$FAILURES warnings=$WARNINGS"
+          echo "DASH-IF checks=$CHECKS failures=$FAILURES warnings=$WARNINGS"
+
+          if [[ "$CHECKS" -lt 1 ]]; then
+            echo "::error::DASH-IF returned no state-bearing checks; refusing a vacuous pass"
+            jq . "$GITHUB_WORKSPACE/dashif-result.json"
+            exit 1
+          fi
 
           if [[ "$FAILURES" -ne 0 ]]; then
             jq . "$GITHUB_WORKSPACE/dashif-result.json"
