@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
+import java.util.Collections
 
 data class MediaInterval(
     val startUs: Long,
@@ -47,10 +48,12 @@ class PlaybackRequirementSet(
             "a track may have only one active required representation"
         }
 
-        this.requirements = ordered.toList()
-        this.requiredRepresentations = ordered.associate {
-            it.trackId to it.representationId
-        }
+        this.requirements = Collections.unmodifiableList(ordered.toList())
+        this.requiredRepresentations = Collections.unmodifiableMap(
+            ordered.associate {
+                it.trackId to it.representationId
+            },
+        )
     }
 
     constructor(
@@ -64,7 +67,7 @@ class PlaybackRequirementSet(
     )
 }
 
-data class CoverageSnapshot(
+data class CoverageSnapshot internal constructor(
     val mediaAssetId: MediaAssetId,
     val playheadUs: Long,
     val requiredRepresentations: Map<String, String>,
