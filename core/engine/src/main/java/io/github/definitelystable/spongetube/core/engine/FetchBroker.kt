@@ -245,6 +245,8 @@ internal class FetchBroker internal constructor(
                         event = FetchEventKind.ATTEMPT_COMPLETED,
                         attempt = attempt,
                         outcome = FetchOutcomeKind.SUCCESS,
+                        transportCorrelationId =
+                            attemptResult.transportCorrelationId,
                     )
                     completeTerminal(shared, outcome)
                     return
@@ -356,7 +358,11 @@ internal class FetchBroker internal constructor(
                 }
             }
 
-            AttemptRunResult.Success(committed)
+            val success = disposition as FetchAttemptDisposition.Success
+            AttemptRunResult.Success(
+                extent = committed,
+                transportCorrelationId = success.transportCorrelationId,
+            )
         } catch (abort: FetchAttemptAbort) {
             AttemptRunResult.Failure(
                 kind = abort.failure.kind,
@@ -505,6 +511,7 @@ internal class FetchBroker internal constructor(
         attempt: Int? = null,
         joined: Boolean = false,
         outcome: FetchOutcomeKind? = null,
+        transportCorrelationId: String? = null,
     ) {
         val listener = eventListener ?: return
         val snapshot = synchronized(registryLock) {
@@ -519,6 +526,7 @@ internal class FetchBroker internal constructor(
                 attemptCorrelationId = attempt?.let {
                     shared.fetchId.value + ":attempt-" + it
                 },
+                transportCorrelationId = transportCorrelationId,
                 event = event,
                 consumerIds = shared.consumers.keys
                     .map(FetchConsumerId::value)
@@ -585,7 +593,9 @@ internal data class FetchNetworkChunk(
 }
 
 internal sealed interface FetchAttemptDisposition {
-    data object Success : FetchAttemptDisposition
+    data class Success(
+        val transportCorrelationId: String? = null,
+    ) : FetchAttemptDisposition
 
     data class Failure(
         val kind: FetchOutcomeKind,
@@ -670,6 +680,7 @@ private class SharedFetch(
 private sealed interface AttemptRunResult {
     data class Success(
         val extent: CommittedExtent,
+        val transportCorrelationId: String?,
     ) : AttemptRunResult
 
     data class Failure(
