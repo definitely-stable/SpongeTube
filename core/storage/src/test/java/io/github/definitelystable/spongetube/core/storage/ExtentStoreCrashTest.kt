@@ -261,6 +261,27 @@ class ExtentStoreCrashTest {
     }
 
     @Test
+    fun openReadQuarantinesFileThatDisappearsAfterStartup() = runBlocking {
+        val root = File(tempDir, "read-missing-after-open")
+        val metadata = FakeExtentMetadataStore()
+        val bytes = "present-at-startup".encodeToByteArray()
+        val store = openStore(root, metadata)
+        val committed = store.writeExtent(spec("vanished", bytes)) {
+            write(bytes)
+        }
+
+        val finalFile = ExtentPathLayout(root).finalFile(
+            committed.extentId,
+            HostDurabilityOps,
+        )
+        assertTrue(finalFile.delete())
+
+        assertEquals(null, store.openRead(committed.extentId))
+        assertTrue(store.committedExtents().isEmpty())
+        store.close()
+    }
+
+    @Test
     fun readHandleOwnsStoreLifetimeUntilClosed() = runBlocking {
         val root = File(tempDir, "read-lifetime")
         val metadata = FakeExtentMetadataStore()
