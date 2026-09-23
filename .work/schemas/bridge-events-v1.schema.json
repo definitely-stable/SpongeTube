@@ -38,6 +38,7 @@
         "LOCAL_SERVE",
         "MISS",
         "JOIN",
+        "WAIT_EXISTING",
         "DEPENDENCY_WAIT",
         "FETCH_WAIT_END",
         "CLOSE",
