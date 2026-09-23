@@ -1,7 +1,7 @@
 # SpongeTube Product Contract v0.1
 
 Status: **Normative — product scope and invariants**
-Date: **2026-09-21**
+Date: **2026-09-23**
 
 ## Mission
 
