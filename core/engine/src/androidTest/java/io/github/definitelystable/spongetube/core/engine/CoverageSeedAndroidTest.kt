@@ -1,7 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
 import android.content.Context
-import android.os.ParcelFileDescriptor
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.definitelystable.spongetube.core.storage.ExtentId
@@ -35,8 +35,15 @@ class CoverageSeedAndroidTest {
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         resources = loadResourceFacts()
-        evidenceRoot = requireNotNull(context.getExternalFilesDir(null))
-            .resolve("m1-c-evidence")
+        evidenceRoot = if (Build.VERSION.SDK_INT >= 29) {
+            File(
+                "/sdcard/Android/media/${context.packageName}" +
+                    "/additional_test_output/m1-c-evidence",
+            )
+        } else {
+            requireNotNull(context.getExternalFilesDir(null))
+                .resolve("m1-c-evidence")
+        }
         cleanStoreRoot()
         evidenceRoot.deleteRecursively()
         evidenceRoot.mkdirs()
@@ -99,7 +106,6 @@ class CoverageSeedAndroidTest {
                 writeEvidence(case.seedId, runtimeArtifact)
             }
 
-            publishEvidenceForHost()
         }
 
     private fun assertRuntime(
@@ -530,21 +536,6 @@ class CoverageSeedAndroidTest {
         caseRoot.resolve("runtime-coverage.json").writeText(
             JSONObject(runtimeArtifact).toString(2) + "\n",
         )
-    }
-
-    private fun publishEvidenceForHost() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val destination = "/data/local/tmp/spongetube-m1-c"
-        val source = evidenceRoot.absolutePath
-        val command =
-            "rm -rf $destination && mkdir -p $destination && " +
-                "cp -R '$source/.' '$destination/'"
-
-        val descriptor = instrumentation.uiAutomation
-            .executeShellCommand(command)
-        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use {
-            it.readBytes()
-        }
     }
 
     private fun sha256(bytes: ByteArray): String {
