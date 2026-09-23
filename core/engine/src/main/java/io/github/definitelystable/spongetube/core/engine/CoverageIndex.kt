@@ -25,12 +25,35 @@ class CoverageIndex private constructor(
      * after dependency validation and interval normalization completes, so a
      * failed refresh leaves the previous projection readable.
      */
-    suspend fun refresh(): Int = refreshMutex.withLock {
+    suspend fun refresh(): CoverageRefreshResult = refreshMutex.withLock {
         val loaded = loadCommittedExtents().map(CommittedExtent::defensiveCopy)
         val next = CoverageProjection.build(loaded)
         projection = next
-        loaded.size
+        CoverageRefreshResult(
+            loadedExtentCount = loaded.size,
+            readyExtentCount = next.readyExtentCount,
+            normalizedIntervalCount = next.normalizedIntervalCount,
+        )
     }
+
+    /**
+     * Internal bridge seam for resolving semantic coverage to immutable extents.
+     *
+     * The result is served from the same projection as snapshot(); it never
+     * queries Room and never exposes filesystem paths.
+     */
+    internal fun readyExtentRefs(
+        mediaAssetId: MediaAssetId,
+        trackId: String,
+        representationId: String,
+    ): List<ReadyExtentRef> =
+        projection.readyExtentRefs(
+            CoverageKey(
+                mediaAssetId = mediaAssetId,
+                trackId = trackId,
+                representationId = representationId,
+            ),
+        )
 
     /**
      * Pure in-memory query. No Room/SQLite access and no dependency-graph walk.
@@ -58,7 +81,13 @@ private data class CoverageKey(
 
 private class CoverageProjection private constructor(
     private val intervalsByKey: Map<CoverageKey, List<MediaInterval>>,
+    private val readyExtentsByKey: Map<CoverageKey, List<ReadyExtentRef>>,
+    val readyExtentCount: Int,
+    val normalizedIntervalCount: Int,
 ) {
+    fun readyExtentRefs(key: CoverageKey): List<ReadyExtentRef> =
+        readyExtentsByKey[key].orEmpty()
+
     fun snapshot(
         requirements: PlaybackRequirementSet,
         playheadUs: Long,
@@ -99,7 +128,12 @@ private class CoverageProjection private constructor(
     }
 
     companion object {
-        val EMPTY = CoverageProjection(emptyMap())
+        val EMPTY = CoverageProjection(
+            intervalsByKey = emptyMap(),
+            readyExtentsByKey = emptyMap(),
+            readyExtentCount = 0,
+            normalizedIntervalCount = 0,
+        )
 
         fun build(extents: List<CommittedExtent>): CoverageProjection {
             val rows = LinkedHashMap<ExtentId, CommittedExtent>(extents.size)
@@ -144,14 +178,28 @@ private class CoverageProjection private constructor(
             } while (changed)
 
             val raw = linkedMapOf<CoverageKey, MutableList<MediaInterval>>()
+            val backing =
+                linkedMapOf<CoverageKey, MutableList<ReadyExtentRef>>()
             for (extent in candidates) {
                 if (extent.extentId !in ready) {
                     continue
                 }
 
                 val interval = extent.mediaIntervalOrNull() ?: continue
-                raw.getOrPut(extent.coverageKey()) { mutableListOf() }
+                val key = extent.coverageKey()
+                raw.getOrPut(key) { mutableListOf() }
                     .add(interval)
+                backing.getOrPut(key) { mutableListOf() }
+                    .add(
+                        ReadyExtentRef(
+                            extentId = extent.extentId,
+                            mediaStartUs = interval.startUs,
+                            mediaEndUs = interval.endUs,
+                            byteStart = extent.byteStart,
+                            byteEndExclusive = extent.byteEndExclusive,
+                            length = extent.length,
+                        ),
+                    )
             }
 
             val normalized = Collections.unmodifiableMap(
@@ -161,7 +209,23 @@ private class CoverageProjection private constructor(
                     )
                 },
             )
-            return CoverageProjection(normalized)
+            val readyExtents = Collections.unmodifiableMap(
+                backing.mapValues { (_, refs) ->
+                    Collections.unmodifiableList(
+                        refs.sortedWith(
+                            compareBy<ReadyExtentRef> { it.mediaStartUs }
+                                .thenBy { it.mediaEndUs }
+                                .thenBy { it.extentId.value },
+                        ),
+                    )
+                },
+            )
+            return CoverageProjection(
+                intervalsByKey = normalized,
+                readyExtentsByKey = readyExtents,
+                readyExtentCount = ready.size,
+                normalizedIntervalCount = normalized.values.sumOf(List<*>::size),
+            )
         }
     }
 }
