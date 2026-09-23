@@ -288,10 +288,12 @@ Properties:
 - physical retry attempts under one owner are sequential and carry explicit attempt correlation identity;
 - cancellation is reference-counted, not "cancel and restart";
 - final-consumer cancellation keeps the CANCELLING owner registered until its physical attempt is terminal, preventing overlap with a replacement owner;
+- a waiter that arrives during CANCELLING inherits the terminal result so request budgets cannot be silently reset; only CANCELLED_NO_CONSUMERS creates a fresh owner after the barrier;
 - critical playback can raise priority of an existing fetch monotonically without restart;
 - persisted completion is atomic through ExtentStore;
 - failed partial data follows an explicit resumability policy; M1 aborts failed retry writers rather than inventing persistent continuation identity;
-- network, unique-range, duplicate-range and rejected/unmapped bytes are explicit correctness evidence.
+- network, unique-range, duplicate-range and rejected/unmapped bytes are explicit correctness evidence;
+- Android broker evidence uses the elapsed-realtime clock domain; origin evidence uses the independent Media Lab clock domain and correlation IDs are the only correctness join.
 ## 7. DeadlineScheduler
 
 Static priorities are insufficient.
