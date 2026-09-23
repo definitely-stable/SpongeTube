@@ -12,6 +12,7 @@
     "fetchKey",
     "attempt",
     "attemptCorrelationId",
+    "transportCorrelationId",
     "event",
     "consumerIds",
     "effectivePriority",
@@ -33,6 +34,7 @@
     "fetchKey": { "type": "string", "minLength": 1 },
     "attempt": { "type": ["integer", "null"], "minimum": 1 },
     "attemptCorrelationId": { "type": ["string", "null"] },
+    "transportCorrelationId": { "type": ["string", "null"] },
     "event": {
       "enum": [
         "OWNER_REGISTERED",
