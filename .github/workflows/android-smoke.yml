@@ -9,6 +9,7 @@ on:
       - "playback/**"
       - "core/storage/**"
       - "core/engine/**"
+      - "test-support/**"
       - "tools/media-lab/**"
       - "scripts/ci/**"
       - "scripts/measurement/**"
@@ -24,6 +25,7 @@ on:
       - "playback/**"
       - "core/storage/**"
       - "core/engine/**"
+      - "test-support/**"
       - "tools/media-lab/**"
       - "scripts/ci/**"
       - "scripts/measurement/**"
@@ -43,7 +45,7 @@ jobs:
   android-smoke:
     name: android-smoke
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
 
     steps:
       - name: Checkout
@@ -72,6 +74,7 @@ jobs:
             :benchmark:assembleBenchmark \
             :core:storage:assembleDebug \
             :core:engine:assembleDebug \
+            :playback:bridge:assembleDebug \
             :tools:media-lab:installDist
 
       - name: Prepare API 36 emulator
@@ -160,6 +163,74 @@ jobs:
 
           bash scripts/ci/verify-m1-d-evidence.sh \
             build/android-smoke/m1-d-evidence \
+            "$trace"
+
+      - name: Run M1 PlaybackBridge acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="build/android-smoke/m1-e-origin"
+          trace="$PWD/$root/server/requests.jsonl"
+          rm -rf "$root"
+          mkdir -p "$root/server"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+
+          "$LAB_BIN" serve \
+            "--fixture-root=$PWD/test-fixtures/media" \
+            "--trace=$trace" \
+            "--session-id=m1-e-bridge" \
+            --profile=N0 \
+            --data-port=18081 \
+            --control-port=18082 \
+            > "$root/server/media-lab.out" \
+            2> "$root/server/media-lab.err" &
+          lab_pid=$!
+
+          cleanup_m1e_lab() {
+            if kill -0 "$lab_pid" 2>/dev/null; then
+              kill "$lab_pid" || true
+              for _ in {1..40}; do
+                kill -0 "$lab_pid" 2>/dev/null || break
+                sleep 0.25
+              done
+            fi
+          }
+          trap cleanup_m1e_lab EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://127.0.0.1:18082/__lab/config \
+              > "$root/server/scenario.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$root/server/media-lab.out" || true
+              cat "$root/server/media-lab.err" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          jq -e \
+            '.profileId == "N0" and .sessionId == "m1-e-bridge"' \
+            "$root/server/scenario.json"
+
+          adb reverse tcp:18080 tcp:18081
+
+          ./gradlew --dependency-verification=strict \
+            :playback:bridge:connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m1e.originBaseUrl=http://127.0.0.1:18080
+
+          cleanup_m1e_lab
+          trap - EXIT
+
+          test -s "$trace"
+
+          bash scripts/ci/verify-m1-e-evidence.sh \
+            build/android-smoke/m1-e-evidence \
             "$trace"
 
       - name: Run N0 and N1 smoke scenarios
@@ -339,6 +410,9 @@ jobs:
             core/storage/build/outputs/androidTest-results/
             core/engine/build/outputs/androidTest-results/
             core/engine/build/reports/
+            playback/bridge/build/outputs/androidTest-results/
+            playback/bridge/build/outputs/connected_android_test_additional_output/
+            playback/bridge/build/reports/
           if-no-files-found: error
           retention-days: 14
 

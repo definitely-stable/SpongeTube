@@ -132,7 +132,12 @@ internal class FetchBroker internal constructor(
                     joined = false,
                 )
                 startOwner(shared)
-                return Handle(this, shared, consumer.id)
+                return Handle(
+                    broker = this,
+                    shared = shared,
+                    consumerId = consumer.id,
+                    acquireDisposition = FetchAcquireDisposition.NEW_OWNER,
+                )
             }
 
             if (joined != null) {
@@ -149,7 +154,12 @@ internal class FetchBroker internal constructor(
                         joined = true,
                     )
                 }
-                return Handle(this, shared, consumer.id)
+                return Handle(
+                    broker = this,
+                    shared = shared,
+                    consumerId = consumer.id,
+                    acquireDisposition = FetchAcquireDisposition.JOINED_RUNNING,
+                )
             }
 
             val waiting = checkNotNull(waitingShared)
@@ -210,6 +220,12 @@ internal class FetchBroker internal constructor(
             ownerScope.cancel()
         }
     }
+
+    /**
+     * Next FetchEvent sequence number. Evidence markers record it so that
+     * "no attempt inside a window" is checked by sequence, not by clocks.
+     */
+    internal fun eventSequenceWatermark(): Long = eventCounter.get()
 
     internal fun activeFetchCountForTest(): Int =
         synchronized(registryLock) { active.size }
@@ -584,6 +600,9 @@ internal class FetchBroker internal constructor(
         override val fetchId: FetchId,
         private val outcome: FetchOutcome,
     ) : FetchHandle {
+        override val acquireDisposition: FetchAcquireDisposition
+            get() = FetchAcquireDisposition.WAITED_CANCELLING
+
         override suspend fun await(): FetchOutcome = outcome
 
         override fun close() = Unit
@@ -593,6 +612,7 @@ internal class FetchBroker internal constructor(
         private val broker: FetchBroker,
         private val shared: SharedFetch,
         private val consumerId: FetchConsumerId,
+        override val acquireDisposition: FetchAcquireDisposition,
     ) : FetchHandle {
         private val released = AtomicBoolean()
 

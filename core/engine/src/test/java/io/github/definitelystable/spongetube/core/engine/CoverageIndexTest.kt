@@ -396,6 +396,51 @@ class CoverageIndexTest {
         }
     }
 
+    @Test
+    fun resolveExtentClassifiesReadyPublishedNotReadyAndAbsent() = runTest {
+        val index = indexOf(
+            init("v-init", "video", "v1"),
+            media("v-1", "video", "v1", 0, 10, "v-init"),
+            media("a-1", "audio", "a1", 0, 10, "a-init"),
+        )
+
+        assertEquals(ExtentResolution.Ready, index.resolveExtent(ExtentId("v-init")))
+        assertEquals(ExtentResolution.Ready, index.resolveExtent(ExtentId("v-1")))
+        assertEquals(
+            ExtentResolution.PublishedNotReady(listOf(ExtentId("a-init"))),
+            index.resolveExtent(ExtentId("a-1")),
+        )
+        assertEquals(ExtentResolution.Absent, index.resolveExtent(ExtentId("a-init")))
+        assertEquals(ExtentResolution.Absent, index.resolveExtent(ExtentId("v-2")))
+    }
+
+    @Test
+    fun resolveExtentReportsUnrepairableRowWithEmptyMissingSet() = runTest {
+        val index = indexOf(
+            init("alt-init", "video", "alt"),
+            media("v-1", "video", "v1", 0, 10, "alt-init"),
+        )
+
+        assertEquals(ExtentResolution.Ready, index.resolveExtent(ExtentId("alt-init")))
+        assertEquals(
+            ExtentResolution.PublishedNotReady(emptyList()),
+            index.resolveExtent(ExtentId("v-1")),
+        )
+    }
+
+    @Test
+    fun resolveExtentUsesInstalledProjectionUntilRefresh() = runTest {
+        val extents = mutableListOf<CommittedExtent>()
+        val index = CoverageIndex.forTest { extents.toList() }
+        index.refresh()
+        assertEquals(ExtentResolution.Absent, index.resolveExtent(ExtentId("v-init")))
+
+        extents += init("v-init", "video", "v1")
+        assertEquals(ExtentResolution.Absent, index.resolveExtent(ExtentId("v-init")))
+        index.refresh()
+        assertEquals(ExtentResolution.Ready, index.resolveExtent(ExtentId("v-init")))
+    }
+
     private suspend fun indexOf(
         vararg extents: CommittedExtent,
     ): CoverageIndex {

@@ -2,6 +2,7 @@ package io.github.definitelystable.spongetube.core.engine
 
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentId
+import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import java.util.Collections
@@ -56,6 +57,29 @@ class CoverageIndex private constructor(
         )
 
     /**
+     * Internal bridge seam: classifies one immutable extent identity against
+     * the current atomic projection.
+     *
+     * READY means PUBLISHED + VALID with a satisfied dependency closure.
+     * PUBLISHED_NOT_READY means a committed row exists but at least one
+     * dependency is not READY; fetching the extent itself again would collide
+     * with the committed row, so callers must satisfy the listed dependencies.
+     * ABSENT means no committed row is visible in this projection.
+     *
+     * Pure in-memory lookup: no Room/SQLite access and no graph walk.
+     */
+    internal fun resolveExtent(extentId: ExtentId): ExtentResolution =
+        projection.resolveExtent(extentId)
+
+    /**
+     * Identity-aware bridge admission. A matching ExtentId is not sufficient:
+     * every immutable metadata field carried by the playback plan must match
+     * the committed row before local bytes or dependency repair are allowed.
+     */
+    internal fun resolveExtent(expected: ExtentSpec): ExtentResolution =
+        projection.resolveExtent(expected)
+
+    /**
      * Pure in-memory query. No Room/SQLite access and no dependency-graph walk.
      */
     fun snapshot(
@@ -82,11 +106,42 @@ private data class CoverageKey(
 private class CoverageProjection private constructor(
     private val intervalsByKey: Map<CoverageKey, List<MediaInterval>>,
     private val readyExtentsByKey: Map<CoverageKey, List<ReadyExtentRef>>,
+    private val readyExtentIds: Set<ExtentId>,
+    private val publishedExtents: Map<ExtentId, CommittedExtent>,
     val readyExtentCount: Int,
     val normalizedIntervalCount: Int,
 ) {
     fun readyExtentRefs(key: CoverageKey): List<ReadyExtentRef> =
         readyExtentsByKey[key].orEmpty()
+
+    fun resolveExtent(extentId: ExtentId): ExtentResolution {
+        if (extentId in readyExtentIds) {
+            return ExtentResolution.Ready
+        }
+        val extent = publishedExtents[extentId]
+            ?: return ExtentResolution.Absent
+        return ExtentResolution.PublishedNotReady(
+            missingDependencyIds = Collections.unmodifiableList(
+                extent.dependencyExtentIds.filterNot { it in readyExtentIds },
+            ),
+        )
+    }
+
+    fun resolveExtent(expected: ExtentSpec): ExtentResolution {
+        val committed = publishedExtents[expected.extentId]
+            ?: return ExtentResolution.Absent
+        if (!committed.matches(expected)) {
+            return ExtentResolution.IdentityConflict
+        }
+        if (expected.extentId in readyExtentIds) {
+            return ExtentResolution.Ready
+        }
+        return ExtentResolution.PublishedNotReady(
+            missingDependencyIds = Collections.unmodifiableList(
+                committed.dependencyExtentIds.filterNot { it in readyExtentIds },
+            ),
+        )
+    }
 
     fun snapshot(
         requirements: PlaybackRequirementSet,
@@ -131,6 +186,8 @@ private class CoverageProjection private constructor(
         val EMPTY = CoverageProjection(
             intervalsByKey = emptyMap(),
             readyExtentsByKey = emptyMap(),
+            readyExtentIds = emptySet(),
+            publishedExtents = emptyMap(),
             readyExtentCount = 0,
             normalizedIntervalCount = 0,
         )
@@ -226,6 +283,8 @@ private class CoverageProjection private constructor(
             return CoverageProjection(
                 intervalsByKey = normalized,
                 readyExtentsByKey = readyExtents,
+                readyExtentIds = Collections.unmodifiableSet(ready.toSet()),
+                publishedExtents = Collections.unmodifiableMap(rows.toMap()),
                 readyExtentCount = ready.size,
                 normalizedIntervalCount = normalized.values.sumOf { it.size },
             )
@@ -363,3 +422,16 @@ private fun CommittedExtent.defensiveCopy(): CommittedExtent =
     copy(
         dependencyExtentIds = dependencyExtentIds.toList(),
     )
+
+private fun CommittedExtent.matches(expected: ExtentSpec): Boolean =
+    mediaAssetId == expected.mediaAssetId &&
+        extentId == expected.extentId &&
+        trackId == expected.trackId &&
+        representationId == expected.representationId &&
+        mediaStartUs == expected.mediaStartUs &&
+        mediaEndUs == expected.mediaEndUs &&
+        byteStart == expected.byteStart &&
+        byteEndExclusive == expected.byteEndExclusive &&
+        dependencyExtentIds.toSet() == expected.dependencyExtentIds.toSet() &&
+        length == expected.expectedLength &&
+        (expected.expectedSha256 == null || sha256 == expected.expectedSha256)
