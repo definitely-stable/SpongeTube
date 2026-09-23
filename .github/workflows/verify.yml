@@ -67,7 +67,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/verify
-          TASKS=(check assembleDebug :benchmark:assembleBenchmark)
+          TASKS=(
+            check
+            assembleDebug
+            :core:engine:check
+            :core:engine:assembleDebug
+            :benchmark:assembleBenchmark
+          )
           ./gradlew --dependency-verification=strict --configuration-cache "${TASKS[@]}"             | tee build/verify/gradle-first.log
           ./gradlew --dependency-verification=strict --configuration-cache "${TASKS[@]}"             | tee build/verify/gradle-second.log
           grep -Eq 'Reusing configuration cache|Configuration cache entry reused'             build/verify/gradle-second.log
@@ -94,6 +100,8 @@ jobs:
             core/storage/build/reports/
             core/storage/build/test-results/
             core/storage/schemas/
+            core/engine/build/reports/
+            core/engine/build/test-results/
             build/verify/
           if-no-files-found: warn
           retention-days: 7
