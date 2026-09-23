@@ -64,7 +64,7 @@ class ExtentStoreAndroidTest {
     @Test
     fun roomMetadataUsesExplicitTruncateFullDurability() = runBlocking {
         val first = openStore()
-        val firstDurability = checkNotNull(first.metadataDurability)
+        val firstDurability = first.metadataDurability
         assertEquals("truncate", firstDurability.journalMode.lowercase())
         assertEquals(2, firstDurability.synchronous)
         assertTrue(firstDurability.busyTimeoutMs >= 3_000L)
@@ -72,7 +72,7 @@ class ExtentStoreAndroidTest {
         first.close()
 
         val reopened = openStore()
-        val reopenedDurability = checkNotNull(reopened.metadataDurability)
+        val reopenedDurability = reopened.metadataDurability
         assertEquals("truncate", reopenedDurability.journalMode.lowercase())
         assertEquals(2, reopenedDurability.synchronous)
         assertTrue(reopenedDurability.isPowerLossHardened)
@@ -112,6 +112,16 @@ class ExtentStoreAndroidTest {
         )
         assertEquals(ExtentStorageFailureKind.NO_SPACE, failure.kind)
         assertEquals("test-write", failure.operation)
+    }
+
+    @Test
+    fun storageFailureClassifiesEdquotAsNoSpace() {
+        val failure = storageFailure(
+            operation = "test-quota",
+            cause = ErrnoException("write", OsConstants.EDQUOT),
+        )
+        assertEquals(ExtentStorageFailureKind.NO_SPACE, failure.kind)
+        assertEquals("test-quota", failure.operation)
     }
 
     @Test
