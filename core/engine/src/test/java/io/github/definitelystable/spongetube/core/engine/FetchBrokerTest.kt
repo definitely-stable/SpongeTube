@@ -48,6 +48,8 @@ class FetchBrokerTest {
         val playback = broker.acquire(REQUEST, consumer("playback", FetchConsumerKind.PLAYBACK))
 
         assertEquals(reserve.fetchId, playback.fetchId)
+        assertEquals(FetchAcquireDisposition.NEW_OWNER, reserve.acquireDisposition)
+        assertEquals(FetchAcquireDisposition.JOINED_RUNNING, playback.acquireDisposition)
         assertFalse(reserve.joinedExisting)
         assertTrue(playback.joinedExisting)
         assertEquals(1, executions)
@@ -214,6 +216,7 @@ class FetchBrokerTest {
         runCurrent()
 
         val replacementHandle = replacement.await()
+        assertEquals(FetchAcquireDisposition.NEW_OWNER, replacementHandle.acquireDisposition)
         secondStarted.await()
         assertEquals(2, executions)
         assertEquals(
@@ -289,6 +292,10 @@ class FetchBrokerTest {
         runCurrent()
 
         val replacementHandle = replacement.await()
+        assertEquals(
+            FetchAcquireDisposition.WAITED_CANCELLING,
+            replacementHandle.acquireDisposition,
+        )
         assertEquals(first.fetchId, replacementHandle.fetchId)
         assertEquals(1, executions)
         assertEquals(
@@ -352,6 +359,10 @@ class FetchBrokerTest {
         runCurrent()
 
         val replacementHandle = replacement.await()
+        assertEquals(
+            FetchAcquireDisposition.WAITED_CANCELLING,
+            replacementHandle.acquireDisposition,
+        )
         assertEquals(first.fetchId, replacementHandle.fetchId)
         assertEquals(1, executions)
         assertEquals(
