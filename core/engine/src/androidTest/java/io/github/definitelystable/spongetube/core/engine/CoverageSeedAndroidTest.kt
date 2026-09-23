@@ -265,7 +265,8 @@ class CoverageSeedAndroidTest {
         SeedCase(
             seedId = seedId,
             units = catalog.filter { unit ->
-                unit.mediaStartUs == null || unit.mediaStartUs < targetUs
+                val startUs = unit.mediaStartUs
+                startUs == null || startUs < targetUs
             },
         )
 
