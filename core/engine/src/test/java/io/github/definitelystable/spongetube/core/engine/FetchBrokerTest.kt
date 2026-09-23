@@ -163,6 +163,7 @@ class FetchBrokerTest {
         val releaseCleanup = CompletableDeferred<Unit>()
         val secondStarted = CompletableDeferred<Unit>()
         var executions = 0
+        val events = mutableListOf<FetchEvent>()
 
         val broker = broker(
             executor = FetchAttemptExecutor { _, _, _, emit ->
@@ -183,6 +184,7 @@ class FetchBrokerTest {
                     FetchAttemptDisposition.Success()
                 }
             },
+            events = events,
         )
 
         val first = broker.acquire(
@@ -214,6 +216,14 @@ class FetchBrokerTest {
             FetchOutcomeKind.SUCCESS,
             replacementHandle.await().kind,
         )
+        val firstTerminal = events.indexOfFirst {
+            it.event == FetchEventKind.OWNER_CANCELLED
+        }
+        val secondOwner = events.indexOfLast {
+            it.event == FetchEventKind.OWNER_REGISTERED
+        }
+        assertEquals(true, firstTerminal >= 0)
+        assertEquals(true, secondOwner > firstTerminal)
     }
 
     @Test
