@@ -2,6 +2,7 @@ package io.github.definitelystable.spongetube.core.storage
 
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
@@ -69,7 +70,14 @@ internal class FileExtentStoreLease private constructor(
         private val processOwnedRoots = mutableSetOf<String>()
 
         fun acquire(rootDirectory: File): FileExtentStoreLease {
-            val rootKey = rootDirectory.canonicalFile.path
+            val rootKey = try {
+                rootDirectory.canonicalFile.path
+            } catch (error: IOException) {
+                throw storageFailure(
+                    operation = "resolve-store-root",
+                    cause = error,
+                )
+            }
             reserveProcessOwnership(rootKey)
 
             val leaseFile = File(rootDirectory, ".store.lock")
@@ -122,6 +130,13 @@ internal class FileExtentStoreLease private constructor(
                     error is ExtentStoreException
                 ) {
                     throw error
+                }
+
+                if (error is IOException) {
+                    throw storageFailure(
+                        operation = "acquire-store-lease",
+                        cause = error,
+                    )
                 }
 
                 throw ExtentStoreException(
