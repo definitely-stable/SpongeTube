@@ -315,7 +315,35 @@ class ExtentStoreAndroidTest {
         }
 
     @Test
-    fun roomV1MigrationPreservesLegacyExtentInReservedAssetScope() =
+    fun sameExtentIdCannotBeReboundAcrossAssets() = runBlocking {
+        val bytes = "globally-unique-extent".encodeToByteArray()
+        val store = openStore()
+        val first = spec(
+            id = "global-id",
+            bytes = bytes,
+        )
+
+        store.writeExtent(first) {
+            write(bytes)
+        }
+
+        expectThrows<ExtentConflictException> {
+            store.writeExtent(
+                first.copy(
+                    mediaAssetId = MediaAssetId("asset-other"),
+                ),
+            ) {
+                write(bytes)
+            }
+        }
+
+        val committed = store.committedExtents().single()
+        assertEquals(MediaAssetId("asset-test"), committed.mediaAssetId)
+        store.close()
+    }
+
+    @Test
+    fun roomV1MigrationDiscardsUnscopedCacheAndAllowsNamedRewrite() =
         runBlocking {
             val extentId = ExtentId("legacy-v1")
             val bytes = "legacy-published-extent".encodeToByteArray()
@@ -374,7 +402,7 @@ class ExtentStoreAndroidTest {
                 db.execSQL(
                     "INSERT OR REPLACE INTO room_master_table " +
                         "(id, identity_hash) VALUES(42, ?)",
-                    arrayOf("0bf05a98b8873edf57ddf005dbc42bdd"),
+                    arrayOf<Any?>("0bf05a98b8873edf57ddf005dbc42bdd"),
                 )
                 db.execSQL(
                     """
@@ -395,7 +423,7 @@ class ExtentStoreAndroidTest {
                         published_at_epoch_ms
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
                     """.trimIndent(),
-                    arrayOf(
+                    arrayOf<Any?>(
                         extentId.value,
                         "video",
                         "v1",
@@ -417,15 +445,27 @@ class ExtentStoreAndroidTest {
             val migrated = openStore()
             assertEquals(
                 1,
+                migrated.initialRecoveryReport.deletedOrphanFiles,
+            )
+            assertEquals(
+                0,
                 migrated.initialRecoveryReport.verifiedPublishedExtents,
             )
-            val committed = migrated.committedExtents().single()
-            assertEquals(extentId, committed.extentId)
-            assertTrue(committed.mediaAssetId.isLegacyUnscoped)
-            assertEquals(
-                MediaAssetId.LEGACY_UNSCOPED_VALUE,
-                committed.mediaAssetId.value,
-            )
+            assertTrue(migrated.committedExtents().isEmpty())
+            assertFalse(extentFile(extentId).exists())
+
+            val rewritten = migrated.writeExtent(
+                spec(
+                    id = extentId.value,
+                    bytes = bytes,
+                ),
+            ) {
+                write(bytes)
+            }
+
+            assertEquals(extentId, rewritten.extentId)
+            assertEquals(MediaAssetId("asset-test"), rewritten.mediaAssetId)
+            assertTrue(extentFile(extentId).isFile)
             migrated.close()
         }
 
