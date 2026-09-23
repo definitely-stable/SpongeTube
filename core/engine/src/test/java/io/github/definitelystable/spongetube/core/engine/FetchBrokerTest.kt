@@ -9,7 +9,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class FetchBrokerTest {
@@ -165,14 +164,16 @@ class FetchBrokerTest {
                 extentId = ExtentId("different"),
             ),
         )
-        assertThrows(FetchIdentityConflictException::class.java) {
-            runTest {
-                broker.acquire(
-                    different,
-                    consumer("second", FetchConsumerKind.RESERVE),
-                )
-            }
-        }
+        val failure = runCatching {
+            broker.acquire(
+                different,
+                consumer("second", FetchConsumerKind.RESERVE),
+            )
+        }.exceptionOrNull()
+        assertEquals(
+            FetchIdentityConflictException::class.java,
+            failure?.javaClass,
+        )
 
         first.close()
         runCurrent()
