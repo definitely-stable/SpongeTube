@@ -67,6 +67,11 @@ internal data class ExtentSnapshotRows(
     val dependencies: List<ExtentDependencyEntity>,
 )
 
+internal data class ExtentSnapshotRow(
+    val extent: ExtentEntity,
+    val dependencyIds: List<String>,
+)
+
 internal data class ExtentWritePreflight(
     val extentId: String,
     val trackId: String,
@@ -170,6 +175,17 @@ internal abstract class ExtentDao {
             extents = allExtents(),
             dependencies = allDependencies(),
         )
+
+    @Transaction
+    open suspend fun snapshotById(
+        extentId: String,
+    ): ExtentSnapshotRow? {
+        val extent = extentById(extentId) ?: return null
+        return ExtentSnapshotRow(
+            extent = extent,
+            dependencyIds = dependencyIdsForExtent(extentId),
+        )
+    }
 
     @Query(
         """

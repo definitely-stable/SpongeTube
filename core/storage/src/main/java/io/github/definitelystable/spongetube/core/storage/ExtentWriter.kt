@@ -2,6 +2,7 @@ package io.github.definitelystable.spongetube.core.storage
 
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -46,7 +47,14 @@ internal class ExtentWriter(
         withContext(store.ioDispatcher) {
             mutex.withLock {
                 ensureOpen()
-                output.write(bytes, offset, length)
+                try {
+                    output.write(bytes, offset, length)
+                } catch (error: IOException) {
+                    throw storageFailure(
+                        operation = "write-extent-temp",
+                        cause = error,
+                    )
+                }
                 receivedDigest.update(bytes, offset, length)
                 receivedLength = Math.addExact(
                     receivedLength,

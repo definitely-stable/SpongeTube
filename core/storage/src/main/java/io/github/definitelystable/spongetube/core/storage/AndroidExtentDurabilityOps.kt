@@ -5,6 +5,7 @@ import android.system.Os
 import android.system.OsConstants
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 
 internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
     override fun ensureDirectory(directory: File) {
@@ -33,9 +34,12 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
         try {
             output.flush()
             output.fd.sync()
-        } catch (error: Throwable) {
+        } catch (error: IOException) {
             failure = error
-            throw ExtentStoreException("failed to fsync extent temp file", error)
+            throw storageFailure(
+                operation = "fsync-extent-temp",
+                cause = error,
+            )
         } finally {
             try {
                 output.close()
@@ -43,6 +47,12 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
                 if (failure != null) {
                     failure.addSuppressed(closeError)
                 } else {
+                    if (closeError is IOException) {
+                        throw storageFailure(
+                            operation = "close-extent-temp",
+                            cause = closeError,
+                        )
+                    }
                     throw ExtentStoreException(
                         "failed to close extent temp file",
                         closeError,
@@ -71,10 +81,9 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
             Os.rename(source.absolutePath, destination.absolutePath)
             syncDirectory(parent)
         } catch (error: ErrnoException) {
-            throw ExtentStoreException(
-                "failed to atomically install immutable extent file " +
-                    "${source.absolutePath} -> ${destination.absolutePath}",
-                error,
+            throw storageFailure(
+                operation = "install-extent",
+                cause = error,
             )
         }
     }
@@ -91,9 +100,9 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
             if (error.errno == OsConstants.ENOENT) {
                 return
             }
-            throw ExtentStoreException(
-                "failed to delete extent file: ${file.absolutePath}",
-                error,
+            throw storageFailure(
+                operation = "delete-extent",
+                cause = error,
             )
         }
     }
@@ -106,18 +115,18 @@ internal object AndroidExtentDurabilityOps : ExtentDurabilityOps {
                 0,
             )
         } catch (error: ErrnoException) {
-            throw ExtentStoreException(
-                "failed to open directory for fsync: ${directory.absolutePath}",
-                error,
+            throw storageFailure(
+                operation = "open-directory-fsync",
+                cause = error,
             )
         }
 
         try {
             Os.fsync(descriptor)
         } catch (error: ErrnoException) {
-            throw ExtentStoreException(
-                "failed to fsync directory: ${directory.absolutePath}",
-                error,
+            throw storageFailure(
+                operation = "fsync-directory",
+                cause = error,
             )
         } finally {
             try {
