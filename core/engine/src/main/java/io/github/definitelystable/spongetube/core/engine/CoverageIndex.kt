@@ -85,6 +85,7 @@ private class CoverageProjection private constructor(
 
         return CoverageSnapshot(
             mediaAssetId = requirements.mediaAssetId,
+            playheadUs = playheadUs,
             requiredRepresentations = requirements.requiredRepresentations,
             perTrackPublishedIntervals = perTrack,
             playableIntervals = playable,
