@@ -163,6 +163,20 @@ Use subtraction-based validation:
 
 This matches the already hardened read-handle bounds logic.
 
+### F9 — SQLite durability diagnostics leaked into the public storage API
+
+**Scenario**
+
+The first M1-B2 implementation exposed `ExtentMetadataDurability` and `ExtentStore.metadataDurability` publicly even though journal mode and synchronous values are Room/SQLite implementation evidence, not playback/storage-domain behavior.
+
+**Impact**
+
+Playback/core consumers could accidentally depend on SQLite-specific details, making the internal metadata backend harder to replace and violating the intended implementation firewall before the public surface is frozen.
+
+**Correction**
+
+The durability observation type, mismatch exception and store property are internal to the storage module. Android instrumentation still verifies the effective settings. A later canonical evidence producer may serialize those observations explicitly without making them part of the playback API.
+
 ## Findings deliberately not changed
 
 - **No per-open SHA-256 rehash.** Startup recovery already verifies SHA-256. Rehashing every playback open would add O(extent bytes) latency without a measured need. Background/incremental integrity remains M6.
