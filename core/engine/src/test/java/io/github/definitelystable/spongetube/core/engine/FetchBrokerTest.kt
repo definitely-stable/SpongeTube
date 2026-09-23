@@ -6,9 +6,13 @@ import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -106,6 +110,66 @@ class FetchBrokerTest {
         assertEquals(
             FetchOutcomeKind.CANCELLED_NO_CONSUMERS,
             events.last { it.event == FetchEventKind.OWNER_CANCELLED }.outcome,
+        )
+    }
+
+    @Test
+    fun replacementOwnerWaitsUntilCancellingPhysicalAttemptIsTerminal() = runTest {
+        val firstStarted = CompletableDeferred<Unit>()
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        var executions = 0
+
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                executions += 1
+                if (executions == 1) {
+                    firstStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable) {
+                            cleanupStarted.complete(Unit)
+                            releaseCleanup.await()
+                        }
+                    }
+                } else {
+                    secondStarted.complete(Unit)
+                    emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                    FetchAttemptDisposition.Success
+                }
+            },
+        )
+
+        val first = broker.acquire(
+            REQUEST,
+            consumer("first-owner", FetchConsumerKind.RESERVE),
+        )
+        firstStarted.await()
+        first.close()
+        cleanupStarted.await()
+
+        val replacement = async {
+            broker.acquire(
+                REQUEST,
+                consumer("replacement", FetchConsumerKind.PLAYBACK),
+            )
+        }
+        runCurrent()
+
+        assertEquals(1, executions)
+        assertEquals(false, replacement.isCompleted)
+
+        releaseCleanup.complete(Unit)
+        runCurrent()
+
+        val replacementHandle = replacement.await()
+        secondStarted.await()
+        assertEquals(2, executions)
+        assertEquals(
+            FetchOutcomeKind.SUCCESS,
+            replacementHandle.await().kind,
         )
     }
 
