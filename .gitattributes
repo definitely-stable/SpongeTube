@@ -1,0 +1,9 @@
+# Repository-wide text policy.
+* text=auto eol=lf
+
+# Windows launcher remains native to cmd.exe.
+*.bat text eol=crlf
+
+# Canonical media fixture bytes are evidence inputs. Never normalize them
+# during checkout on Windows or any other platform.
+test-fixtures/media/** -text
