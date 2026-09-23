@@ -30,7 +30,7 @@ class FetchBrokerTest {
                 release.await()
                 assertEquals(FetchPriority.PLAYBACK, priority.value)
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
-                FetchAttemptDisposition.Success
+                FetchAttemptDisposition.Success()
             },
             events = events,
         )
@@ -71,7 +71,7 @@ class FetchBrokerTest {
                 started.complete(Unit)
                 release.await()
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
-                FetchAttemptDisposition.Success
+                FetchAttemptDisposition.Success()
             },
         )
 
@@ -96,7 +96,7 @@ class FetchBrokerTest {
             executor = FetchAttemptExecutor { _, _, _, _ ->
                 started.complete(Unit)
                 CompletableDeferred<Unit>().await()
-                FetchAttemptDisposition.Success
+                FetchAttemptDisposition.Success()
             },
             events = events,
         )
@@ -137,7 +137,7 @@ class FetchBrokerTest {
                 } else {
                     secondStarted.complete(Unit)
                     emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
-                    FetchAttemptDisposition.Success
+                    FetchAttemptDisposition.Success()
                 }
             },
         )
@@ -188,7 +188,7 @@ class FetchBrokerTest {
                     )
                 } else {
                     emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
-                    FetchAttemptDisposition.Success
+                    FetchAttemptDisposition.Success()
                 }
             },
         )
@@ -214,7 +214,7 @@ class FetchBrokerTest {
             executor = FetchAttemptExecutor { _, _, _, _ ->
                 started.complete(Unit)
                 CompletableDeferred<Unit>().await()
-                FetchAttemptDisposition.Success
+                FetchAttemptDisposition.Success()
             },
         )
 
@@ -252,7 +252,7 @@ class FetchBrokerTest {
             publisher = publisher,
             executor = FetchAttemptExecutor { _, _, _, emit ->
                 emit(FetchNetworkChunk(1, byteArrayOf(1, 2)))
-                FetchAttemptDisposition.Success
+                FetchAttemptDisposition.Success()
             },
             attemptBudget = FetchAttemptBudget(1),
             sessionId = "test-session",
