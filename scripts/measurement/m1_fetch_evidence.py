@@ -8,7 +8,14 @@ import json
 import pathlib
 from typing import Any
 
+from schema_subset import validate_instance, validate_schema_definition
 
+
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
+FETCH_EVENTS_SCHEMA_PATH = (
+    REPO_ROOT / ".work" / "schemas" / "fetch-events-v2.schema.json"
+)
 RESOURCE_PATH = "/fixtures/F1/segment-1-00001.m4s"
 RESOURCE_LENGTH = 81_811
 
@@ -39,12 +46,27 @@ def one(rows: list[dict[str, Any]], event: str) -> dict[str, Any]:
     return matches[0]
 
 
+def validate_fetch_events(
+    fetch_events: list[dict[str, Any]],
+) -> None:
+    schema = json.loads(
+        FETCH_EVENTS_SCHEMA_PATH.read_text(encoding="utf-8")
+    )
+    validate_schema_definition(schema)
+    for index, row in enumerate(fetch_events):
+        validate_instance(
+            schema,
+            row,
+            path=f"$[{index}]",
+            root_schema=schema,
+        )
+
+
 def verify(
     fetch_events: list[dict[str, Any]],
     origin_trace: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    if any(row.get("schemaVersion") != 2 for row in fetch_events):
-        raise ValueError("all fetch events must use schemaVersion=2")
+    validate_fetch_events(fetch_events)
 
     sequences = [row.get("eventSequence") for row in fetch_events]
     if sequences != sorted(sequences) or len(sequences) != len(set(sequences)):
