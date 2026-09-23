@@ -180,10 +180,10 @@ M1 distinguishes persisted bytes from media that can actually sustain playback.
 For each required selected track:
 
 \`\`\`text
-TrackCoverage(track)
+TrackCoverage(asset, track, representation)
   = union of media-time intervals represented by
     PUBLISHED + VALID extents
-    for the exact active representation identity
+    for the exact MediaAssetId + track + active representation identity
 \`\`\`
 
 For a playback plan with multiple required tracks:
@@ -554,7 +554,7 @@ ExtentStore.openRead(extentId) -> ExtentReadHandle
 
 The handle owns validated access to the immutable extent and participates in store reader lifetime/close coordination. This keeps the public read contract stable if the backend later changes from file-per-extent to another measured storage layout.
 
-Room is the durable metadata authority. CoverageIndex is the read-optimized runtime view. Steady-state PlaybackBridge byte serving MUST NOT require a Room/SQLite query per Media3 read operation.
+Room is the durable metadata authority. CoverageIndex is the read-optimized runtime view. M1-C rebuilds its immutable projection explicitly from committed extents on refresh; dependency closure and interval normalization happen before the new projection is atomically installed. Snapshot/reserve queries use that in-memory projection and do not re-walk the extent graph or query Room. Steady-state PlaybackBridge byte serving MUST NOT require a Room/SQLite query per Media3 read operation.
 
 ### Metadata durability scope
 
