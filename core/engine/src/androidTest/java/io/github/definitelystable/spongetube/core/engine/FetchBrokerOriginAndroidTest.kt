@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
@@ -52,6 +53,8 @@ class FetchBrokerOriginAndroidTest {
                 !baseUrl.isNullOrBlank(),
             )
 
+            val androidClockStartNs =
+                SystemClock.elapsedRealtimeNanos()
             val requestStarted = CompletableDeferred<Unit>()
             val allowBodyRead = CompletableDeferred<Unit>()
             val events = CopyOnWriteArrayList<FetchEvent>()
@@ -232,6 +235,16 @@ class FetchBrokerOriginAndroidTest {
                 }
                 assertTrue(
                     !completed.transportCorrelationId.isNullOrBlank(),
+                )
+
+                val androidClockEndNs =
+                    SystemClock.elapsedRealtimeNanos()
+                assertTrue(
+                    "FetchBroker evidence must use Android elapsed realtime",
+                    events.all { event ->
+                        event.eventElapsedRealtimeNs in
+                            androidClockStartNs..androidClockEndNs
+                    },
                 )
 
                 writeFetchEvents(events)
