@@ -1,6 +1,9 @@
 package io.github.definitelystable.spongetube.core.storage
 
 import android.content.Context
+import android.database.sqlite.SQLiteConstraintException
+import android.database.sqlite.SQLiteDiskIOException
+import android.database.sqlite.SQLiteFullException
 import android.system.ErrnoException
 import android.system.OsConstants
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -68,14 +71,14 @@ class ExtentStoreAndroidTest {
         assertEquals("truncate", firstDurability.journalMode.lowercase())
         assertEquals(2, firstDurability.synchronous)
         assertTrue(firstDurability.busyTimeoutMs >= 3_000L)
-        assertTrue(firstDurability.isPowerLossHardened)
+        assertTrue(firstDurability.meetsM1DurabilityPolicy)
         first.close()
 
         val reopened = openStore()
         val reopenedDurability = reopened.metadataDurability
         assertEquals("truncate", reopenedDurability.journalMode.lowercase())
         assertEquals(2, reopenedDurability.synchronous)
-        assertTrue(reopenedDurability.isPowerLossHardened)
+        assertTrue(reopenedDurability.meetsM1DurabilityPolicy)
         reopened.close()
     }
 
@@ -102,6 +105,31 @@ class ExtentStoreAndroidTest {
 
         handle.close()
         reopened.close()
+    }
+
+    @Test
+    fun metadataFullMapsToNoSpaceWithoutMaskingConstraints() {
+        val full = metadataStorageFailureOrNull(
+            operation = "metadata-publish",
+            cause = IllegalStateException(
+                "room wrapper",
+                SQLiteFullException("database or disk is full"),
+            ),
+        )
+        assertEquals(ExtentStorageFailureKind.NO_SPACE, full?.kind)
+        assertEquals("metadata-publish", full?.operation)
+
+        val diskIo = metadataStorageFailureOrNull(
+            operation = "metadata-publish",
+            cause = SQLiteDiskIOException("disk I/O error"),
+        )
+        assertEquals(ExtentStorageFailureKind.IO, diskIo?.kind)
+
+        val constraint = metadataStorageFailureOrNull(
+            operation = "metadata-publish",
+            cause = SQLiteConstraintException("constraint"),
+        )
+        assertEquals(null, constraint)
     }
 
     @Test
