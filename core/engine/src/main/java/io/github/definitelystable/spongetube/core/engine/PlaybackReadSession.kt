@@ -312,12 +312,16 @@ class PlaybackReadSession internal constructor(
         }
 
         val fetchId = fetch.fetchId.value
-        emit(
-            event = if (fetch.joinedExisting) {
-                PlaybackBridgeEventKind.JOIN
-            } else {
+        val acquireEvent = when (fetch.acquireDisposition) {
+            FetchAcquireDisposition.NEW_OWNER ->
                 PlaybackBridgeEventKind.MISS
-            },
+            FetchAcquireDisposition.JOINED_RUNNING ->
+                PlaybackBridgeEventKind.JOIN
+            FetchAcquireDisposition.WAITED_CANCELLING ->
+                PlaybackBridgeEventKind.WAIT_EXISTING
+        }
+        emit(
+            event = acquireEvent,
             extentId = unit.extentId,
             fetchId = fetchId,
         )
