@@ -2,11 +2,14 @@ package io.github.definitelystable.spongetube.core.storage
 
 import android.content.Context
 import androidx.room3.Room
+import androidx.room3.RoomDatabase
+import androidx.room3.useWriterConnection
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import java.io.File
 
 internal class RoomExtentMetadataStore private constructor(
     private val database: ExtentDatabase,
+    val durability: ExtentMetadataDurability,
 ) : ExtentMetadataStore {
     private val dao = database.extentDao()
 
@@ -60,6 +63,15 @@ internal class RoomExtentMetadataStore private constructor(
         }
     }
 
+    override suspend fun extentById(
+        extentId: ExtentId,
+    ): StoredExtent? {
+        val snapshot = dao.snapshotById(extentId.value) ?: return null
+        return snapshot.extent.toStoredExtent(
+            dependencies = snapshot.dependencyIds.map(::ExtentId),
+        )
+    }
+
     override suspend fun quarantine(
         extentId: ExtentId,
         reason: ExtentQuarantineReason,
@@ -72,7 +84,7 @@ internal class RoomExtentMetadataStore private constructor(
     }
 
     companion object {
-        fun open(
+        suspend fun open(
             context: Context,
             databaseFile: File,
         ): RoomExtentMetadataStore {
@@ -82,9 +94,22 @@ internal class RoomExtentMetadataStore private constructor(
                 databaseFile.absolutePath,
             )
                 .setDriver(AndroidSQLiteDriver())
+                .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
                 .build()
 
-            return RoomExtentMetadataStore(database)
+            try {
+                val durability = database.readDurability()
+                if (!durability.isPowerLossHardened) {
+                    throw ExtentMetadataDurabilityException(durability)
+                }
+                return RoomExtentMetadataStore(
+                    database = database,
+                    durability = durability,
+                )
+            } catch (error: Throwable) {
+                database.close()
+                throw error
+            }
         }
     }
 }
@@ -149,3 +174,26 @@ private fun ExtentEntity.toStoredExtent(
             ExtentQuarantineReason::valueOf,
         ),
     )
+
+
+private suspend fun ExtentDatabase.readDurability(): ExtentMetadataDurability =
+    useWriterConnection { connection ->
+        val journalMode = connection.usePrepared("PRAGMA journal_mode") {
+            check(it.step()) { "PRAGMA journal_mode returned no row" }
+            it.getText(0)
+        }
+        val synchronous = connection.usePrepared("PRAGMA synchronous") {
+            check(it.step()) { "PRAGMA synchronous returned no row" }
+            it.getLong(0).toInt()
+        }
+        val busyTimeoutMs = connection.usePrepared("PRAGMA busy_timeout") {
+            check(it.step()) { "PRAGMA busy_timeout returned no row" }
+            it.getLong(0)
+        }
+
+        ExtentMetadataDurability(
+            journalMode = journalMode,
+            synchronous = synchronous,
+            busyTimeoutMs = busyTimeoutMs,
+        )
+    }
