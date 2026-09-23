@@ -349,8 +349,7 @@ class PlaybackReadSession internal constructor(
                     ExtentResolution.IdentityConflict ->
                         throw identityConflict(unit)
                     ExtentResolution.Ready,
-                    is ExtentResolution.PublishedNotReady,
-                    -> Unit
+                    is ExtentResolution.PublishedNotReady -> Unit
                 }
             }
             else -> throw fetchFailure(unit, outcome.kind)
