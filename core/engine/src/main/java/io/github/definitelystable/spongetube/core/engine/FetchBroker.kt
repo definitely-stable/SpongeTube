@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import android.os.SystemClock
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentConflictException
 import io.github.definitelystable.spongetube.core.storage.ExtentIntegrityException
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,8 +34,10 @@ internal class FetchBroker internal constructor(
     private val ownerScope: CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val ownsScope: Boolean = true,
-    private val monotonicClockNs: () -> Long = System::nanoTime,
-) : AutoCloseable {
+    private val monotonicClockNs: () -> Long = {
+        SystemClock.elapsedRealtimeNanos()
+    },
+) {
     private val registryLock = Any()
     private val active = mutableMapOf<FetchKey, SharedFetch>()
     private val fetchCounter = AtomicLong()
@@ -76,7 +80,7 @@ internal class FetchBroker internal constructor(
 
             var created: SharedFetch? = null
             var joined: SharedFetch? = null
-            var waitForTerminal: CompletableDeferred<FetchOutcome>? = null
+            var waitingShared: SharedFetch? = null
             var priorityRaised = false
 
             synchronized(registryLock) {
@@ -112,7 +116,8 @@ internal class FetchBroker internal constructor(
                     }
                     joined = existing
                 } else {
-                    waitForTerminal = existing.result
+                    ensureCompatible(existing, request)
+                    waitingShared = existing
                 }
             }
 
@@ -144,11 +149,23 @@ internal class FetchBroker internal constructor(
                 return Handle(this, shared, consumer.id)
             }
 
-            checkNotNull(waitForTerminal).await()
+            val waiting = checkNotNull(waitingShared)
+            val terminal = waiting.result.await()
+            if (
+                terminal.kind ==
+                FetchOutcomeKind.CANCELLED_NO_CONSUMERS
+            ) {
+                continue
+            }
+            return TerminalHandle(
+                fetchKey = waiting.request.fetchKey,
+                fetchId = waiting.fetchId,
+                outcome = terminal,
+            )
         }
     }
 
-    override fun close() {
+    internal suspend fun shutdown() {
         val jobs = mutableListOf<Job>()
         val orphaned = mutableListOf<SharedFetch>()
 
@@ -187,6 +204,7 @@ internal class FetchBroker internal constructor(
                 ),
             )
         }
+        jobs.joinAll()
 
         if (ownsScope) {
             ownerScope.cancel()
@@ -497,7 +515,7 @@ internal class FetchBroker internal constructor(
         shared: SharedFetch,
         request: FetchRequest,
     ) {
-        if (shared.request.extentSpec != request.extentSpec) {
+        if (!shared.request.extentSpec.isCompatibleWith(request.extentSpec)) {
             throw FetchIdentityConflictException(
                 "same FetchKey was acquired with a different immutable " +
                     "ExtentSpec: " + request.fetchKey,
@@ -546,6 +564,16 @@ internal class FetchBroker internal constructor(
             )
         }
         runCatching { listener.onEvent(snapshot) }
+    }
+
+    private class TerminalHandle(
+        override val fetchKey: FetchKey,
+        override val fetchId: FetchId,
+        private val outcome: FetchOutcome,
+    ) : FetchHandle {
+        override suspend fun await(): FetchOutcome = outcome
+
+        override fun close() = Unit
     }
 
     private class Handle(
@@ -692,6 +720,19 @@ private sealed interface AttemptRunResult {
 private class FetchAttemptAbort(
     val failure: FetchAttemptDisposition.Failure,
 ) : RuntimeException()
+
+private fun ExtentSpec.isCompatibleWith(other: ExtentSpec): Boolean =
+    mediaAssetId == other.mediaAssetId &&
+        extentId == other.extentId &&
+        trackId == other.trackId &&
+        representationId == other.representationId &&
+        mediaStartUs == other.mediaStartUs &&
+        mediaEndUs == other.mediaEndUs &&
+        byteStart == other.byteStart &&
+        byteEndExclusive == other.byteEndExclusive &&
+        dependencyExtentIds.toSet() == other.dependencyExtentIds.toSet() &&
+        expectedLength == other.expectedLength &&
+        expectedSha256 == other.expectedSha256
 
 private data class ByteInterval(
     val start: Long,
