@@ -697,7 +697,7 @@ Canonical positive targets for F1:
 - \`S60\`: at least 60 s;
 - \`S120\`: at least 120 s.
 
-A seed builder selects complete required-track units necessary to reach the target. The committed seed manifest records exact extents, per-track intervals, representation identities, initialization dependencies, actual playable intervals and manifest hash.
+A seed builder selects complete required-track units necessary to reach the target. The asset-scoped `seed-manifest-v2` is construction evidence only: it records the exact fixture timeline identity, MediaAssetId, requirement set, selected immutable resources, lengths, SHA-256 values, dependencies, target and rejected attempts. It MUST NOT contain computed per-track/playable coverage or reserve values. Runtime CoverageIndex and the independent host oracle derive those results separately.
 
 Boundary/negative seeds are also required:
 
@@ -800,30 +800,31 @@ Not M1 exit criteria:
 
 ### 22.7 M1 artifact set
 
-Canonical M1 runs use versioned machine-readable artifacts:
+Canonical M1 evidence is versioned rather than silently rewriting an old contract. #48 v1 artifacts remain valid for historical pre-asset-scoped evidence. M1-C introduces v2 only where MediaAsset identity changes semantics:
 
-- \`m1-run-manifest-v1\`;
-- \`seed-manifest-v1\`;
-- \`coverage-snapshot-v1\`;
-- \`extent-events-v1\`;
-- \`committed-extents-v1\`;
-- \`verified-extent-files-v1\`;
-- \`fetch-events-v1\`;
-- \`recovery-summary-v1\`.
+- `m1-run-manifest-v1`;
+- `seed-manifest-v2` for M1-C construction evidence;
+- `coverage-snapshot-v2` for runtime/oracle asset-scoped coverage;
+- `extent-events-v1`;
+- `committed-extents-v2` for Room schema v2;
+- `verified-extent-files-v1` because independent file facts are unchanged by asset identity;
+- `fetch-events-v1`;
+- `recovery-summary-v1`.
 
 Artifact ownership is incremental:
 
 | Artifact | Producer | Independent check | Required by |
 | --- | --- | --- | --- |
-| `committed-extents-v1` | storage metadata snapshot exporter | schema + oracle ingestion | M1-C |
+| `committed-extents-v2` | storage metadata snapshot exporter | schema + oracle ingestion + MediaAsset scope | M1-C |
 | `verified-extent-files-v1` | host filesystem verifier | stat + SHA-256 from storage root | M1-C |
-| `seed-manifest-v1` | deterministic seed builder | independent seed/coverage verifier | M1-C |
-| `coverage-snapshot-v1` | runtime CoverageIndex | exact oracle comparator | M1-C |
+| `seed-manifest-v2` | deterministic seed construction producer | fixture manifest + MPD identity; never a coverage oracle | M1-C |
+| `coverage-snapshot-v2` | runtime CoverageIndex / independent oracle | exact semantic comparator including MediaAssetId | M1-C |
 | `extent-events-v1` | ExtentStore instrumentation | reducer/schema checks | M1-B/M1-F |
 | `fetch-events-v1` | FetchBroker | origin/correlation cross-check | M1-D |
 | `recovery-summary-v1` | recovery harness | schema + post-reopen oracle | M1-F |
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
 
+Historical `committed-extents-v1`, `seed-manifest-v1` and `coverage-snapshot-v1` remain accepted by the evidence kernel/schema suite for already-produced v1 evidence; new M1-C runs use the asset-scoped v2 forms.
 M1-G executes and publishes the already-working evidence path; it must not become the first place where missing producers or comparators are implemented.
 
 The committed evidence summary references raw CI artifacts by run identity/digest and records limitations explicitly.
