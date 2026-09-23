@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "seedId": "S10",
+  "playheadUs": 0,
+  "seedClass": "POSITIVE",
+  "mediaAssetId": "fixture:F1",
+  "fixtureId": "F1",
+  "timelineResourcePath": "F1/manifest.mpd",
+  "timelineResourceSha256": "e0e05820165ae7c93c81ee8a71a4a3c1412bf6262416dcb1709c769caee07a56",
+  "requiredTrackIds": ["audio-main", "video-main"],
+  "requiredRepresentations": {
+    "audio-main": "f1-audio-1",
+    "video-main": "f1-video-0"
+  },
+  "targetPlayableEndUs": 10000000,
+  "extents": [
+    {
+      "extentId": "f1:video:0:init",
+      "fixtureResourcePath": "F1/init-0.m4s",
+      "trackId": "video-main",
+      "representationId": "f1-video-0",
+      "mediaStartUs": null,
+      "mediaEndUs": null,
+      "dependencyExtentIds": [],
+      "length": 827,
+      "sha256": "479c777b460d7d56f0927cd45937135143ce8515bdf04993f9b36d4d3b9a6f65"
+    }
+  ],
+  "negativeCase": null,
+  "rejectedAttempts": []
+}
