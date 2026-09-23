@@ -1,6 +1,6 @@
 # SpongeTube Roadmap v0.1
 
-Status: **Provisional**
+Status: **Normative sequencing**
 Date: **2026-09-21**
 
 The roadmap is ordered to prove the risky assumptions before building a large YouTube UI.
@@ -45,6 +45,8 @@ M1 is split into focused deliveries:
 
 - **M1-A — Contract & Evidence Foundation**: freeze PlayableCoverage/DurablePlayableReserve semantics, extent lifecycle, fixed seed protocol, M1 artifact schemas and persistence implementation choice.
 - **M1-B — Durable ExtentStore**: immutable app-private extent files, SHA-256 integrity, same-filesystem temp/rename publication barrier, metadata transactions and restart recovery.
+- **M1-B2 — ExtentStore Hardening & Read Surface**: close audit-confirmed durability/read-path gaps needed by PlaybackBridge: explicit metadata durability policy/evidence, safe opaque read handles, storage-failure taxonomy and focused real-Room/reopen tests.
+- **M1-V — Executable Independent Evidence Kernel**: real filesystem verifier, M1 artifact producers, executable host oracle and exact runtime-vs-oracle comparator. This is acceptance infrastructure, not product logic.
 - **M1-C — CoverageIndex & Fixed Seeds**: interval algebra over published required-track coverage, deterministic S0/S10/S30/S60/S120 seeds, negative/holed seeds and independent coverage reconstruction.
 - **M1-D — FetchBroker SingleFlight**: one physical owner fetch per FetchKey, multi-consumer join, reference-counted cancellation, priority escalation without restart and explicit duplicate-byte accounting.
 - **M1-E — PlaybackBridge**: local reads from published Sponge coverage; all remote misses routed through FetchBroker; cached seek and in-flight join without a second Media3 upstream owner.
@@ -65,9 +67,11 @@ Exit:
 - N4 outage shorter than durable reserve is survived without reserve-exhaustion rebuffer;
 - N4 outage longer than reserve may stall but recovers after transport restoration without corrupting or refetching already valid coverage;
 - runtime CoverageIndex and independent post-run reconstruction agree on interval semantics;
+- M1 MUST gates used for slice closure have real evidence producers, independent checks where required and deterministic negative tests;
+- PlaybackBridge prerequisites include a stable ExtentStore read surface; no raw filesystem path is part of the public playback contract;
 - emulator timing remains diagnostic only and is not used for representative performance claims.
 
-## M2 — Network Resilience
+## M2 — Network & Provider Resilience
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -76,7 +80,9 @@ Build:
 - RouteHealthMonitor;
 - FailureClassifier;
 - DescriptorRefresher contract;
-- RequestBudget/retry policy;
+- provider-aware RequestBudget/retry policy;
+- explicit URL/descriptor expiry and stale-descriptor outcomes;
+- persistent partial-attempt/resume policy only after the selected delivery path proves a stable continuation identity;
 - VPN/default-route policy;
 - transport evaluation driven by the M0 baseline;
 - layered fault harness rather than one universal emulator:
@@ -99,19 +105,54 @@ Exit:
 - stochastic scenarios are reproducible from their persisted seed;
 - transport choice is backed by playback/device evidence, not synthetic throughput preference.
 
-## M3 — YouTube Adapter Feasibility
+## M3 — YouTube Adapter
 
-Goal: prove current YouTube VOD compatibility without contaminating Sponge Core.
+M3 has two deliberately different tracks. Feasibility starts early; production coupling remains later.
+
+### M3-A — YouTube Delivery Feasibility Probe
+
+Status: **parallel risk track — may run during M1**
+
+Goal: determine the smallest viable anonymous long-form YouTube VOD delivery path and identify provider assumptions that Sponge Core must not accidentally freeze.
+
+Probe, with bounded evidence:
+
+- viable client/profile paths;
+- HTTPS/DASH/HLS/SABR availability by tested case;
+- split A/V versus muxed/interleaved playback requirements;
+- PO-token/client/context/protocol requirements actually observed;
+- whether a JS/challenge runtime is required for the selected path;
+- descriptor/URL expiry and refresh semantics;
+- range/continuation capability;
+- seek/start/sustained-playback behaviour;
+- provider rejection/throttling/backoff observations;
+- dependency licensing and intended distribution constraints.
+
+Deliverables:
+
+- evidence record under `.work/evidence/`;
+- compatibility matrix with test date and environment;
+- ADR only for decisions that actually need to become architecture;
+- explicit list of assumptions accepted, rejected or still unknown.
+
+M3-A MUST NOT become a production extractor by stealth. It does not pre-commit the project to yt-dlp/NewPipe code, SABR implementation, a JS runtime, fixed expiry margins or traffic-shaping/pacing emulation without evidence.
+
+**Sequencing gate:** M1-C's pure interval algebra may continue in parallel, but M1-D public fetch/transport contracts must not be frozen in a form contradicted by M3-A findings. Provider-specific protocol details still may not enter ExtentStore/CoverageIndex.
+
+### M3-B — Production YouTube Adapter
+
+Goal: implement the smallest production adapter justified by M3-A evidence without contaminating Sponge Core.
 
 Build:
 
 - isolated YouTube adapter;
-- PlaybackPlan mapping;
+- PlaybackPlan + PlaybackRequirementSet mapping;
 - anonymous-first VOD resolve;
-- separate A/V track handling;
-- URL/descriptor refresh;
-- adapter diagnostics and feature flags;
-- compatibility smoke suite.
+- capability negotiation for the actually required delivery paths;
+- descriptor refresh using provider policy derived from evidence rather than a hard-coded global expiry margin;
+- provider diagnostics and feature flags;
+- compatibility smoke suite;
+- only the token/challenge/SABR components proven necessary by M3-A.
 
 Explicitly excluded:
 
@@ -123,12 +164,15 @@ Explicitly excluded:
 
 Exit:
 
-- representative VOD set starts reliably enough to continue product work;
+- representative VOD cases resolve and start through the selected adapter path;
+- sustained playback, seek and descriptor refresh are exercised;
+- split or muxed requirements map into the same provider-independent core model;
+- descriptor refresh does not change stable media/storage identity;
 - failures are classified;
-- core tests pass unchanged when adapter changes;
-- project license decision is compatible with any third-party extractor dependency actually used.
+- core tests pass unchanged when adapter implementation changes;
+- project licensing/distribution decision is compatible with every third-party component actually used.
 
-M1/M2 and the YouTube feasibility spike may overlap in calendar time, but production coupling happens only after both sides have evidence.
+Production coupling happens only after both the M1 core/evidence path and M3-A provider evidence support the chosen boundary.
 
 ## M4 — Smart Buffer Policy
 
@@ -174,7 +218,7 @@ UX acceptance:
 - reserve/offline state is understandable without technical terminology;
 - no Shorts surfaces exist.
 
-## M6 — Offline & Background Hardening
+## M6 — Offline, Storage & Background Hardening
 
 Goal: make retained media reliable under Android lifecycle constraints.
 
@@ -184,6 +228,9 @@ Build:
 - WorkManager/Media3 download scheduling where appropriate;
 - storage quotas;
 - eviction;
+- explicit retention/pin schema and migrations owned here unless earlier product evidence requires a smaller prerequisite;
+- ENOSPC/storage-pressure recovery and user-visible failure handling;
+- incremental/background integrity verification and large-library startup scaling;
 - atomic recovery;
 - long-duration/process-death tests;
 - battery/thermal hardening.
@@ -210,6 +257,9 @@ Account login remains a separate decision and threat/risk review.
 
 ## M8 — Release Hardening
 
+- final LICENSE and third-party license compatibility audit;
+- provider Terms/distribution-channel review and documented release decision;
+- dependency/SBOM/license report appropriate to the release channel;
 - physical-device benchmark matrix;
 - crash/ANR work;
 - accessibility;
