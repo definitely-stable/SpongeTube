@@ -272,6 +272,59 @@ class CoverageIndexTest {
     }
 
     @Test
+    fun returnedSnapshotCannotMutateInstalledProjection() = runTest {
+        val index = indexOf(
+            init("v-init", "video", "v1"),
+            init("a-init", "audio", "a1"),
+            media("v0", "video", "v1", 0, 20, "v-init"),
+            media("a0", "audio", "a1", 0, 20, "a-init"),
+        )
+
+        val first = snapshot(index, 0)
+        @Suppress("UNCHECKED_CAST")
+        val video = first.perTrackPublishedIntervals
+            .getValue("video") as MutableList<MediaInterval>
+
+        assertThrows(UnsupportedOperationException::class.java) {
+            video.clear()
+        }
+
+        assertEquals(
+            listOf(MediaInterval(0, 20)),
+            snapshot(index, 0)
+                .perTrackPublishedIntervals
+                .getValue("video"),
+        )
+    }
+
+    @Test
+    fun evidenceSnapshotBindsRuntimePlayheadAndAssetExactly() = runTest {
+        val index = indexOf(
+            init("v-init", "video", "v1"),
+            init("a-init", "audio", "a1"),
+            media("v0", "video", "v1", 0, 20, "v-init"),
+            media("a0", "audio", "a1", 0, 20, "a-init"),
+        )
+        val coverage = snapshot(index, 5)
+        val artifact = CoverageEvidenceSnapshot(
+            eventSequence = 7,
+            eventElapsedRealtimeNs = 123,
+            sessionId = "session-1",
+            coverage = coverage,
+            playerBufferedAheadUs = 2_000_000,
+        ).toArtifactMap()
+
+        assertEquals(2, artifact["schemaVersion"])
+        assertEquals("asset-f1", artifact["mediaAssetId"])
+        assertEquals(5L, artifact["playheadUs"])
+        assertEquals(15L, artifact["durableReserveUs"])
+        assertEquals(
+            listOf("audio", "video"),
+            artifact["requiredTrackIds"],
+        )
+    }
+
+    @Test
     fun duplicateTrackRequirementsAreRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             PlaybackRequirementSet(
