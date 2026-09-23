@@ -142,7 +142,10 @@ class CoverageIndexTest {
             listOf(MediaInterval(10, 20)),
             result.perTrackPublishedIntervals.getValue("video"),
         )
-        assertEquals(emptyList<MediaInterval>(), result.playableIntervals)
+        assertEquals(
+            listOf(MediaInterval(10, 20)),
+            result.playableIntervals,
+        )
     }
 
     @Test
