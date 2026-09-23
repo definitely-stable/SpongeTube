@@ -26,7 +26,8 @@ class ExtentReadHandle internal constructor(
         require(position >= 0L) { "position must be >= 0" }
         require(offset >= 0) { "offset must be >= 0" }
         require(length >= 0) { "length must be >= 0" }
-        require(offset + length <= buffer.size) {
+        require(offset <= buffer.size) { "offset exceeds byte array size" }
+        require(length <= buffer.size - offset) {
             "offset + length exceeds byte array size"
         }
 
