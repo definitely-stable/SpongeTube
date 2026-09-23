@@ -29,6 +29,7 @@ REQUIRED_CASES = ("E1", "E2", "E3", "E4", "E5", "E6")
 # Cases whose transport gate never lets an attempt reach the origin.
 GATED_OFFLINE_CASES = frozenset({"E6"})
 TERMINAL_EVENTS = ("OWNER_COMPLETED", "OWNER_FAILED", "OWNER_CANCELLED")
+BRIDGE_FETCH_EVENTS = ("MISS", "JOIN", "WAIT_EXISTING")
 RELEASE_BUDGET_MS = 1_000
 
 
@@ -144,7 +145,11 @@ def load_case(root: pathlib.Path, case_id: str, bridge_schema, fetch_schema) -> 
 
 
 def verify_case_common(case: Case) -> None:
-    for row in case.bridge_events("MISS") + case.bridge_events("JOIN"):
+    for row in [
+        event
+        for kind in BRIDGE_FETCH_EVENTS
+        for event in case.bridge_events(kind)
+    ]:
         fetch_id = row["fetchId"]
         terminal = case.terminal(fetch_id)
         waits = [
@@ -236,7 +241,7 @@ def verify_e1(case: Case) -> dict[str, Any]:
     inside = [
         row for row in case.bridge
         if issued["eventSequence"] < row["eventSequence"] < settled["eventSequence"]
-        and row["event"] in ("MISS", "JOIN")
+        and row["event"] in BRIDGE_FETCH_EVENTS
     ]
     if inside:
         raise EvidenceError("E1: cached seek window contains bridge misses/joins")
@@ -250,7 +255,7 @@ def verify_e1(case: Case) -> dict[str, Any]:
     ]
     if attempts:
         raise EvidenceError("E1: broker attempts inside the cached seek window")
-    if case.bridge_events("MISS") or case.bridge_events("JOIN") or case.fetch:
+    if any(case.bridge_events(kind) for kind in BRIDGE_FETCH_EVENTS) or case.fetch:
         raise EvidenceError("E1: S120 cached playback must not fetch at all")
     if not case.bridge_events("LOCAL_SERVE"):
         raise EvidenceError("E1: no local serve recorded")
@@ -258,17 +263,46 @@ def verify_e1(case: Case) -> dict[str, Any]:
 
 
 def verify_e2(case: Case) -> dict[str, Any]:
-    case.marker("SEEK_TO_MISSING_ISSUED")
-    case.marker("SEEK_TO_MISSING_SETTLED")
+    issued = case.marker("SEEK_TO_MISSING_ISSUED")
+    settled = case.marker("SEEK_TO_MISSING_SETTLED")
+    if not issued["eventSequence"] < settled["eventSequence"]:
+        raise EvidenceError("E2: seek markers out of order")
+
+    low = issued["fetchEventSequenceWatermark"]
+    high = settled["fetchEventSequenceWatermark"]
+    if low is None or high is None or high < low:
+        raise EvidenceError("E2: invalid broker watermarks on seek markers")
+
     successful = []
     for row in case.bridge_events("MISS"):
-        terminal = case.terminal(row["fetchId"])
-        completed = case.fetch_events("ATTEMPT_COMPLETED", row["fetchId"])
-        if terminal["outcome"] == "SUCCESS" and completed:
+        if not issued["eventSequence"] < row["eventSequence"] < settled["eventSequence"]:
+            continue
+        fetch_id = row["fetchId"]
+        terminal = case.terminal(fetch_id)
+        attempts = [
+            attempt for attempt in case.fetch_events("ATTEMPT_STARTED", fetch_id)
+            if low <= attempt["eventSequence"] < high
+        ]
+        completed = case.fetch_events("ATTEMPT_COMPLETED", fetch_id)
+        local_after = [
+            local for local in case.bridge_events("LOCAL_SERVE")
+            if local["readId"] == row["readId"]
+            and local["extentId"] == row["extentId"]
+            and row["eventSequence"] < local["eventSequence"] < settled["eventSequence"]
+        ]
+        if (
+            terminal["outcome"] == "SUCCESS"
+            and attempts
+            and completed
+            and local_after
+        ):
             successful.append(row)
+
     if not successful:
-        raise EvidenceError("E2: no miss was served by a successful broker fetch")
-    return {"successfulMisses": len(successful)}
+        raise EvidenceError(
+            "E2: seek window has no miss -> broker attempt -> success -> local serve chain"
+        )
+    return {"successfulSeekMisses": len(successful)}
 
 
 def verify_e3(case: Case) -> dict[str, Any]:
