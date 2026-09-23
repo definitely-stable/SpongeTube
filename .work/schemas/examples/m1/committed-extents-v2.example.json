@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "snapshotId": "m1-example-committed-v2",
+  "sessionId": "m1-example-session",
+  "snapshotKind": "LIVE_COMMITTED",
+  "databaseSchemaVersion": 2,
+  "extents": [
+    {
+      "extentId": "v-init",
+      "mediaAssetId": "fixture:F1",
+      "state": "PUBLISHED",
+      "integrityState": "VALID",
+      "trackId": "video-main",
+      "representationId": "f1-video-0",
+      "mediaStartUs": null,
+      "mediaEndUs": null,
+      "dependencyExtentIds": [],
+      "length": 827,
+      "sha256": "479c777b460d7d56f0927cd45937135143ce8515bdf04993f9b36d4d3b9a6f65",
+      "storagePath": "extents/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.extent"
+    }
+  ]
+}
