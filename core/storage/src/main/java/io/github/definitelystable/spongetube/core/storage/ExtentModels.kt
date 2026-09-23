@@ -3,6 +3,23 @@ package io.github.definitelystable.spongetube.core.storage
 import java.io.IOException
 
 @JvmInline
+value class MediaAssetId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "media asset id must not be blank" }
+        require(value.length <= 256) { "media asset id must be <= 256 characters" }
+    }
+
+    val isLegacyUnscoped: Boolean
+        get() = value == LEGACY_UNSCOPED_VALUE
+
+    override fun toString(): String = value
+
+    companion object {
+        const val LEGACY_UNSCOPED_VALUE = "__legacy_unscoped__"
+    }
+}
+
+@JvmInline
 value class ExtentId(val value: String) {
     init {
         require(value.isNotBlank()) { "extent id must not be blank" }
@@ -28,6 +45,7 @@ value class Sha256Digest(val hex: String) {
 }
 
 data class ExtentSpec(
+    val mediaAssetId: MediaAssetId,
     val extentId: ExtentId,
     val trackId: String,
     val representationId: String,
@@ -40,6 +58,9 @@ data class ExtentSpec(
     val expectedSha256: Sha256Digest? = null,
 ) {
     init {
+        require(!mediaAssetId.isLegacyUnscoped) {
+            "legacy unscoped media asset id is reserved for migration"
+        }
         require(trackId.isNotBlank()) { "trackId must not be blank" }
         require(representationId.isNotBlank()) { "representationId must not be blank" }
         require(expectedLength > 0) { "expectedLength must be > 0" }
@@ -125,6 +146,7 @@ fun interface ExtentLifecycleListener {
 }
 
 data class CommittedExtent(
+    val mediaAssetId: MediaAssetId,
     val extentId: ExtentId,
     val trackId: String,
     val representationId: String,
