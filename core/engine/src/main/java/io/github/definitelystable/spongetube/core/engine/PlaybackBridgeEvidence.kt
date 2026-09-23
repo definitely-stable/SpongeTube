@@ -8,6 +8,7 @@ enum class PlaybackBridgeEventKind {
     LOCAL_SERVE,
     MISS,
     JOIN,
+    WAIT_EXISTING,
     DEPENDENCY_WAIT,
     FETCH_WAIT_END,
     CLOSE,
@@ -18,8 +19,9 @@ enum class PlaybackBridgeEventKind {
  * One `bridge-events-v1` row.
  *
  * Timestamps share the Android `elapsedRealtimeNanos` domain with
- * `fetch-events-v2`, but acceptance never compares clocks: MISS/JOIN rows
- * join FetchBroker evidence by (sessionId, fetchId) and harness markers carry
+ * `fetch-events-v2`, but acceptance never compares clocks: MISS/JOIN/
+ * WAIT_EXISTING rows join FetchBroker evidence by (sessionId, fetchId), and
+ * harness markers carry
  * the FetchBroker event-sequence watermark observed at the marker.
  */
 @SpongeBridgeApi
@@ -54,6 +56,7 @@ data class PlaybackBridgeEvent(
         if (
             event == PlaybackBridgeEventKind.MISS ||
             event == PlaybackBridgeEventKind.JOIN ||
+            event == PlaybackBridgeEventKind.WAIT_EXISTING ||
             event == PlaybackBridgeEventKind.FETCH_WAIT_END
         ) {
             require(!fetchId.isNullOrBlank()) { "$event requires fetchId" }
