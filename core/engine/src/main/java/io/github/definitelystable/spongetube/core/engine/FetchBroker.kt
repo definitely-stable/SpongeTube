@@ -364,11 +364,16 @@ internal class FetchBroker internal constructor(
 
         return try {
             val committed = publisher.publish(spec) { sink ->
-                disposition = executor.execute(
-                    request = shared.request,
-                    attempt = attempt,
-                    priority = shared.priority,
-                ) { chunk ->
+                val emitCorrelation: suspend (String) -> Unit = { correlation ->
+                    emit(
+                        shared = shared,
+                        event = FetchEventKind.ATTEMPT_CORRELATED,
+                        attempt = attempt,
+                        joined = shared.consumers.size > 1,
+                        transportCorrelationId = correlation,
+                    )
+                }
+                val emitChunk: suspend (FetchNetworkChunk) -> Unit = { chunk ->
                     val chunkEnd = Math.addExact(
                         chunk.byteStart,
                         chunk.bytes.size.toLong(),
@@ -404,6 +409,23 @@ internal class FetchBroker internal constructor(
                     )
                     sink.write(chunk.bytes)
                     expectedOffset = chunkEnd
+                }
+
+                disposition = if (executor is CorrelatingFetchAttemptExecutor) {
+                    executor.executeCorrelated(
+                        request = shared.request,
+                        attempt = attempt,
+                        priority = shared.priority,
+                        onTransportCorrelation = emitCorrelation,
+                        emitChunk = emitChunk,
+                    )
+                } else {
+                    executor.execute(
+                        request = shared.request,
+                        attempt = attempt,
+                        priority = shared.priority,
+                        emitChunk = emitChunk,
+                    )
                 }
 
                 val terminalDisposition = checkNotNull(disposition) {
@@ -703,6 +725,20 @@ internal fun interface FetchAttemptExecutor {
         request: FetchRequest,
         attempt: Int,
         priority: StateFlow<FetchPriority>,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition
+}
+
+/**
+ * Optional evidence capability for transports that can expose their physical
+ * request identity before any response-body bytes arrive.
+ */
+internal interface CorrelatingFetchAttemptExecutor : FetchAttemptExecutor {
+    suspend fun executeCorrelated(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition
 }
