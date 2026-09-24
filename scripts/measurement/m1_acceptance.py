@@ -13,7 +13,6 @@ import hashlib
 import json
 import pathlib
 import sys
-import xml.etree.ElementTree as ET
 from typing import Any
 
 from m1_oracle import compare_coverage_semantics
@@ -36,15 +35,6 @@ NEGATIVE_SEEDS = (
     "S30_WRONG_REPRESENTATION",
 )
 ALL_SEEDS = POSITIVE_SEEDS + NEGATIVE_SEEDS
-
-ACC07_TESTS = (
-    "cancellingOneJoinedConsumerDoesNotCancelRemainingConsumer",
-    "cancellingAwaitingConsumerReleasesOnlyItsLease",
-    "lastConsumerCancellationCancelsOwnerAndRemovesRegistryEntry",
-    "replacementOwnerWaitsUntilCancellingPhysicalAttemptIsTerminal",
-    "cancellingBarrierHandsLateSuccessToReplacementWithoutRefetch",
-    "cancellingBarrierPreservesTerminalFailureWithoutResettingBudget",
-)
 
 LIMITATIONS = (
     "API 36 emulator evidence validates deterministic M1 correctness and recovery, not representative physical-device performance.",
@@ -107,29 +97,6 @@ def require_pass(path: pathlib.Path) -> dict[str, Any]:
     return payload
 
 
-def verify_acc07(host_root: pathlib.Path) -> list[pathlib.Path]:
-    xml_files = sorted(host_root.rglob("TEST-*FetchBrokerTest*.xml"))
-    require(xml_files, "missing retained FetchBrokerTest JUnit XML")
-    failed: list[str] = []
-    passed_names: set[str] = set()
-    for xml_path in xml_files:
-        root = ET.parse(xml_path).getroot()
-        for case in root.iter("testcase"):
-            name = str(case.attrib.get("name", ""))
-            qualified = f"{xml_path.as_posix()}::{name}"
-            if case.find("failure") is not None or case.find("error") is not None:
-                failed.append(qualified)
-            else:
-                passed_names.add(name.rstrip("()"))
-    require(not failed, f"FetchBrokerTest contains failures: {failed}")
-    missing = [
-        name for name in ACC07_TESTS
-        if not any(actual == name or actual.startswith(name) for actual in passed_names)
-    ]
-    require(not missing, f"ACC-07 state-machine tests missing/not passed: {missing}")
-    return xml_files
-
-
 def verify_m1c(smoke_root: pathlib.Path) -> tuple[list[pathlib.Path], list[pathlib.Path]]:
     root = find_unique_dir(smoke_root, "m1-c-evidence")
     positive_proofs: list[pathlib.Path] = []
@@ -161,6 +128,7 @@ def collect(
             "git commit must be lowercase 40-hex")
 
     host = evidence_root / "host"
+    acc07 = evidence_root / "acc07"
     acc15 = evidence_root / "acc15"
     smoke = evidence_root / "smoke"
     recovery = evidence_root / "recovery"
@@ -184,7 +152,13 @@ def collect(
     require(isinstance(cases, dict) and set(cases) == {"E1","E2","E3","E4","E5","E6"},
             "M1-E canonical case set mismatch")
 
-    acc07_xmls = verify_acc07(host)
+    acc07_summary_path = find_unique_file(acc07, "verification-summary.json")
+    acc07_summary = require_pass(acc07_summary_path)
+    require(
+        acc07_summary.get("gateId") == "M1-ACC-07"
+        and acc07_summary.get("caseCount") == 4,
+        "ACC-07 cancellation evidence contract mismatch",
+    )
 
     recovery_map = {
         "M1-ACC-11": ("m1-f-process-death", "PROCESS_DEATH"),
@@ -270,7 +244,7 @@ def collect(
         "M1-ACC-04": positive_m1c,
         "M1-ACC-05": negative_m1c,
         "M1-ACC-06": [d_summary_path],
-        "M1-ACC-07": acc07_xmls,
+        "M1-ACC-07": [acc07_summary_path],
         "M1-ACC-08": [e_summary_path],
         "M1-ACC-09": [e_summary_path],
         "M1-ACC-10": [e_summary_path],
@@ -287,6 +261,7 @@ def collect(
         find_unique_dir(smoke, "m1-c-evidence"),
         d_summary_path.parents[1],
         e_summary_path.parents[1],
+        acc07,
         acc15,
         find_unique_dir(recovery, "cases"),
         host,
@@ -425,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print("M1 acceptance index verified")
         return 0
-    except (AcceptanceError, OSError, ValueError, json.JSONDecodeError, ET.ParseError) as error:
+    except (AcceptanceError, OSError, ValueError, json.JSONDecodeError) as error:
         print(f"M1 ACCEPTANCE FAILURE: {error}", file=sys.stderr)
         return 1
 
