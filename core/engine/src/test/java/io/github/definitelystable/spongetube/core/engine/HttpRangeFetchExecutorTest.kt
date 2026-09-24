@@ -26,6 +26,7 @@ class HttpRangeFetchExecutorTest {
     private val body = ByteArray(RESOURCE_LENGTH) { (it * 31).toByte() }
     private val rangeHeaders = CopyOnWriteArrayList<String?>()
     private val attemptHeaders = CopyOnWriteArrayList<String?>()
+    private val transportCorrelations = CopyOnWriteArrayList<String>()
 
     @Volatile
     private var mode = Mode.PARTIAL
@@ -54,6 +55,7 @@ class HttpRangeFetchExecutorTest {
         assertArrayEquals(body.copyOfRange(100, 1_100), received)
         assertEquals("bytes=100-1099", rangeHeaders.single())
         assertEquals("1", attemptHeaders.single())
+        assertEquals(listOf("lab-1"), transportCorrelations.toList())
     }
 
     @Test
@@ -113,6 +115,7 @@ class HttpRangeFetchExecutorTest {
             ),
             disposition,
         )
+        assertEquals(listOf("lab-1"), transportCorrelations.toList())
     }
 
     @Test
@@ -163,10 +166,13 @@ class HttpRangeFetchExecutorTest {
         val received = ByteArrayOutputStream()
         var expected = start ?: 0L
         val disposition = runBlocking {
-            executor.execute(
+            executor.executeCorrelated(
                 request = request,
                 attempt = 1,
                 priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                onTransportCorrelation = { correlation ->
+                    transportCorrelations += correlation
+                },
             ) { chunk ->
                 assertEquals(expected, chunk.byteStart)
                 assertEquals("lab-1", chunk.transportCorrelationId)
