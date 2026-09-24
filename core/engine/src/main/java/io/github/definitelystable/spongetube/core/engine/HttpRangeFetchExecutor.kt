@@ -41,7 +41,7 @@ internal class HttpRangeFetchExecutor(
     private val openConnection: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     },
-) : FetchAttemptExecutor {
+) : CorrelatingFetchAttemptExecutor {
     init {
         require(connectTimeoutMs > 0)
         require(readTimeoutMs > 0)
@@ -52,6 +52,21 @@ internal class HttpRangeFetchExecutor(
         request: FetchRequest,
         attempt: Int,
         priority: StateFlow<FetchPriority>,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition =
+        executeCorrelated(
+            request = request,
+            attempt = attempt,
+            priority = priority,
+            onTransportCorrelation = { },
+            emitChunk = emitChunk,
+        )
+
+    override suspend fun executeCorrelated(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition {
         val target = targetFor(request)
@@ -94,6 +109,7 @@ internal class HttpRangeFetchExecutor(
                         start = start,
                         endExclusive = endExclusive,
                         resourceLength = target.resourceLength,
+                        onTransportCorrelation = onTransportCorrelation,
                         emitChunk = emitChunk,
                     )
                 } finally {
@@ -108,6 +124,7 @@ internal class HttpRangeFetchExecutor(
         start: Long,
         endExclusive: Long,
         resourceLength: Long,
+        onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition {
         val status = try {
@@ -117,6 +134,9 @@ internal class HttpRangeFetchExecutor(
             return retryable(null)
         }
         val correlation = connection.getHeaderField(LAB_REQUEST_HEADER)
+        if (!correlation.isNullOrBlank()) {
+            onTransportCorrelation(correlation)
+        }
 
         when {
             status == HttpURLConnection.HTTP_PARTIAL -> Unit
