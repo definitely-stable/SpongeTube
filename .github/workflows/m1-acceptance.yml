@@ -1,0 +1,154 @@
+name: M1 Acceptance
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - ".github/workflows/m1-acceptance.yml"
+      - ".github/workflows/verify.yml"
+      - ".github/workflows/android-smoke.yml"
+      - ".github/workflows/android-compat.yml"
+      - ".github/workflows/m1-recovery.yml"
+      - "scripts/measurement/m1_acceptance.py"
+      - "scripts/measurement/tests/test_m1_acceptance.py"
+      - ".work/schemas/m1-acceptance-index-v1.schema.json"
+      - ".work/schemas/m1-run-manifest-v1.schema.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m1-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
+    uses: ./.github/workflows/verify.yml
+
+  android-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
+    uses: ./.github/workflows/android-smoke.yml
+
+  android-compat:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
+    uses: ./.github/workflows/android-compat.yml
+
+  recovery:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
+    uses: ./.github/workflows/m1-recovery.yml
+
+  aggregate:
+    name: aggregate-16-must-gates
+    needs: [verify, android-smoke, android-compat, recovery]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact acceptance revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download host verification evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m1-host-verification-evidence
+          path: build/m1-acceptance/evidence/host
+
+      - name: Download ACC-15 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m1-acc15-evidence
+          path: build/m1-acceptance/evidence/acc15
+
+      - name: Download API 36 smoke evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-smoke-evidence
+          path: build/m1-acceptance/evidence/smoke
+
+      - name: Download recovery evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m1-recovery-evidence
+          path: build/m1-acceptance/evidence/recovery
+
+      - name: Download API 23 compatibility evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-compat-api-23
+          path: build/m1-acceptance/evidence/compat23
+
+      - name: Download API 34 compatibility evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-compat-api-34
+          path: build/m1-acceptance/evidence/compat34
+
+      - name: Assemble and verify canonical M1 evidence
+        shell: bash
+        env:
+          ACCEPTANCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ACCEPTANCE_RUN_ID: m1-canonical-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p build/m1-acceptance/{generated,summary}
+
+          python3 scripts/measurement/m1_acceptance.py collect \
+            --evidence-root build/m1-acceptance/evidence \
+            --generated-root build/m1-acceptance/generated \
+            --run-id "$ACCEPTANCE_RUN_ID" \
+            --git-commit "$ACCEPTANCE_SHA" \
+            --output build/m1-acceptance/summary/m1-acceptance-index-v1.json
+
+          python3 scripts/measurement/m1_acceptance.py verify-index \
+            --index build/m1-acceptance/summary/m1-acceptance-index-v1.json \
+            --evidence-root build/m1-acceptance/evidence \
+            --generated-root build/m1-acceptance/generated \
+            --expected-git-commit "$ACCEPTANCE_SHA"
+
+          jq -r '
+            .gates[] | [.gateId, .status, (.proofs | join(","))] | @tsv
+          ' build/m1-acceptance/summary/m1-acceptance-index-v1.json \
+            > build/m1-acceptance/summary/must-matrix.tsv
+
+          test "$(wc -l < build/m1-acceptance/summary/must-matrix.tsv)" -eq 16
+          grep -v $'\tPASS\t' build/m1-acceptance/summary/must-matrix.tsv && exit 1 || true
+
+          cp build/m1-acceptance/generated/m1-run-manifest-v1.json \
+            build/m1-acceptance/summary/
+          cp build/m1-acceptance/generated/seed-matrix-v1.json \
+            build/m1-acceptance/summary/
+          cp build/m1-acceptance/generated/scenario-v1.json \
+            build/m1-acceptance/summary/
+
+          {
+            echo "gitCommit=$ACCEPTANCE_SHA"
+            echo "runId=$ACCEPTANCE_RUN_ID"
+            echo "mustGates=16/16 PASS"
+            echo "api36=canonical correctness"
+            echo "api23=compatibility PASS"
+            echo "api34=compatibility PASS"
+            echo "performanceClaims=none"
+          } > build/m1-acceptance/summary/acceptance.txt
+
+      - name: Upload canonical M1 acceptance summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m1-canonical-acceptance-summary
+          path: build/m1-acceptance/summary/
+          if-no-files-found: error
+          retention-days: 14
