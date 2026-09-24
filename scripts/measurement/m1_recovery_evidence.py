@@ -211,7 +211,12 @@ def _verify_fetch(
             owner_attempts[fetch_id].add(attempt)
             attempts_seen.add(row["attemptCorrelationId"])
 
-        if event in {"ATTEMPT_PROGRESS", "ATTEMPT_COMPLETED", "ATTEMPT_FAILED"}:
+        if event in {
+            "ATTEMPT_CORRELATED",
+            "ATTEMPT_PROGRESS",
+            "ATTEMPT_COMPLETED",
+            "ATTEMPT_FAILED",
+        }:
             correlation = row.get("transportCorrelationId")
             attempt_correlation = row.get("attemptCorrelationId")
             if correlation and attempt_correlation:
