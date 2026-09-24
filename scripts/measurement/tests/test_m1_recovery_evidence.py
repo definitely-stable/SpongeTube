@@ -85,6 +85,26 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(RecoveryEvidenceError, "overlapping"):
             verify(case, [], fetch, [], gate, [], None, coverage, coverage)
 
+    def test_rejects_gate_request_absent_from_origin_trace(self):
+        case = self.case("N4R-SHORT")
+        case["initialDurableReserveUs"] = 10_000_000
+        coverage = self.coverage()
+        with self.assertRaisesRegex(
+            RecoveryEvidenceError,
+            "absent from data-plane trace",
+        ):
+            verify(
+                case,
+                [],
+                [],
+                [],
+                self.short_gate(),
+                [],
+                None,
+                coverage,
+                coverage,
+            )
+
     def test_rejects_one_origin_request_claimed_by_two_attempts(self):
         case = self.case("N4R-SHORT")
         case["initialDurableReserveUs"] = 10_000_000
