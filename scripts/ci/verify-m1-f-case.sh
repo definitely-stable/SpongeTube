@@ -44,6 +44,9 @@ fi
 if [[ -s "$CASE_ROOT/fetch-events-v3.jsonl" ]]; then
   args+=(--fetch-events "$CASE_ROOT/fetch-events-v3.jsonl")
 fi
+if [[ -s "$CASE_ROOT/extent-events-v1.jsonl" ]]; then
+  args+=(--extent-events "$CASE_ROOT/extent-events-v1.jsonl")
+fi
 if [[ -n "$ORIGIN_TRACE" ]]; then
   test -s "$ORIGIN_TRACE"
   cp "$ORIGIN_TRACE" "$OUTPUT_ROOT/origin-requests.jsonl"

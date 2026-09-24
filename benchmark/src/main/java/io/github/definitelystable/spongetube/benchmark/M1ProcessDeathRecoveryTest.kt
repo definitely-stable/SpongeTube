@@ -51,7 +51,9 @@ class M1ProcessDeathRecoveryTest {
             pidAfter = pidAfter,
         )
         assertTrue(
-            recovered.getInt(M1RecoveryHarnessClient.KEY_TARGET_PID) > 0,
+            "recovery provider must run in PID-after",
+            recovered.getInt(M1RecoveryHarnessClient.KEY_TARGET_PID) ==
+                pidAfter,
         )
         client.exportEvidence(sessionId)
     }

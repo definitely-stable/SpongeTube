@@ -21,6 +21,9 @@ import io.github.definitelystable.spongetube.core.engine.PlaybackBridgeConfig
 import io.github.definitelystable.spongetube.core.engine.PlaybackBridgeRuntime
 import io.github.definitelystable.spongetube.core.engine.PlaybackRequirementSet
 import io.github.definitelystable.spongetube.core.engine.SpongeBridgeApi
+import io.github.definitelystable.spongetube.core.storage.ExtentLifecycleEvent
+import io.github.definitelystable.spongetube.core.storage.ExtentLifecycleListener
+import io.github.definitelystable.spongetube.core.storage.ExtentLifecycleState
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
 import io.github.definitelystable.spongetube.playback.bridge.SpongeLoadErrorHandlingPolicy
 import io.github.definitelystable.spongetube.playback.bridge.SpongePlayback
@@ -172,6 +175,12 @@ class M1RecoveryProvider : ContentProvider() {
     ): Bundle {
         check(processDeathStore == null) {
             "recover must execute in a fresh target process"
+        }
+        check(pidBefore != pidAfter) {
+            "process-death recovery requires a changed PID"
+        }
+        check(pidAfter == Process.myPid()) {
+            "controller PID-after does not match recovery process"
         }
         val session = sessionDir(filesDir, sessionId)
         val state = JSONObject(File(session, PROCESS_STATE).readText())
@@ -328,12 +337,21 @@ class M1RecoveryProvider : ContentProvider() {
         private val plans = F1PlaybackPlanFactory(fixture)
         private val bridgeEvents = CopyOnWriteArrayList<Map<String, Any?>>()
         private val fetchEvents = CopyOnWriteArrayList<Map<String, Any?>>()
+        private val extentEvents = CopyOnWriteArrayList<Map<String, Any?>>()
         private val timeline = CopyOnWriteArrayList<Map<String, Any?>>()
         private val errors = CopyOnWriteArrayList<String>()
         private val eventCounter = AtomicLong()
+        private val extentEventCounter = AtomicLong()
         private val playerInstanceId = "$sessionId-player-1"
         private val policy = SpongeLoadErrorHandlingPolicy()
-        private val store: ExtentStore = runBlocking { ExtentStore.open(requireNotNull(context)) }
+        private val unitByExtentId =
+            plans.catalog.units.associateBy(F1FetchUnit::extentId)
+        private val store: ExtentStore = runBlocking {
+            ExtentStore.open(
+                requireNotNull(context),
+                lifecycleListener = ExtentLifecycleListener(::recordExtentEvent),
+            )
+        }
         private lateinit var runtime: PlaybackBridgeRuntime
         private lateinit var player: ExoPlayer
         private var hasPlayed = false
@@ -469,6 +487,7 @@ class M1RecoveryProvider : ContentProvider() {
             store.close()
             writeJsonl(File(sessionDir, TIMELINE_JSONL), timeline)
             writeJsonl(File(sessionDir, FETCH_JSONL), fetchEvents)
+            writeJsonl(File(sessionDir, EXTENT_JSONL), extentEvents)
             writeJsonl(File(sessionDir, BRIDGE_JSONL), bridgeEvents)
             writeJson(
                 File(sessionDir, CASE_JSON),
@@ -499,6 +518,40 @@ class M1RecoveryProvider : ContentProvider() {
                     lastStallSequence ?: -1L,
                 )
             }
+        }
+
+        private fun recordExtentEvent(event: ExtentLifecycleEvent) {
+            val unit = unitByExtentId[event.extentId.value]
+                ?: error("unknown F1 extent lifecycle identity: ${event.extentId}")
+            extentEvents += linkedMapOf(
+                "schemaVersion" to 1,
+                "eventSequence" to extentEventCounter.getAndIncrement(),
+                "eventElapsedRealtimeNs" to
+                    SystemClock.elapsedRealtimeNanos(),
+                "sessionId" to sessionId,
+                "extentId" to event.extentId.value,
+                "state" to event.state.name,
+                "integrityState" to
+                    if (
+                        event.state == ExtentLifecycleState.VERIFIED ||
+                        event.state == ExtentLifecycleState.DURABLE ||
+                        event.state == ExtentLifecycleState.PUBLISHED
+                    ) {
+                        "VALID"
+                    } else {
+                        "UNKNOWN"
+                    },
+                "trackId" to unit.trackId,
+                "representationId" to unit.representationId,
+                "mediaStartUs" to unit.mediaStartUs,
+                "mediaEndUs" to unit.mediaEndUs,
+                "dependencyExtentIds" to JSONArray(unit.dependencyExtentIds),
+                "byteStart" to 0,
+                "byteEndExclusive" to unit.length,
+                "expectedLength" to unit.length,
+                "actualLength" to event.actualLength,
+                "sha256" to event.sha256?.hex,
+            )
         }
 
         private fun samplePlayer() {
@@ -721,6 +774,7 @@ class M1RecoveryProvider : ContentProvider() {
         const val RECOVERY_REPORT = "recovery-report.json"
         const val TIMELINE_JSONL = "recovery-timeline-v1.jsonl"
         const val FETCH_JSONL = "fetch-events-v3.jsonl"
+        const val EXTENT_JSONL = "extent-events-v1.jsonl"
         const val BRIDGE_JSONL = "bridge-events-v1.jsonl"
 
         const val PROCESS_DEATH_SEED_US = 30_000_000L

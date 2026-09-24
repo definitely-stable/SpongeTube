@@ -22,6 +22,7 @@ REPO_ROOT = SCRIPT_DIR.parents[1]
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
 
 TIMELINE_SCHEMA = SCHEMAS / "recovery-timeline-v1.schema.json"
+EXTENT_SCHEMA = SCHEMAS / "extent-events-v1.schema.json"
 FETCH_SCHEMA = SCHEMAS / "fetch-events-v3.schema.json"
 GATE_SCHEMA = SCHEMAS / "origin-gate-events-v1.schema.json"
 SUMMARY_SCHEMA = SCHEMAS / "recovery-summary-v2.schema.json"
@@ -370,12 +371,16 @@ def _verify_playback(
     scenario: str,
     case: dict[str, Any],
     timeline: list[dict[str, Any]],
+    extent_events: list[dict[str, Any]],
 ) -> tuple[int, bool | None, bool | None]:
     if scenario == "PROCESS_DEATH":
         return 0, None, None
 
     _validate_rows(timeline, TIMELINE_SCHEMA, "timeline")
     _ordered(timeline, "eventSequence", "timeline")
+    if extent_events:
+        _validate_rows(extent_events, EXTENT_SCHEMA, "extent")
+        _ordered(extent_events, "eventSequence", "extent")
     if any(row["sessionId"] != case["sessionId"] for row in timeline):
         raise RecoveryEvidenceError("timeline contains a foreign session")
 
@@ -423,6 +428,22 @@ def _verify_playback(
         raise RecoveryEvidenceError(
             "N4R-RESTORE: the same player did not recover and advance"
         )
+
+    first_progress = min(
+        progress,
+        key=lambda row: row["eventElapsedRealtimeNs"],
+    )
+    published_after_stall = [
+        row for row in extent_events
+        if row["state"] == "PUBLISHED"
+        and row["eventElapsedRealtimeNs"] > stall["eventElapsedRealtimeNs"]
+        and row["eventElapsedRealtimeNs"] <= first_progress["eventElapsedRealtimeNs"]
+    ]
+    if not published_after_stall:
+        raise RecoveryEvidenceError(
+            "N4R-RESTORE: playback advanced without a new PUBLISHED extent "
+            "after the observed stall"
+        )
     return len(stalls), True, True
 
 
@@ -430,6 +451,7 @@ def verify(
     case: dict[str, Any],
     timeline: list[dict[str, Any]],
     fetch: list[dict[str, Any]],
+    extent_events: list[dict[str, Any]],
     gate: list[dict[str, Any]],
     origin: list[dict[str, Any]],
     coverage_before: dict[str, Any] | None,
@@ -450,6 +472,7 @@ def verify(
         scenario,
         case,
         timeline,
+        extent_events,
     )
 
     after_semantic = _coverage_semantic(coverage_after)
@@ -536,6 +559,7 @@ def main() -> int:
     parser.add_argument("--case", required=True, type=pathlib.Path)
     parser.add_argument("--timeline", type=pathlib.Path)
     parser.add_argument("--fetch-events", type=pathlib.Path)
+    parser.add_argument("--extent-events", type=pathlib.Path)
     parser.add_argument("--gate-events", type=pathlib.Path)
     parser.add_argument("--origin-trace", type=pathlib.Path)
     parser.add_argument("--coverage-before", type=pathlib.Path)
@@ -548,6 +572,7 @@ def main() -> int:
         read_json(args.case),
         read_jsonl(args.timeline, allow_missing=True),
         read_jsonl(args.fetch_events, allow_missing=True),
+        read_jsonl(args.extent_events, allow_missing=True),
         read_jsonl(args.gate_events, allow_missing=True),
         read_jsonl(args.origin_trace, allow_missing=True),
         read_json(args.coverage_before) if args.coverage_before else None,

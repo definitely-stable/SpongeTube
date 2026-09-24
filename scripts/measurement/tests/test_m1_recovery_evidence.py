@@ -49,6 +49,7 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
             [],
             [],
             [],
+            [],
             coverage,
             coverage,
             coverage,
@@ -61,14 +62,14 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         case["pidAfter"] = case["pidBefore"]
         coverage = self.coverage()
         with self.assertRaisesRegex(RecoveryEvidenceError, "new target process"):
-            verify(case, [], [], [], [], coverage, coverage, coverage)
+            verify(case, [], [], [], [], [], coverage, coverage, coverage)
 
     def test_rejects_oracle_mismatch(self):
         coverage = self.coverage()
         oracle = copy.deepcopy(coverage)
         oracle["durableReserveUs"] = 0
         with self.assertRaisesRegex(RecoveryEvidenceError, "independent oracle"):
-            verify(self.case(), [], [], [], [], coverage, coverage, oracle)
+            verify(self.case(), [], [], [], [], [], coverage, coverage, oracle)
 
     def test_rejects_overlapping_owners(self):
         case = self.case("N4R-SHORT")
@@ -82,7 +83,7 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         gate = self.short_gate()
         coverage = self.coverage()
         with self.assertRaisesRegex(RecoveryEvidenceError, "overlapping"):
-            verify(case, [], fetch, gate, [], None, coverage, coverage)
+            verify(case, [], fetch, [], gate, [], None, coverage, coverage)
 
     def test_counts_duplicates_across_owner_lifetimes(self):
         case = self.case("N4R-SHORT")
@@ -105,7 +106,7 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         ]
         coverage = self.coverage()
         result = verify(
-            case, [], fetch, self.short_gate(), origin, None, coverage, coverage
+            case, [], fetch, [], self.short_gate(), origin, None, coverage, coverage
         )
         self.assertEqual(100, result["fetch"]["sessionDuplicateRangeBytes"])
 
