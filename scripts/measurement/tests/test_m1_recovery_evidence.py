@@ -204,6 +204,7 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
     def test_rejects_exhaust_stall_with_durable_reserve_remaining(self):
         case = self.case("N4R-EXHAUST")
         case["initialDurableReserveUs"] = 10_000_000
+        case["observedStallEventSequence"] = 0
         timeline = [
             {
                 "schemaVersion": 1,
