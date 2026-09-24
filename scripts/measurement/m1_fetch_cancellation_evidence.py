@@ -249,16 +249,28 @@ def verify_late_failure(
     owner = one(rows, "OWNER_REGISTERED")
     attempt = one(rows, "ATTEMPT_STARTED")
     one(rows, "CONSUMER_RELEASED")
-    completed = one(rows, "OWNER_COMPLETED")
+    attempt_failed = one(rows, "ATTEMPT_FAILED")
+    owner_failed = one(rows, "OWNER_FAILED")
     if events_of(rows, "OWNER_CANCELLED"):
         raise FetchCancellationEvidenceError(
             "late-failure owner was incorrectly finalized as cancelled"
         )
-    if completed.get("outcome") != "INTERNAL_FAILURE":
+    if events_of(rows, "ATTEMPT_COMPLETED") or events_of(rows, "OWNER_COMPLETED"):
+        raise FetchCancellationEvidenceError(
+            "late-failure path was incorrectly serialized as successful completion"
+        )
+    if (
+        attempt_failed.get("outcome") != "INTERNAL_FAILURE"
+        or owner_failed.get("outcome") != "INTERNAL_FAILURE"
+    ):
         raise FetchCancellationEvidenceError(
             "late-failure owner did not preserve terminal INTERNAL_FAILURE"
         )
-    if attempt.get("fetchId") != owner.get("fetchId") or completed.get("fetchId") != owner.get("fetchId"):
+    fetch_id = owner.get("fetchId")
+    if any(
+        row.get("fetchId") != fetch_id
+        for row in (attempt, attempt_failed, owner_failed)
+    ):
         raise FetchCancellationEvidenceError(
             "late failure changed fetch identity or started replacement work"
         )
@@ -266,7 +278,7 @@ def verify_late_failure(
     return {
         "caseId": "CANCELLING_BARRIER_LATE_FAILURE",
         "status": "PASS",
-        "fetchId": completed.get("fetchId"),
+        "fetchId": owner_failed.get("fetchId"),
     }
 
 
