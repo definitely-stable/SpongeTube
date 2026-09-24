@@ -812,6 +812,7 @@ Not M1 exit criteria:
 Canonical M1 evidence is versioned rather than silently rewriting an old contract. #48 v1 artifacts remain valid for historical pre-asset-scoped evidence. M1-C introduces v2 only where MediaAsset identity changes semantics:
 
 - `m1-run-manifest-v1`;
+- `m1-acceptance-index-v1` for the M1-G 16/16 gate/proof/digest index;
 - `seed-manifest-v2` for M1-C construction evidence;
 - `coverage-snapshot-v2` for runtime/oracle asset-scoped coverage;
 - `extent-events-v1`;
@@ -842,6 +843,7 @@ Artifact ownership is incremental:
 | `range-continuation-v1` | deterministic HttpRangeFetchExecutor harness | strict schema + independent exact request/response/outcome verification; incompatible responses must emit zero accepted bytes | M1-E2 |
 | `recovery-summary-v2` | host recovery verifier | strict schema + ownership/range ledger + post-reopen oracle | M1-F |
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
+| `m1-acceptance-index-v1` | canonical acceptance aggregator | schema + exact 16 unique MUST gates + proof membership + SHA-256/size recheck + manifest/commit identity | M1-G |
 
 Every runtime `fetch-events-v2` or `fetch-events-v3` row MUST validate against its checked-in schema before semantic/origin verification; a serializer/schema mismatch fails the run. The same rule applies to `bridge-events-v1`, `recovery-timeline-v1` and `origin-gate-events-v1`.
 
@@ -854,5 +856,7 @@ For M1-E, M1-ACC-09 passes only when a harness-marked cached-seek window contain
 
 Historical `committed-extents-v1`, `seed-manifest-v1`, `coverage-snapshot-v1` and `fetch-events-v1` remain accepted by the evidence/schema suite for already-produced evidence; new M1-C runs use asset-scoped coverage v2 and new M1-D runs use fetch-events-v2.
 M1-G executes and publishes the already-working evidence path; it must not become the first place where missing producers or comparators are implemented.
+
+The M1-G run manifest binds the complete canonical seed matrix as `seedId = CANONICAL-MATRIX`; its `manifestSha256` is the SHA-256 of the generated matrix of the ten independently verified `seed-manifest-v2` artifacts. The acceptance index then binds every retained proof file by relative path, SHA-256 and size and fails unless the gate set is exactly M1-ACC-01 through M1-ACC-16 with no duplicate, missing, skipped or unknown gate.
 
 The committed evidence summary references raw CI artifacts by run identity/digest and records limitations explicitly.

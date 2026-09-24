@@ -1,6 +1,7 @@
 name: Android Smoke
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - ".github/workflows/android-smoke.yml"
@@ -38,7 +39,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-smoke-${{ github.event.pull_request.number || github.ref }}
+  group: android-smoke-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

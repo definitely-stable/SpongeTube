@@ -24,6 +24,7 @@ EXAMPLES = SCHEMAS / "examples" / "m1"
 
 CONTRACTS = {
     "m1-run-manifest-v1.schema.json": "m1-run-manifest-v1.example.json",
+    "m1-acceptance-index-v1.schema.json": "m1-acceptance-index-v1.example.json",
     "seed-manifest-v1.schema.json": "seed-manifest-v1.example.json",
     "seed-manifest-v2.schema.json": "seed-manifest-v2.example.json",
     "coverage-snapshot-v1.schema.json": "coverage-snapshot-v1.example.json",

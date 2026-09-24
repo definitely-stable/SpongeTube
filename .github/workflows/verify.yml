@@ -1,6 +1,7 @@
 name: Verify
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [ main ]
@@ -9,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.event.pull_request.number || github.ref }}
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -85,6 +86,18 @@ jobs:
           git diff --exit-code -- core/storage/schemas/
           test -z "$(git status --porcelain --untracked-files=all -- core/storage/schemas/)"
 
+      - name: Retain full host-test evidence before targeted reruns
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_xml="core/engine/build/test-results/testDebugUnitTest/TEST-io.github.definitelystable.spongetube.core.engine.FetchBrokerTest.xml"
+          test -s "$source_xml"
+
+          rm -rf build/m1-host-verification
+          mkdir -p build/m1-host-verification/core-engine-test-results
+          cp -R core/engine/build/test-results/testDebugUnitTest/. \
+            build/m1-host-verification/core-engine-test-results/
+
       - name: Verify M1 ACC-15 range continuation evidence
         shell: bash
         run: |
@@ -98,6 +111,17 @@ jobs:
           name: m1-acc15-evidence
           path: build/m1-acc15/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload M1 host verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m1-host-verification-evidence
+          path: |
+            build/m1-host-verification/
+            build/verify/
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload failure evidence
