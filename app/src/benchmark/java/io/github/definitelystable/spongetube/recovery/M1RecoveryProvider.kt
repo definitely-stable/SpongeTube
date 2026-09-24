@@ -486,10 +486,22 @@ class M1RecoveryProvider : ContentProvider() {
             record("SCENARIO_FINISHED", null)
 
             store.close()
-            writeJsonl(File(sessionDir, TIMELINE_JSONL), timeline)
-            writeJsonl(File(sessionDir, FETCH_JSONL), fetchEvents)
-            writeJsonl(File(sessionDir, EXTENT_JSONL), extentEvents)
-            writeJsonl(File(sessionDir, BRIDGE_JSONL), bridgeEvents)
+            writeJsonl(
+                File(sessionDir, TIMELINE_JSONL),
+                orderedByEventSequence(timeline),
+            )
+            writeJsonl(
+                File(sessionDir, FETCH_JSONL),
+                orderedByEventSequence(fetchEvents),
+            )
+            writeJsonl(
+                File(sessionDir, EXTENT_JSONL),
+                orderedByEventSequence(extentEvents),
+            )
+            writeJsonl(
+                File(sessionDir, BRIDGE_JSONL),
+                orderedByEventSequence(bridgeEvents),
+            )
             writeJson(
                 File(sessionDir, CASE_JSON),
                 linkedMapOf(
@@ -520,6 +532,13 @@ class M1RecoveryProvider : ContentProvider() {
                 )
             }
         }
+
+        private fun orderedByEventSequence(
+            rows: List<Map<String, Any?>>,
+        ): List<Map<String, Any?>> =
+            rows.sortedBy { row ->
+                (row["eventSequence"] as Number).toLong()
+            }
 
         private fun recordExtentEvent(event: ExtentLifecycleEvent) {
             val unit = unitByExtentId[event.extentId.value]
