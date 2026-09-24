@@ -400,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print("M1 acceptance index verified")
         return 0
-    except (AcceptanceError, OSError, ValueError, json.JSONDecodeError, ET.ParseError) as error:
+    except (AcceptanceError, OSError, ValueError, json.JSONDecodeError) as error:
         print(f"M1 ACCEPTANCE FAILURE: {error}", file=sys.stderr)
         return 1
 
