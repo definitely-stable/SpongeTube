@@ -93,6 +93,9 @@ jobs:
             :core:storage:connectedDebugAndroidTest \
             :core:engine:connectedDebugAndroidTest
 
+          bash scripts/ci/verify-m1-b-evidence.sh \
+            build/android-smoke/m1-b-evidence
+
           bash scripts/ci/verify-m1-c-evidence.sh \
             build/android-smoke/m1-c-evidence
 
