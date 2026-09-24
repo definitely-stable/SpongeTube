@@ -626,6 +626,8 @@ class ExtentStore private constructor(
             context: Context,
             rootDirectory: File,
             databaseFile: File,
+            lifecycleListener: ExtentLifecycleListener? = null,
+            faultInjector: ExtentFaultInjector = ExtentFaultInjector.NONE,
         ): ExtentStore = withContext(Dispatchers.IO) {
             val durability = AndroidExtentDurabilityOps
             val layout = ExtentPathLayout(rootDirectory)
@@ -650,8 +652,8 @@ class ExtentStore private constructor(
                     metadataStore = openedMetadata,
                     durabilityOps = durability,
                     ioDispatcher = Dispatchers.IO,
-                    lifecycleListener = null,
-                    faultInjector = ExtentFaultInjector.NONE,
+                    lifecycleListener = lifecycleListener,
+                    faultInjector = faultInjector,
                     metadataDurability = openedMetadata.durability,
                 )
                 store = openedStore
