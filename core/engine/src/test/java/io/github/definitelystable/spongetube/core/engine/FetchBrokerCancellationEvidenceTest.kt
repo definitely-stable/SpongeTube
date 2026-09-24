@@ -7,6 +7,7 @@ import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test
  * The semantic verifier is host-side and consumes only schema-valid
  * fetch-events-v3 plus the small case observation written here.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class FetchBrokerCancellationEvidenceTest {
     @Test
     fun canonicalCancellationCasesProduceEvidence() = runTest {
@@ -170,15 +172,15 @@ class FetchBrokerCancellationEvidenceTest {
                 spec: ExtentSpec,
                 producer: suspend (FetchPublishSink) -> Unit,
             ): CommittedExtent {
-                val bytes = mutableListOf<Byte>()
+                val writtenBytes = mutableListOf<Byte>()
                 producer(
                     object : FetchPublishSink {
-                        override suspend fun write(bytesToWrite: ByteArray) {
-                            bytes += bytesToWrite.toList()
+                        override suspend fun write(bytes: ByteArray) {
+                            writtenBytes += bytes.toList()
                         }
                     },
                 )
-                check(bytes.size.toLong() == spec.expectedLength)
+                check(writtenBytes.size.toLong() == spec.expectedLength)
                 withContext(NonCancellable) {
                     commitStarted.complete(Unit)
                     releaseCommit.await()
@@ -257,15 +259,15 @@ class FetchBrokerCancellationEvidenceTest {
                 spec: ExtentSpec,
                 producer: suspend (FetchPublishSink) -> Unit,
             ): CommittedExtent {
-                val bytes = mutableListOf<Byte>()
+                val writtenBytes = mutableListOf<Byte>()
                 producer(
                     object : FetchPublishSink {
-                        override suspend fun write(bytesToWrite: ByteArray) {
-                            bytes += bytesToWrite.toList()
+                        override suspend fun write(bytes: ByteArray) {
+                            writtenBytes += bytes.toList()
                         }
                     },
                 )
-                check(bytes.size.toLong() == spec.expectedLength)
+                check(writtenBytes.size.toLong() == spec.expectedLength)
                 withContext(NonCancellable) {
                     commitStarted.complete(Unit)
                     releaseCommit.await()
@@ -384,15 +386,15 @@ class FetchBrokerCancellationEvidenceTest {
             spec: ExtentSpec,
             producer: suspend (FetchPublishSink) -> Unit,
         ): CommittedExtent {
-            val bytes = mutableListOf<Byte>()
+            val writtenBytes = mutableListOf<Byte>()
             producer(
                 object : FetchPublishSink {
-                    override suspend fun write(bytesToWrite: ByteArray) {
-                        bytes += bytesToWrite.toList()
+                    override suspend fun write(bytes: ByteArray) {
+                        writtenBytes += bytes.toList()
                     }
                 },
             )
-            check(bytes.size.toLong() == spec.expectedLength)
+            check(writtenBytes.size.toLong() == spec.expectedLength)
             return committed(spec)
         }
     }
