@@ -27,6 +27,11 @@ FETCH_SCHEMA = SCHEMAS / "fetch-events-v3.schema.json"
 GATE_SCHEMA = SCHEMAS / "origin-gate-events-v1.schema.json"
 SUMMARY_SCHEMA = SCHEMAS / "recovery-summary-v2.schema.json"
 
+# Media3 Player positions/buffered positions are exposed in milliseconds and
+# converted to microseconds by the benchmark harness. This is a representation
+# quantization allowance, not a timing/performance tolerance.
+PLAYER_POSITION_QUANTIZATION_US = 1_000
+
 TERMINAL_OWNER_EVENTS = {
     "OWNER_COMPLETED",
     "OWNER_FAILED",
@@ -484,10 +489,21 @@ def _verify_playback(
             raise RecoveryEvidenceError(
                 f"{scenario}: controller-observed stall sequence is not in timeline"
             )
-        if observed_stall.get("durableReserveUs") != 0:
+        durable_reserve = observed_stall.get("durableReserveUs")
+        player_buffered = observed_stall.get("playerBufferedAheadUs")
+        if not isinstance(durable_reserve, int) or not isinstance(player_buffered, int):
             raise RecoveryEvidenceError(
-                f"{scenario}: controller-observed stall occurred before "
-                "durable reserve was exhausted"
+                f"{scenario}: observed stall is missing reserve/buffer evidence"
+            )
+        local_reserve_outside_player = max(
+            0,
+            durable_reserve - player_buffered,
+        )
+        if local_reserve_outside_player > PLAYER_POSITION_QUANTIZATION_US:
+            raise RecoveryEvidenceError(
+                f"{scenario}: controller-observed stall left "
+                f"{local_reserve_outside_player}us of durable reserve outside "
+                "the Media3 buffered horizon"
             )
 
     if scenario != "N4R-RESTORE":
