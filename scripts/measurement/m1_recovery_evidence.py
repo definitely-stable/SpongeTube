@@ -342,6 +342,8 @@ def _verify_gate(
     scenario: str,
     case: dict[str, Any],
     rows: list[dict[str, Any]],
+    fetch: list[dict[str, Any]],
+    origin: list[dict[str, Any]],
 ) -> None:
     if scenario == "PROCESS_DEATH":
         if rows:
@@ -363,6 +365,26 @@ def _verify_gate(
 
     blocked = [row for row in rows if row["event"] == "REQUEST_BLOCKED"]
     released = [row for row in rows if row["event"] == "REQUEST_RELEASED"]
+
+    data_origin_ids = {
+        str(row.get("requestId"))
+        for row in origin
+        if row.get("plane") == "data"
+        and str(row.get("path", "")).startswith("/fixtures/")
+    }
+    unknown_gate_requests = sorted(
+        {
+            str(row["requestId"])
+            for row in blocked + released
+            if row.get("requestId") is not None
+        }
+        - data_origin_ids
+    )
+    if unknown_gate_requests:
+        raise RecoveryEvidenceError(
+            "origin gate references request IDs absent from data-plane trace: "
+            + ", ".join(unknown_gate_requests)
+        )
 
     if scenario in {"N4R-SHORT", "N4R-EXHAUST", "N4R-RESTORE"} and not blocked:
         raise RecoveryEvidenceError(f"{scenario}: no origin request was actually blocked")
@@ -399,6 +421,25 @@ def _verify_gate(
         ):
             raise RecoveryEvidenceError(
                 "N4R-RESTORE: restore command is absent from origin gate evidence"
+            )
+        restored_request_ids = {
+            str(row["requestId"])
+            for row in released
+            if row.get("commandId") == command
+            and row.get("requestId") is not None
+        }
+        if not restored_request_ids:
+            raise RecoveryEvidenceError(
+                "N4R-RESTORE: restore command released no blocked data request"
+            )
+        if not any(
+            row.get("event") == "ATTEMPT_PROGRESS"
+            and str(row.get("transportCorrelationId")) in restored_request_ids
+            for row in fetch
+        ):
+            raise RecoveryEvidenceError(
+                "N4R-RESTORE: released origin request produced no correlated "
+                "client body progress"
             )
 
     if scenario == "N4R-FLAP" and len(generations) < 3:
@@ -507,7 +548,7 @@ def verify(
         fetch,
         origin,
     )
-    _verify_gate(scenario, case, gate)
+    _verify_gate(scenario, case, gate, fetch, origin)
     stall_count, same_player, post_restore = _verify_playback(
         scenario,
         case,
