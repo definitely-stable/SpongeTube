@@ -77,6 +77,7 @@
         "CONSUMER_JOINED",
         "PRIORITY_RAISED",
         "ATTEMPT_STARTED",
+        "ATTEMPT_CORRELATED",
         "ATTEMPT_PROGRESS",
         "ATTEMPT_COMPLETED",
         "ATTEMPT_FAILED",
