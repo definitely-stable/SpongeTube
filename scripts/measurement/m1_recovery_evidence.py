@@ -171,6 +171,7 @@ def _verify_fetch(
 
     active_by_key: dict[str, str] = {}
     owner_key: dict[str, str] = {}
+    terminal_owners: set[str] = set()
     owner_attempts: dict[str, set[int]] = defaultdict(set)
     owners_by_key: dict[str, set[str]] = defaultdict(set)
     attempt_transport: dict[str, set[str]] = defaultdict(set)
@@ -189,6 +190,10 @@ def _verify_fetch(
         fetch_key = row["fetchKey"]
 
         if event == "OWNER_REGISTERED":
+            if fetch_id in owner_key:
+                raise RecoveryEvidenceError(
+                    f"{fetch_id}: duplicate OWNER_REGISTERED"
+                )
             if fetch_key in active_by_key:
                 no_overlap = False
             active_by_key[fetch_key] = fetch_id
@@ -198,6 +203,10 @@ def _verify_fetch(
                 touched_prepublished = True
 
         if event == "ATTEMPT_STARTED":
+            if owner_key.get(fetch_id) != fetch_key or fetch_id in terminal_owners:
+                raise RecoveryEvidenceError(
+                    f"{fetch_id}: attempt started outside active owner lifetime"
+                )
             attempt = int(row["attempt"])
             owner_attempts[fetch_id].add(attempt)
             attempts_seen.add(row["attemptCorrelationId"])
@@ -220,6 +229,11 @@ def _verify_fetch(
             _add_interval(accepted_by_key[fetch_key], start, end)
 
         if event in TERMINAL_OWNER_EVENTS:
+            if fetch_id in terminal_owners:
+                raise RecoveryEvidenceError(
+                    f"{fetch_id}: multiple terminal owner events"
+                )
+            terminal_owners.add(fetch_id)
             if active_by_key.get(fetch_key) != fetch_id:
                 no_overlap = False
             else:
@@ -229,6 +243,12 @@ def _verify_fetch(
         raise RecoveryEvidenceError(
             "non-terminal fetch owners remain in evidence: "
             + ", ".join(sorted(active_by_key))
+        )
+    missing_terminal = sorted(set(owner_key) - terminal_owners)
+    if missing_terminal:
+        raise RecoveryEvidenceError(
+            "registered fetch owners without terminal event: "
+            + ", ".join(missing_terminal)
         )
 
     for fetch_id, attempts in owner_attempts.items():
@@ -265,11 +285,26 @@ def _verify_fetch(
     if len(request_ids) != len(set(request_ids)):
         raise RecoveryEvidenceError("origin request IDs must be unique")
 
-    correlated_requests = {
-        next(iter(values))
-        for values in attempt_transport.values()
-        if values
+    request_to_attempts: dict[str, list[str]] = defaultdict(list)
+    for attempt_id, values in attempt_transport.items():
+        if values:
+            request_to_attempts[next(iter(values))].append(attempt_id)
+    multiply_claimed = {
+        request_id: attempts
+        for request_id, attempts in request_to_attempts.items()
+        if len(attempts) > 1
     }
+    if multiply_claimed:
+        details = "; ".join(
+            f"{request_id}=>{','.join(sorted(attempts))}"
+            for request_id, attempts in sorted(multiply_claimed.items())
+        )
+        raise RecoveryEvidenceError(
+            "origin request is attributed to multiple broker attempts: "
+            + details
+        )
+
+    correlated_requests = set(request_to_attempts)
     hidden = sorted(set(request_ids) - correlated_requests)
     if hidden:
         raise RecoveryEvidenceError(
