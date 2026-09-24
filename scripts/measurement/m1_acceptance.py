@@ -282,10 +282,10 @@ def collect(
     }
 
     selected_roots = (
-        find_unique_dir(smoke, "m1-b-evidence"),
+        storage_summary_path.parent,
         find_unique_dir(smoke, "m1-c-evidence"),
-        find_unique_dir(smoke, "m1-d-evidence"),
-        find_unique_dir(smoke, "m1-e-evidence"),
+        d_summary_path.parents[1],
+        e_summary_path.parents[1],
         acc15,
         find_unique_dir(recovery, "cases"),
         find_unique_dir(host, "test-results"),
