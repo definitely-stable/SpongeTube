@@ -470,31 +470,31 @@ def _verify_playback(
         raise RecoveryEvidenceError("N4R-SHORT: playback stalled")
     if scenario in {"N4R-EXHAUST", "N4R-RESTORE"} and not stalls:
         raise RecoveryEvidenceError(f"{scenario}: expected a true rebuffer stall")
+    observed_stall: dict[str, Any] | None = None
     if scenario in {"N4R-EXHAUST", "N4R-RESTORE"}:
-        exhausted_stalls = [
-            row for row in stalls
-            if row.get("durableReserveUs") == 0
-        ]
-        if not exhausted_stalls:
+        observed_sequence = case.get("observedStallEventSequence")
+        observed_stall = next(
+            (
+                row for row in stalls
+                if row["eventSequence"] == observed_sequence
+            ),
+            None,
+        )
+        if observed_stall is None:
             raise RecoveryEvidenceError(
-                f"{scenario}: player stalled before durable reserve was exhausted"
+                f"{scenario}: controller-observed stall sequence is not in timeline"
+            )
+        if observed_stall.get("durableReserveUs") != 0:
+            raise RecoveryEvidenceError(
+                f"{scenario}: controller-observed stall occurred before "
+                "durable reserve was exhausted"
             )
 
     if scenario != "N4R-RESTORE":
         return len(stalls), None, None
 
-    observed_sequence = case.get("observedStallEventSequence")
-    stall = next(
-        (
-            row for row in stalls
-            if row["eventSequence"] == observed_sequence
-        ),
-        None,
-    )
-    if stall is None:
-        raise RecoveryEvidenceError(
-            "N4R-RESTORE: controller-observed stall sequence is not in timeline"
-        )
+    stall = observed_stall
+    assert stall is not None
     player_id = stall.get("playerInstanceId")
     if not player_id:
         raise RecoveryEvidenceError("N4R-RESTORE: stalled player has no identity")
