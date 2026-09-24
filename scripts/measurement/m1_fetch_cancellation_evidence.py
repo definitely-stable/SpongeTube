@@ -59,8 +59,8 @@ def verify_joined_release(
     if case.get("terminalOutcome") != "SUCCESS":
         raise FetchCancellationEvidenceError("remaining joined consumer did not succeed")
 
-    one(rows, "OWNER_REGISTERED")
-    one(rows, "ATTEMPT_STARTED")
+    owner = one(rows, "OWNER_REGISTERED")
+    attempt = one(rows, "ATTEMPT_STARTED")
     one(rows, "CONSUMER_JOINED")
     release = one(rows, "CONSUMER_RELEASED")
     if events_of(rows, "OWNER_CANCELLED"):
@@ -74,6 +74,10 @@ def verify_joined_release(
         )
     if completed.get("outcome") != "SUCCESS":
         raise FetchCancellationEvidenceError("shared owner did not complete SUCCESS")
+    if attempt.get("fetchId") != owner.get("fetchId") or completed.get("fetchId") != owner.get("fetchId"):
+        raise FetchCancellationEvidenceError(
+            "joined release changed fetch identity across owner/attempt/terminal"
+        )
 
     return {
         "caseId": "JOINED_CONSUMER_RELEASE",
@@ -101,6 +105,8 @@ def verify_barrier_restart(
 
     owners = events_of(rows, "OWNER_REGISTERED")
     cancelled = events_of(rows, "OWNER_CANCELLED")
+    releases = events_of(rows, "CONSUMER_RELEASED")
+    attempts = events_of(rows, "ATTEMPT_STARTED")
     if len(owners) != 2 or len(cancelled) != 1:
         raise FetchCancellationEvidenceError(
             "restart case must have two owners and one cancelled owner"
@@ -111,6 +117,17 @@ def verify_barrier_restart(
         raise FetchCancellationEvidenceError("wrong owner was cancelled")
     if cancelled[0].get("outcome") != "CANCELLED_NO_CONSUMERS":
         raise FetchCancellationEvidenceError("final-consumer cancellation outcome mismatch")
+    if len(releases) != 1 or releases[0].get("fetchId") != owners[0].get("fetchId"):
+        raise FetchCancellationEvidenceError(
+            "restart case does not show one final-consumer release for the old owner"
+        )
+    if len(attempts) != 2 or {row.get("fetchId") for row in attempts} != {
+        owners[0].get("fetchId"),
+        owners[1].get("fetchId"),
+    }:
+        raise FetchCancellationEvidenceError(
+            "restart case physical-attempt ownership mismatch"
+        )
 
     replacement_completed = [
         row for row in events_of(rows, "OWNER_COMPLETED")
@@ -121,6 +138,11 @@ def verify_barrier_restart(
             "replacement owner did not complete exactly once with SUCCESS"
         )
 
+    first_release = sequence_index(
+        rows,
+        lambda row: row.get("event") == "CONSUMER_RELEASED"
+        and row.get("fetchId") == owners[0].get("fetchId"),
+    )
     first_terminal = sequence_index(
         rows,
         lambda row: row.get("event") == "OWNER_CANCELLED",
@@ -130,7 +152,11 @@ def verify_barrier_restart(
         lambda row: row.get("event") == "OWNER_REGISTERED"
         and row.get("fetchId") == owners[1].get("fetchId"),
     )
-    if first_terminal < 0 or second_owner <= first_terminal:
+    if first_release < 0 or first_terminal <= first_release:
+        raise FetchCancellationEvidenceError(
+            "cancelling owner became terminal before its final-consumer release"
+        )
+    if second_owner <= first_terminal:
         raise FetchCancellationEvidenceError(
             "replacement owner appeared before cancelling owner was terminal"
         )
@@ -173,8 +199,8 @@ def verify_late_success(
             "late success caused hidden refetch/request-budget reset"
         )
 
-    one(rows, "OWNER_REGISTERED")
-    one(rows, "ATTEMPT_STARTED")
+    owner = one(rows, "OWNER_REGISTERED")
+    attempt = one(rows, "ATTEMPT_STARTED")
     one(rows, "CONSUMER_RELEASED")
     completed = one(rows, "OWNER_COMPLETED")
     if events_of(rows, "OWNER_CANCELLED"):
@@ -183,6 +209,10 @@ def verify_late_success(
         )
     if completed.get("outcome") != "SUCCESS":
         raise FetchCancellationEvidenceError("late-success owner did not finish SUCCESS")
+    if attempt.get("fetchId") != owner.get("fetchId") or completed.get("fetchId") != owner.get("fetchId"):
+        raise FetchCancellationEvidenceError(
+            "late success changed fetch identity or started replacement work"
+        )
 
     return {
         "caseId": "CANCELLING_BARRIER_LATE_SUCCESS",
@@ -216,8 +246,8 @@ def verify_late_failure(
             "late-failure observation terminal outcome mismatch"
         )
 
-    one(rows, "OWNER_REGISTERED")
-    one(rows, "ATTEMPT_STARTED")
+    owner = one(rows, "OWNER_REGISTERED")
+    attempt = one(rows, "ATTEMPT_STARTED")
     one(rows, "CONSUMER_RELEASED")
     completed = one(rows, "OWNER_COMPLETED")
     if events_of(rows, "OWNER_CANCELLED"):
@@ -227,6 +257,10 @@ def verify_late_failure(
     if completed.get("outcome") != "INTERNAL_FAILURE":
         raise FetchCancellationEvidenceError(
             "late-failure owner did not preserve terminal INTERNAL_FAILURE"
+        )
+    if attempt.get("fetchId") != owner.get("fetchId") or completed.get("fetchId") != owner.get("fetchId"):
+        raise FetchCancellationEvidenceError(
+            "late failure changed fetch identity or started replacement work"
         )
 
     return {
