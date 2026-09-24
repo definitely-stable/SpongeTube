@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "runId": "m1-canonical-example",
+  "gitCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "PASS",
+  "gateCount": 16,
+  "manifest": "generated/m1-run-manifest-v1.json",
+  "gates": [
+    {"gateId":"M1-ACC-01","status":"PASS","proofs":["smoke/example-01.json"]},
+    {"gateId":"M1-ACC-02","status":"PASS","proofs":["smoke/example-02.json"]},
+    {"gateId":"M1-ACC-03","status":"PASS","proofs":["smoke/example-03.json"]},
+    {"gateId":"M1-ACC-04","status":"PASS","proofs":["smoke/example-04.json"]},
+    {"gateId":"M1-ACC-05","status":"PASS","proofs":["smoke/example-05.json"]},
+    {"gateId":"M1-ACC-06","status":"PASS","proofs":["smoke/example-06.json"]},
+    {"gateId":"M1-ACC-07","status":"PASS","proofs":["host/example-07.xml"]},
+    {"gateId":"M1-ACC-08","status":"PASS","proofs":["smoke/example-08.json"]},
+    {"gateId":"M1-ACC-09","status":"PASS","proofs":["smoke/example-09.json"]},
+    {"gateId":"M1-ACC-10","status":"PASS","proofs":["smoke/example-10.json"]},
+    {"gateId":"M1-ACC-11","status":"PASS","proofs":["recovery/example-11.json"]},
+    {"gateId":"M1-ACC-12","status":"PASS","proofs":["recovery/example-12.json"]},
+    {"gateId":"M1-ACC-13","status":"PASS","proofs":["recovery/example-13.json"]},
+    {"gateId":"M1-ACC-14","status":"PASS","proofs":["recovery/example-14.json"]},
+    {"gateId":"M1-ACC-15","status":"PASS","proofs":["acc15/example-15.json"]},
+    {"gateId":"M1-ACC-16","status":"PASS","proofs":["smoke/example-16.json"]}
+  ],
+  "artifacts": [
+    {
+      "path": "generated/m1-run-manifest-v1.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-01.json",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-02.json",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-03.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-04.json",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-05.json",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-06.json",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "sizeBytes": 1
+    },
+    {
+      "path": "host/example-07.xml",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-08.json",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-09.json",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-10.json",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "sizeBytes": 1
+    },
+    {
+      "path": "recovery/example-11.json",
+      "sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+      "sizeBytes": 1
+    },
+    {
+      "path": "recovery/example-12.json",
+      "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+      "sizeBytes": 1
+    },
+    {
+      "path": "recovery/example-13.json",
+      "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "sizeBytes": 1
+    },
+    {
+      "path": "recovery/example-14.json",
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "sizeBytes": 1
+    },
+    {
+      "path": "acc15/example-15.json",
+      "sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "sizeBytes": 1
+    },
+    {
+      "path": "smoke/example-16.json",
+      "sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+      "sizeBytes": 1
+    }
+  ],
+  "compatibility": {
+    "api23": "PASS",
+    "api34": "PASS"
+  },
+  "limitations": [
+    "API 36 emulator correctness evidence is non-representative for physical-device performance."
+  ]
+}
