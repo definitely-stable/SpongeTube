@@ -39,14 +39,12 @@ jobs:
   verify:
     if: >-
       github.event_name == 'push' ||
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
     uses: ./.github/workflows/verify.yml
 
   android-smoke:
     if: >-
-      github.event_name == 'push' ||
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
@@ -55,14 +53,12 @@ jobs:
   android-compat:
     if: >-
       github.event_name == 'push' ||
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
     uses: ./.github/workflows/android-compat.yml
 
   recovery:
     if: >-
-      github.event_name == 'push' ||
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
