@@ -156,7 +156,7 @@ def collect(
     acc07_summary = require_pass(acc07_summary_path)
     require(
         acc07_summary.get("gateId") == "M1-ACC-07"
-        and acc07_summary.get("caseCount") == 3,
+        and acc07_summary.get("caseCount") == 4,
         "ACC-07 cancellation evidence contract mismatch",
     )
 
