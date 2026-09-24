@@ -78,6 +78,25 @@ def require(condition: bool, message: str) -> None:
         raise AcceptanceError(message)
 
 
+def find_unique_file(root: pathlib.Path, suffix: str) -> pathlib.Path:
+    normalized = suffix.replace("\\", "/")
+    matches = [
+        path for path in root.rglob("*")
+        if path.is_file() and path.as_posix().endswith(normalized)
+    ]
+    require(len(matches) == 1, f"expected one file ending {suffix!r} under {root}, found {len(matches)}")
+    return matches[0]
+
+
+def find_unique_dir(root: pathlib.Path, name: str) -> pathlib.Path:
+    matches = [path for path in root.rglob(name) if path.is_dir()]
+    if root.name == name:
+        matches.insert(0, root)
+    unique = list(dict.fromkeys(matches))
+    require(len(unique) == 1, f"expected one directory {name!r} under {root}, found {len(unique)}")
+    return unique[0]
+
+
 def evidence_key(root: pathlib.Path, path: pathlib.Path) -> str:
     return path.relative_to(root).as_posix()
 
@@ -111,7 +130,7 @@ def verify_acc07(host_root: pathlib.Path) -> pathlib.Path:
 
 
 def verify_m1c(smoke_root: pathlib.Path) -> tuple[list[pathlib.Path], list[pathlib.Path]]:
-    root = smoke_root / "build/android-smoke/m1-c-evidence"
+    root = find_unique_dir(smoke_root, "m1-c-evidence")
     positive_proofs: list[pathlib.Path] = []
     negative_proofs: list[pathlib.Path] = []
     for seed in ALL_SEEDS:
@@ -147,7 +166,7 @@ def collect(
     compat23 = evidence_root / "compat23"
     compat34 = evidence_root / "compat34"
 
-    storage_summary_path = smoke / "build/android-smoke/m1-b-evidence/verification-summary.json"
+    storage_summary_path = find_unique_file(smoke, "m1-b-evidence/verification-summary.json")
     storage = require_pass(storage_summary_path)
     require(storage.get("gateCounts") == {
         "M1-ACC-01": 1, "M1-ACC-02": 6, "M1-ACC-03": 2
@@ -155,10 +174,10 @@ def collect(
 
     positive_m1c, negative_m1c = verify_m1c(smoke)
 
-    d_summary_path = smoke / "build/android-smoke/m1-d-evidence/verified/verification-summary.json"
+    d_summary_path = find_unique_file(smoke, "m1-d-evidence/verified/verification-summary.json")
     d_summary = require_pass(d_summary_path)
 
-    e_summary_path = smoke / "build/android-smoke/m1-e-evidence/verified/verification-summary.json"
+    e_summary_path = find_unique_file(smoke, "m1-e-evidence/verified/verification-summary.json")
     e_summary = require_pass(e_summary_path)
     cases = e_summary.get("cases")
     require(isinstance(cases, dict) and set(cases) == {"E1","E2","E3","E4","E5","E6"},
@@ -174,20 +193,23 @@ def collect(
     }
     recovery_proofs: dict[str, pathlib.Path] = {}
     for gate, (case_dir, scenario) in recovery_map.items():
-        path = recovery / f"build/m1-recovery/cases/{case_dir}/verified/recovery-summary-v2.json"
+        path = find_unique_file(
+            recovery,
+            f"cases/{case_dir}/verified/recovery-summary-v2.json",
+        )
         payload = require_pass(path)
         require(payload.get("scenarioId") == scenario, f"{gate}: recovery scenario mismatch")
         require(payload.get("coverage", {}).get("exactMatch") is True,
                 f"{gate}: independent coverage mismatch")
         recovery_proofs[gate] = path
 
-    acc15_summary_path = acc15 / "build/m1-acc15/verification-summary.json"
+    acc15_summary_path = find_unique_file(acc15, "verification-summary.json")
     acc15_summary = require_pass(acc15_summary_path)
     require(acc15_summary.get("gateId") == "M1-ACC-15" and acc15_summary.get("caseCount") == 4,
             "ACC-15 summary contract mismatch")
 
     for api, root in ((23, compat23), (34, compat34)):
-        path = root / f"build/android-compat/api-{api}/device/device-api.txt"
+        path = find_unique_file(root, f"api-{api}/device/device-api.txt")
         require(path.is_file(), f"missing API {api} compatibility identity")
         require(path.read_text(encoding="utf-8").strip() == str(api),
                 f"API {api} compatibility artifact identity mismatch")
@@ -195,7 +217,7 @@ def collect(
     # Bind the accepted seed matrix and normative scenario into m1-run-manifest-v1.
     generated_root.mkdir(parents=True, exist_ok=True)
     seed_entries = []
-    c_root = smoke / "build/android-smoke/m1-c-evidence/verified"
+    c_root = find_unique_dir(smoke, "m1-c-evidence") / "verified"
     for seed in ALL_SEEDS:
         path = c_root / seed / "seed-manifest.json"
         seed_entries.append({"seedId": seed, "sha256": sha256(path)})
@@ -260,15 +282,15 @@ def collect(
     }
 
     selected_roots = (
-        smoke / "build/android-smoke/m1-b-evidence",
-        smoke / "build/android-smoke/m1-c-evidence",
-        smoke / "build/android-smoke/m1-d-evidence",
-        smoke / "build/android-smoke/m1-e-evidence",
-        acc15 / "build/m1-acc15",
-        recovery / "build/m1-recovery/cases",
-        host / "core/engine/build/test-results",
-        compat23 / "build/android-compat/api-23",
-        compat34 / "build/android-compat/api-34",
+        find_unique_dir(smoke, "m1-b-evidence"),
+        find_unique_dir(smoke, "m1-c-evidence"),
+        find_unique_dir(smoke, "m1-d-evidence"),
+        find_unique_dir(smoke, "m1-e-evidence"),
+        acc15,
+        find_unique_dir(recovery, "cases"),
+        find_unique_dir(host, "test-results"),
+        find_unique_dir(compat23, "api-23"),
+        find_unique_dir(compat34, "api-34"),
         generated_root,
     )
     artifact_paths: dict[str, pathlib.Path] = {}
@@ -318,9 +340,6 @@ def verify_index(
     generated_root: pathlib.Path,
     expected_git_commit: str,
 ) -> None:
-    index_schema = read_json(INDEX_SCHEMA)
-    validate_schema_definition(index_schema)
-    validate_instance(index_schema, index, root_schema=index_schema)
     require(index.get("status") == "PASS", "acceptance status is not PASS")
     require(index.get("gitCommit") == expected_git_commit, "acceptance git commit mismatch")
     gates = index.get("gates")
@@ -329,6 +348,10 @@ def verify_index(
     require(len(ids) == 16 and len(set(ids)) == 16 and set(ids) == set(GATES),
             "canonical acceptance must contain exactly unique 16/16 gates")
     require(all(row.get("status") == "PASS" for row in gates), "non-PASS MUST gate")
+
+    index_schema = read_json(INDEX_SCHEMA)
+    validate_schema_definition(index_schema)
+    validate_instance(index_schema, index, root_schema=index_schema)
 
     artifacts = index.get("artifacts")
     require(isinstance(artifacts, list) and artifacts, "artifact index is empty")
