@@ -76,14 +76,52 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         case["initialDurableReserveUs"] = 10_000_000
         fetch = [
             self.fetch(0, "OWNER_REGISTERED", "f1", "k"),
-            self.fetch(1, "OWNER_REGISTERED", "f2", "k"),
-            self.fetch(2, "OWNER_CANCELLED", "f2", "k", outcome="CANCELLED_NO_CONSUMERS"),
-            self.fetch(3, "OWNER_CANCELLED", "f1", "k", outcome="CANCELLED_NO_CONSUMERS"),
+            self.fetch(1, "ATTEMPT_STARTED", "f1", "k", attempt=1),
+            self.fetch(
+                2,
+                "ATTEMPT_CORRELATED",
+                "f1",
+                "k",
+                attempt=1,
+                request="7",
+            ),
+            self.fetch(3, "OWNER_REGISTERED", "f2", "k"),
+            self.fetch(
+                4,
+                "OWNER_CANCELLED",
+                "f2",
+                "k",
+                outcome="CANCELLED_NO_CONSUMERS",
+            ),
+            self.fetch(
+                5,
+                "OWNER_CANCELLED",
+                "f1",
+                "k",
+                outcome="CANCELLED_NO_CONSUMERS",
+            ),
         ]
         gate = self.short_gate()
+        origin = [
+            {
+                "requestId": 7,
+                "plane": "data",
+                "path": "/fixtures/F1/a",
+            },
+        ]
         coverage = self.coverage()
         with self.assertRaisesRegex(RecoveryEvidenceError, "overlapping"):
-            verify(case, [], fetch, [], gate, [], None, coverage, coverage)
+            verify(
+                case,
+                [],
+                fetch,
+                [],
+                gate,
+                origin,
+                None,
+                coverage,
+                coverage,
+            )
 
     def test_rejects_gate_request_absent_from_origin_trace(self):
         case = self.case("N4R-SHORT")
