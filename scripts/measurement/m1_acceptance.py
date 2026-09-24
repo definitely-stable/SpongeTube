@@ -318,6 +318,9 @@ def verify_index(
     generated_root: pathlib.Path,
     expected_git_commit: str,
 ) -> None:
+    index_schema = read_json(INDEX_SCHEMA)
+    validate_schema_definition(index_schema)
+    validate_instance(index_schema, index, root_schema=index_schema)
     require(index.get("status") == "PASS", "acceptance status is not PASS")
     require(index.get("gitCommit") == expected_git_commit, "acceptance git commit mismatch")
     gates = index.get("gates")
@@ -342,6 +345,9 @@ def verify_index(
     manifest_path = str(index.get("manifest"))
     require(manifest_path in by_path, "manifest is not indexed")
     manifest = read_json(resolve_index_path(manifest_path, evidence_root, generated_root))
+    run_schema = read_json(RUN_SCHEMA)
+    validate_schema_definition(run_schema)
+    validate_instance(run_schema, manifest, root_schema=run_schema)
     require(manifest.get("gitCommit") == expected_git_commit, "manifest git commit mismatch")
     require(manifest.get("runId") == index.get("runId"), "manifest/index runId mismatch")
     require(manifest.get("sessionId") == f"{index.get('runId')}-aggregate",
