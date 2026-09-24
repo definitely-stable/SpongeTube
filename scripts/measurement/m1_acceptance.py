@@ -209,7 +209,7 @@ def collect(
             "ACC-15 summary contract mismatch")
 
     for api, root in ((23, compat23), (34, compat34)):
-        path = find_unique_file(root, f"api-{api}/device/device-api.txt")
+        path = find_unique_file(root, "device/device-api.txt")
         require(path.is_file(), f"missing API {api} compatibility identity")
         require(path.read_text(encoding="utf-8").strip() == str(api),
                 f"API {api} compatibility artifact identity mismatch")
@@ -289,8 +289,8 @@ def collect(
         acc15,
         find_unique_dir(recovery, "cases"),
         find_unique_dir(host, "test-results"),
-        find_unique_dir(compat23, "api-23"),
-        find_unique_dir(compat34, "api-34"),
+        compat23,
+        compat34,
         generated_root,
     )
     artifact_paths: dict[str, pathlib.Path] = {}
