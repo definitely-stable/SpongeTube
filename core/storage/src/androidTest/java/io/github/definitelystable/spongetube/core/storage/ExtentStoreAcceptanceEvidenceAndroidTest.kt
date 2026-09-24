@@ -120,9 +120,9 @@ class ExtentStoreAcceptanceEvidenceAndroidTest {
                     point == ExtentFaultPoint.AFTER_PUBLISH
 
             assertEquals(
+                point.name,
                 if (shouldBePublished) 1 else 0,
                 committed.size,
-                point.name,
             )
             reopened.close()
 
@@ -173,7 +173,7 @@ class ExtentStoreAcceptanceEvidenceAndroidTest {
 
                 val reopened = openStore()
                 val recovery = reopened.initialRecoveryReport
-                assertEquals(1, recovery.quarantinedExtents, mutation)
+                assertEquals(mutation, 1, recovery.quarantinedExtents)
                 assertTrue(reopened.committedExtents().isEmpty())
                 reopened.close()
 
