@@ -85,6 +85,21 @@ jobs:
           git diff --exit-code -- core/storage/schemas/
           test -z "$(git status --porcelain --untracked-files=all -- core/storage/schemas/)"
 
+      - name: Verify M1 ACC-15 range continuation evidence
+        shell: bash
+        run: |
+          bash scripts/ci/verify-m1-acc15-evidence.sh \
+            build/m1-acc15
+
+      - name: Upload M1 ACC-15 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m1-acc15-evidence
+          path: build/m1-acc15/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

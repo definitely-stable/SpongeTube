@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "caseId": "MATCHING_206",
+  "requestedByteStart": 100,
+  "requestedByteEndExclusive": 1100,
+  "resourceLength": 4096,
+  "requestRange": "bytes=100-1099",
+  "responseStatus": 206,
+  "responseContentRange": "bytes 100-1099/4096",
+  "outcome": "SUCCESS",
+  "retryable": false,
+  "emittedBytes": 1000,
+  "transportCorrelationId": "lab-1"
+}

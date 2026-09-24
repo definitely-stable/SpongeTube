@@ -36,6 +36,7 @@ CONTRACTS = {
     "recovery-summary-v2.schema.json": "recovery-summary-v2.example.json",
     "recovery-timeline-v1.schema.json": "recovery-timeline-v1.example.json",
     "origin-gate-events-v1.schema.json": "origin-gate-event-v1.example.json",
+    "range-continuation-v1.schema.json": "range-continuation-v1.example.json",
     "committed-extents-v1.schema.json": "committed-extents-v1.example.json",
     "committed-extents-v2.schema.json": "committed-extents-v2.example.json",
     "verified-extent-files-v1.schema.json": "verified-extent-files-v1.example.json",
