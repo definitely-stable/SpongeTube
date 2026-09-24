@@ -1,6 +1,18 @@
 name: M1 Acceptance
 
 on:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m1-acceptance.yml"
+      - ".github/workflows/verify.yml"
+      - ".github/workflows/android-smoke.yml"
+      - ".github/workflows/android-compat.yml"
+      - ".github/workflows/m1-recovery.yml"
+      - "scripts/measurement/m1_acceptance.py"
+      - "scripts/measurement/tests/test_m1_acceptance.py"
+      - ".work/schemas/m1-acceptance-index-v1.schema.json"
+      - ".work/schemas/m1-run-manifest-v1.schema.json"
   pull_request:
     branches: [ main ]
     types: [opened, synchronize, reopened, labeled]
@@ -26,24 +38,28 @@ concurrency:
 jobs:
   verify:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
     uses: ./.github/workflows/verify.yml
 
   android-smoke:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
     uses: ./.github/workflows/android-smoke.yml
 
   android-compat:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
     uses: ./.github/workflows/android-compat.yml
 
   recovery:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'evidence:m1-acceptance')
     uses: ./.github/workflows/m1-recovery.yml
