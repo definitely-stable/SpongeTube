@@ -134,6 +134,55 @@ class M1N4RecoveryTest {
         env.harness.exportEvidence(env.sessionId)
     }
 
+    @Test
+    fun n4rFlapKeepsRecoveryBoundedAcrossThreeGenerations() {
+        val env = environment("m1-f-flap", "N4R-FLAP")
+        env.gate.open("flap-reset")
+        env.gate.close("flap-1-close")
+        env.harness.startN4R(
+            env.sessionId,
+            env.scenario,
+            env.originBaseUrl,
+        )
+        awaitPlayingAndBlocked(env)
+
+        for (generation in 1..3) {
+            if (generation > 1) {
+                env.gate.close("flap-$generation-close")
+                awaitStatus(
+                    env,
+                    INITIAL_TIMEOUT_MS,
+                    "FLAP generation $generation blocked request",
+                ) {
+                    env.gate.state().activeBlockedRequests > 0
+                }
+            }
+
+            Thread.sleep(FLAP_HOLD_MS)
+            env.gate.open("flap-$generation-open")
+            awaitStatus(
+                env,
+                RECOVERY_TIMEOUT_MS,
+                "FLAP generation $generation release",
+            ) {
+                env.gate.state().activeBlockedRequests == 0
+            }
+        }
+
+        val recovered = awaitStatus(
+            env,
+            RECOVERY_TIMEOUT_MS,
+            "FLAP final same-player progress",
+        ) { status ->
+            !status.getBoolean(M1RecoveryHarnessClient.KEY_STALL_ACTIVE) &&
+                status.getLong(M1RecoveryHarnessClient.KEY_POSITION_US) >=
+                FLAP_MIN_PROGRESS_US
+        }
+        assertNoPlayerErrors(recovered)
+        env.harness.finishN4R(env.sessionId)
+        env.harness.exportEvidence(env.sessionId)
+    }
+
     private fun environment(
         sessionId: String,
         scenario: String,
@@ -220,7 +269,9 @@ class M1N4RecoveryTest {
         const val RECOVERY_TIMEOUT_MS = 60_000L
         const val SHORT_HOLD_MS = 1_000L
         const val EXHAUST_SETTLE_MS = 2_000L
+        const val FLAP_HOLD_MS = 500L
         const val SHORT_MIN_PROGRESS_US = 2_000_000L
+        const val FLAP_MIN_PROGRESS_US = 2_000_000L
         const val RESTORE_ADVANCE_US = 1_000_000L
     }
 }

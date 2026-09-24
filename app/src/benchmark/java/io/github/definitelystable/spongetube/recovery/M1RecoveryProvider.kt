@@ -523,6 +523,7 @@ class M1RecoveryProvider : ContentProvider() {
         private fun recordExtentEvent(event: ExtentLifecycleEvent) {
             val unit = unitByExtentId[event.extentId.value]
                 ?: error("unknown F1 extent lifecycle identity: ${event.extentId}")
+            val spec = unit.toExtentSpec()
             extentEvents += linkedMapOf(
                 "schemaVersion" to 1,
                 "eventSequence" to extentEventCounter.getAndIncrement(),
@@ -541,14 +542,16 @@ class M1RecoveryProvider : ContentProvider() {
                     } else {
                         "UNKNOWN"
                     },
-                "trackId" to unit.trackId,
-                "representationId" to unit.representationId,
-                "mediaStartUs" to unit.mediaStartUs,
-                "mediaEndUs" to unit.mediaEndUs,
-                "dependencyExtentIds" to JSONArray(unit.dependencyExtentIds),
-                "byteStart" to 0,
-                "byteEndExclusive" to unit.length,
-                "expectedLength" to unit.length,
+                "trackId" to spec.trackId,
+                "representationId" to spec.representationId,
+                "mediaStartUs" to spec.mediaStartUs,
+                "mediaEndUs" to spec.mediaEndUs,
+                "dependencyExtentIds" to JSONArray(
+                    spec.dependencyExtentIds.map { it.value },
+                ),
+                "byteStart" to spec.byteStart,
+                "byteEndExclusive" to spec.byteEndExclusive,
+                "expectedLength" to spec.expectedLength,
                 "actualLength" to event.actualLength,
                 "sha256" to event.sha256?.hex,
             )
