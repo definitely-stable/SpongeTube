@@ -99,7 +99,7 @@ jobs:
       - name: Assemble and verify canonical M1 evidence
         shell: bash
         env:
-          ACCEPTANCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ACCEPTANCE_SHA: ${{ github.sha }}
           ACCEPTANCE_RUN_ID: m1-canonical-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
