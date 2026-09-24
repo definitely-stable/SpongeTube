@@ -21,6 +21,7 @@ import io.github.definitelystable.spongetube.core.engine.SpongeBridgeApi
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FetchUnit
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureAssets
+import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureCatalog
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.runBlocking
@@ -196,7 +197,7 @@ internal class BridgeScenario(
                 writer.newLine()
             }
         }
-        output.openOutputFile("$prefix/fetch-events-v2.jsonl").bufferedWriter().use { writer ->
+        output.openOutputFile("$prefix/fetch-events-v3.jsonl").bufferedWriter().use { writer ->
             fetchEvents.sortedBy { (it["eventSequence"] as Number).toLong() }.forEach { row ->
                 writer.write(JSONObject(row).toString())
                 writer.newLine()
