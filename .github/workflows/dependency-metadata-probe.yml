@@ -1,0 +1,77 @@
+name: Dependency Metadata Probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-metadata-probe.yml"
+      - "gradle/verification-metadata.xml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Resolve exact benchmark tested APK metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            --no-configuration-cache \
+            --write-verification-metadata sha256 \
+            :benchmark:dependencies \
+            --configuration benchmarkTestedApks
+
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          path = "gradle/verification-metadata.xml"
+          root = ET.parse(path).getroot()
+          ns = {"v": "https://schema.gradle.org/dependency-verification"}
+          wanted = {
+              ("androidx.room3", "room3-runtime-jvm", "3.0.3"),
+              ("androidx.sqlite", "sqlite-async-jvm", "2.7.1"),
+              ("androidx.sqlite", "sqlite-jvm", "2.7.1"),
+          }
+          found = set()
+          for component in root.findall(".//v:component", ns):
+              key = (
+                  component.attrib.get("group"),
+                  component.attrib.get("name"),
+                  component.attrib.get("version"),
+              )
+              if key not in wanted:
+                  continue
+              found.add(key)
+              print("COMPONENT", *key)
+              for artifact in component.findall("v:artifact", ns):
+                  print(" ARTIFACT", artifact.attrib["name"])
+                  for digest in artifact.findall("v:sha256", ns):
+                      print("  SHA256", digest.attrib["value"])
+          missing = wanted - found
+          if missing:
+              raise SystemExit(f"missing generated components: {sorted(missing)}")
+          PY
+
+      - name: Upload generated metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-metadata-probe
+          path: gradle/verification-metadata.xml
+          if-no-files-found: error
+          retention-days: 1
