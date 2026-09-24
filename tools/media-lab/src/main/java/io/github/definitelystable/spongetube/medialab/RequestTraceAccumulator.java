@@ -41,6 +41,10 @@ final class RequestTraceAccumulator {
         this.rangeHeader = rangeHeader;
     }
 
+    long requestId() {
+        return requestId;
+    }
+
     void markFirstBodyWrite(long atMonotonicNs) {
         if (firstBodyWriteAtMonotonicNs == null) {
             firstBodyWriteAtMonotonicNs = atMonotonicNs;

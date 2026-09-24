@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "serverEventSequence": 2,
+  "serverMonotonicNs": 123456789,
+  "event": "REQUEST_BLOCKED",
+  "gateGeneration": 1,
+  "commandId": "restore-1-close",
+  "requestId": 17
+}

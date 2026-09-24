@@ -33,6 +33,10 @@ final class JsonLineTraceWriter implements Closeable {
         appendLine(event.toJsonLine());
     }
 
+    synchronized void append(OriginGateEvent event) throws IOException {
+        appendLine(event.toJsonLine());
+    }
+
     private void appendLine(String line) throws IOException {
         ensureOpen();
         writer.write(line);

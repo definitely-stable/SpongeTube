@@ -55,12 +55,15 @@ internal class HttpRangeFetchExecutor(
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition {
         val target = targetFor(request)
-            ?: return failure(FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE)
+            ?: return failure(
+                FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE,
+                null,
+            )
         val spec = request.extentSpec
         val start = spec.byteStart ?: 0L
         val endExclusive = spec.byteEndExclusive ?: (start + spec.expectedLength)
         if (endExclusive > target.resourceLength) {
-            return failure(FetchOutcomeKind.RANGE_REJECTED)
+            return failure(FetchOutcomeKind.RANGE_REJECTED, null)
         }
 
         return withContext(Dispatchers.IO) {
@@ -111,18 +114,21 @@ internal class HttpRangeFetchExecutor(
             connection.responseCode
         } catch (_: IOException) {
             currentCoroutineContext().ensureActive()
-            return retryable()
+            return retryable(null)
         }
         val correlation = connection.getHeaderField(LAB_REQUEST_HEADER)
 
         when {
             status == HttpURLConnection.HTTP_PARTIAL -> Unit
             status == HttpURLConnection.HTTP_OK ->
-                return failure(FetchOutcomeKind.RANGE_REJECTED)
+                return failure(FetchOutcomeKind.RANGE_REJECTED, correlation)
             status == HTTP_REQUEST_TIMEOUT ||
                 status == HTTP_TOO_MANY_REQUESTS ||
-                status >= 500 -> return retryable()
-            else -> return failure(FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE)
+                status >= 500 -> return retryable(correlation)
+            else -> return failure(
+                FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE,
+                correlation,
+            )
         }
 
         val contentRange = ContentRange.parse(
@@ -134,7 +140,7 @@ internal class HttpRangeFetchExecutor(
             contentRange.endInclusive != endExclusive - 1 ||
             (contentRange.total != null && contentRange.total != resourceLength)
         ) {
-            return failure(FetchOutcomeKind.RANGE_REJECTED)
+            return failure(FetchOutcomeKind.RANGE_REJECTED, correlation)
         }
 
         var position = start
@@ -154,31 +160,47 @@ internal class HttpRangeFetchExecutor(
                     if (read == 0) {
                         continue
                     }
-                    emitChunk(FetchNetworkChunk(position, buffer.copyOf(read)))
+                    emitChunk(
+                        FetchNetworkChunk(
+                            byteStart = position,
+                            bytes = buffer.copyOf(read),
+                            transportCorrelationId = correlation,
+                        ),
+                    )
                     position += read
                 }
             }
         } catch (_: IOException) {
             currentCoroutineContext().ensureActive()
-            return retryable()
+            return retryable(correlation)
         }
 
         if (position != endExclusive) {
-            return retryable()
+            return retryable(correlation)
         }
         return FetchAttemptDisposition.Success(
             transportCorrelationId = correlation,
         )
     }
 
-    private fun retryable(): FetchAttemptDisposition =
+    private fun retryable(
+        transportCorrelationId: String?,
+    ): FetchAttemptDisposition =
         FetchAttemptDisposition.Failure(
             kind = FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
             retryable = true,
+            transportCorrelationId = transportCorrelationId,
         )
 
-    private fun failure(kind: FetchOutcomeKind): FetchAttemptDisposition =
-        FetchAttemptDisposition.Failure(kind = kind, retryable = false)
+    private fun failure(
+        kind: FetchOutcomeKind,
+        transportCorrelationId: String?,
+    ): FetchAttemptDisposition =
+        FetchAttemptDisposition.Failure(
+            kind = kind,
+            retryable = false,
+            transportCorrelationId = transportCorrelationId,
+        )
 
     internal data class ContentRange(
         val start: Long,

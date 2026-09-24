@@ -5,6 +5,7 @@ internal enum class FetchEventKind {
     CONSUMER_JOINED,
     PRIORITY_RAISED,
     ATTEMPT_STARTED,
+    ATTEMPT_PROGRESS,
     ATTEMPT_COMPLETED,
     ATTEMPT_FAILED,
     CONSUMER_RELEASED,
@@ -27,6 +28,8 @@ internal data class FetchEvent(
     val effectivePriority: FetchPriority,
     val requestedByteStart: Long?,
     val requestedByteEndExclusive: Long?,
+    val chunkByteStart: Long?,
+    val chunkByteEndExclusive: Long?,
     val networkBytes: Long,
     val uniqueRangeBytes: Long,
     val duplicateRangeBytes: Long,
@@ -40,6 +43,12 @@ internal data class FetchEvent(
         require(sessionId.isNotBlank())
         require(attempt == null || attempt >= 1)
         require((attempt == null) == (attemptCorrelationId == null))
+        require((chunkByteStart == null) == (chunkByteEndExclusive == null))
+        if (chunkByteStart != null && chunkByteEndExclusive != null) {
+            require(chunkByteStart >= 0)
+            require(chunkByteEndExclusive > chunkByteStart)
+            require(attempt != null) { "chunk evidence requires an attempt" }
+        }
         require(networkBytes >= 0)
         require(uniqueRangeBytes >= 0)
         require(duplicateRangeBytes >= 0)
@@ -53,7 +62,7 @@ internal data class FetchEvent(
     }
 
     fun toArtifactMap(): Map<String, Any?> = linkedMapOf(
-        "schemaVersion" to 2,
+        "schemaVersion" to 3,
         "eventSequence" to eventSequence,
         "eventElapsedRealtimeNs" to eventElapsedRealtimeNs,
         "sessionId" to sessionId,
@@ -67,6 +76,8 @@ internal data class FetchEvent(
         "effectivePriority" to effectivePriority.name,
         "requestedByteStart" to requestedByteStart,
         "requestedByteEndExclusive" to requestedByteEndExclusive,
+        "chunkByteStart" to chunkByteStart,
+        "chunkByteEndExclusive" to chunkByteEndExclusive,
         "networkBytes" to networkBytes,
         "uniqueRangeBytes" to uniqueRangeBytes,
         "duplicateRangeBytes" to duplicateRangeBytes,

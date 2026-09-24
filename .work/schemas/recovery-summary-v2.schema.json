@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/recovery-summary-v2.schema.json",
+  "title": "SpongeTube M1 Recovery Summary v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioId",
+    "status",
+    "process",
+    "fetch",
+    "playback",
+    "coverage",
+    "invariants"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarioId": {
+      "enum": [
+        "PROCESS_DEATH",
+        "N4R-SHORT",
+        "N4R-EXHAUST",
+        "N4R-RESTORE",
+        "N4R-FLAP"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PASS"
+      ]
+    },
+    "process": {
+      "type": "object",
+      "required": [
+        "pidBefore",
+        "pidAfter",
+        "pidChanged"
+      ],
+      "properties": {
+        "pidBefore": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "pidAfter": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "pidChanged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "fetch": {
+      "type": "object",
+      "required": [
+        "ownerCount",
+        "physicalAttemptCount",
+        "maxAttemptsPerOwner",
+        "media3MaxRetries",
+        "sessionDuplicateRangeBytes",
+        "originRequestCount"
+      ],
+      "properties": {
+        "ownerCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "physicalAttemptCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxAttemptsPerOwner": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "media3MaxRetries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionDuplicateRangeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "originRequestCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "playback": {
+      "type": "object",
+      "required": [
+        "stallCount",
+        "samePlayerRecovered",
+        "postRestoreProgress"
+      ],
+      "properties": {
+        "stallCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "samePlayerRecovered": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "postRestoreProgress": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "beforeDigest",
+        "afterDigest",
+        "oracleDigest",
+        "exactMatch"
+      ],
+      "properties": {
+        "beforeDigest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "afterDigest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "oracleDigest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "exactMatch": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "invariants": {
+      "type": "object",
+      "required": [
+        "boundedAttempts",
+        "noOverlappingOwners",
+        "originBijection",
+        "noValidExtentRefetch",
+        "clockDomainsKeptSeparate"
+      ],
+      "properties": {
+        "boundedAttempts": {
+          "type": "boolean"
+        },
+        "noOverlappingOwners": {
+          "type": "boolean"
+        },
+        "originBijection": {
+          "type": "boolean"
+        },
+        "noValidExtentRefetch": {
+          "type": "boolean"
+        },
+        "clockDomainsKeptSeparate": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

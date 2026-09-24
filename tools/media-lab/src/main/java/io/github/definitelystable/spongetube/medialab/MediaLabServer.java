@@ -25,6 +25,8 @@ final class MediaLabServer implements AutoCloseable {
     private final FixtureCatalog catalog;
     private final JsonLineTraceWriter requestTraceWriter;
     private final JsonLineTraceWriter eventTraceWriter;
+    private final JsonLineTraceWriter gateEventTraceWriter;
+    private final ManualBodyProgressGate manualBodyProgressGate;
     private final SessionCalibration calibration;
     private final SessionEventRecorder events;
     private final FixtureBodyWriter fixtureBodyWriter;
@@ -42,6 +44,8 @@ final class MediaLabServer implements AutoCloseable {
             FixtureCatalog catalog,
             JsonLineTraceWriter requestTraceWriter,
             JsonLineTraceWriter eventTraceWriter,
+            JsonLineTraceWriter gateEventTraceWriter,
+            ManualBodyProgressGate manualBodyProgressGate,
             SessionCalibration calibration,
             SessionEventRecorder events,
             FixtureBodyWriter fixtureBodyWriter,
@@ -55,6 +59,8 @@ final class MediaLabServer implements AutoCloseable {
         this.catalog = catalog;
         this.requestTraceWriter = requestTraceWriter;
         this.eventTraceWriter = eventTraceWriter;
+        this.gateEventTraceWriter = gateEventTraceWriter;
+        this.manualBodyProgressGate = manualBodyProgressGate;
         this.calibration = calibration;
         this.events = events;
         this.fixtureBodyWriter = fixtureBodyWriter;
@@ -82,6 +88,7 @@ final class MediaLabServer implements AutoCloseable {
         ExecutorService controlExecutor = null;
         JsonLineTraceWriter requestTraceWriter = null;
         JsonLineTraceWriter eventTraceWriter = null;
+        JsonLineTraceWriter gateEventTraceWriter = null;
 
         try {
             ensureArtifactsAbsent(config);
@@ -98,12 +105,26 @@ final class MediaLabServer implements AutoCloseable {
 
             requestTraceWriter = new JsonLineTraceWriter(config.tracePath());
             eventTraceWriter = new JsonLineTraceWriter(config.sessionTracePath());
+            if (config.profile() == MediaLabProfile.N4R) {
+                gateEventTraceWriter =
+                        new JsonLineTraceWriter(config.gateTracePath());
+            }
 
             SessionCalibration calibration = new SessionCalibration();
             SessionEventRecorder events =
                     new SessionEventRecorder(config, scenario, clock, eventTraceWriter);
+            ManualBodyProgressGate manualBodyProgressGate =
+                    gateEventTraceWriter == null
+                            ? null
+                            : new ManualBodyProgressGate(clock, gateEventTraceWriter);
             FixtureBodyWriter fixtureBodyWriter =
-                    new FixtureBodyWriter(scenario, clock, sleeper, events, calibration);
+                    new FixtureBodyWriter(
+                            scenario,
+                            clock,
+                            sleeper,
+                            events,
+                            calibration,
+                            manualBodyProgressGate);
 
             MediaLabServer mediaLab = new MediaLabServer(
                     config,
@@ -112,6 +133,8 @@ final class MediaLabServer implements AutoCloseable {
                     catalog,
                     requestTraceWriter,
                     eventTraceWriter,
+                    gateEventTraceWriter,
+                    manualBodyProgressGate,
                     calibration,
                     events,
                     fixtureBodyWriter,
@@ -142,13 +165,18 @@ final class MediaLabServer implements AutoCloseable {
             }
             boolean requestTraceCreated = requestTraceWriter != null;
             boolean eventTraceCreated = eventTraceWriter != null;
+            boolean gateTraceCreated = gateEventTraceWriter != null;
             closeQuietly(requestTraceWriter);
             closeQuietly(eventTraceWriter);
+            closeQuietly(gateEventTraceWriter);
             if (requestTraceCreated) {
                 deleteQuietly(config.tracePath());
             }
             if (eventTraceCreated) {
                 deleteQuietly(config.sessionTracePath());
+            }
+            if (gateTraceCreated) {
+                deleteQuietly(config.gateTracePath());
             }
             throw exception;
         }
@@ -190,7 +218,11 @@ final class MediaLabServer implements AutoCloseable {
                 + Json.quote("catalogResources") + ":" + catalog.size() + ","
                 + Json.quote("requestTrace") + ":" + Json.quote(config.tracePath().toString()) + ","
                 + Json.quote("sessionTrace") + ":" + Json.quote(config.sessionTracePath().toString()) + ","
-                + Json.quote("calibration") + ":" + Json.quote(config.calibrationPath().toString())
+                + Json.quote("calibration") + ":" + Json.quote(config.calibrationPath().toString()) + ","
+                + Json.quote("gateTrace") + ":"
+                + (manualBodyProgressGate == null
+                        ? "null"
+                        : Json.quote(config.gateTracePath().toString()))
                 + "}";
     }
 
@@ -289,6 +321,46 @@ final class MediaLabServer implements AutoCloseable {
                 return;
             }
             sendJson(exchange, trace, 200, configJson());
+            return;
+        }
+
+        if (rawPath.startsWith("/__lab/gate/media")) {
+            if (manualBodyProgressGate == null) {
+                sendErrorJson(exchange, trace, 409, "manual_gate_unavailable");
+                trace.outcome = TraceOutcome.SERVER_IO_ERROR;
+                return;
+            }
+            if ("/__lab/gate/media".equals(rawPath)) {
+                if (!"GET".equals(method)) {
+                    sendMethodNotAllowed(exchange, trace, "GET");
+                    return;
+                }
+                sendJson(exchange, trace, 200, manualBodyProgressGate.stateJson());
+                return;
+            }
+            if (!"POST".equals(method)) {
+                sendMethodNotAllowed(exchange, trace, "POST");
+                return;
+            }
+            String commandId =
+                    exchange.getRequestHeaders().getFirst("X-Sponge-Gate-Command");
+            try {
+                String state = switch (rawPath) {
+                    case "/__lab/gate/media/close" ->
+                            manualBodyProgressGate.close(commandId);
+                    case "/__lab/gate/media/open" ->
+                            manualBodyProgressGate.open(commandId);
+                    default -> null;
+                };
+                if (state == null) {
+                    sendNotFound(exchange, trace);
+                } else {
+                    sendJson(exchange, trace, 200, state);
+                }
+            } catch (IllegalArgumentException invalidCommand) {
+                sendErrorJson(exchange, trace, 400, "invalid_gate_command");
+                trace.outcome = TraceOutcome.SERVER_IO_ERROR;
+            }
             return;
         }
 
@@ -540,6 +612,18 @@ final class MediaLabServer implements AutoCloseable {
             }
         }
 
+        if (gateEventTraceWriter != null) {
+            try {
+                gateEventTraceWriter.close();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+
         if (failure != null) {
             throw failure;
         }
@@ -549,7 +633,8 @@ final class MediaLabServer implements AutoCloseable {
         for (Path path : new Path[] {
                 config.tracePath(),
                 config.sessionTracePath(),
-                config.calibrationPath()
+                config.calibrationPath(),
+                config.gateTracePath()
         }) {
             if (Files.exists(path)) {
                 throw new IOException("Evidence artifact already exists: " + path);

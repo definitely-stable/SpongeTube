@@ -12,7 +12,7 @@ test -d "$ADDITIONAL_OUTPUT_ROOT"
 test -s "$ORIGIN_TRACE"
 
 mapfile -t EVENT_FILES < <(
-  find "$ADDITIONAL_OUTPUT_ROOT"     -type f     -path '*/m1-d-evidence/fetch-events-v2.jsonl'     -print
+  find "$ADDITIONAL_OUTPUT_ROOT"     -type f     -path '*/m1-d-evidence/fetch-events-v3.jsonl'     -print
 )
 
 if [[ "${#EVENT_FILES[@]}" -ne 1 ]]; then
@@ -21,10 +21,10 @@ if [[ "${#EVENT_FILES[@]}" -ne 1 ]]; then
   exit 1
 fi
 
-cp "${EVENT_FILES[0]}" "$OUTPUT_ROOT/device/fetch-events-v2.jsonl"
+cp "${EVENT_FILES[0]}" "$OUTPUT_ROOT/device/fetch-events-v3.jsonl"
 cp "$ORIGIN_TRACE" "$OUTPUT_ROOT/verified/origin-requests.jsonl"
 
-python3 scripts/measurement/m1_fetch_evidence.py   --fetch-events "$OUTPUT_ROOT/device/fetch-events-v2.jsonl"   --origin-trace "$OUTPUT_ROOT/verified/origin-requests.jsonl"   --output "$OUTPUT_ROOT/verified/verification-summary.json"
+python3 scripts/measurement/m1_fetch_evidence.py   --fetch-events "$OUTPUT_ROOT/device/fetch-events-v3.jsonl"   --origin-trace "$OUTPUT_ROOT/verified/origin-requests.jsonl"   --output "$OUTPUT_ROOT/verified/verification-summary.json"
 
 python3 - "$OUTPUT_ROOT/verified/verification-summary.json" <<'PY'
 import json

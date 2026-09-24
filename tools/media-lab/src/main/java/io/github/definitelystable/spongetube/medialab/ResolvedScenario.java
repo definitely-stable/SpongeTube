@@ -106,6 +106,18 @@ record ResolvedScenario(
                             "noProgressStartAfterMs"),
                     CANONICAL_N4_DURATION_MS,
                     null);
+            case N4R -> new ResolvedScenario(
+                    1,
+                    "N4R",
+                    MediaLabProfile.N4R,
+                    0,
+                    null,
+                    null,
+                    null,
+                    config.writeQuantumBytes(),
+                    null,
+                    null,
+                    null);
         };
     }
 

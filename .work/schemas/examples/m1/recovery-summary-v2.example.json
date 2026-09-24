@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "runId": "m1-f-restore",
+  "sessionId": "m1-f-restore",
+  "scenarioId": "N4R-RESTORE",
+  "status": "PASS",
+  "process": {
+    "pidBefore": null,
+    "pidAfter": null,
+    "pidChanged": null
+  },
+  "fetch": {
+    "ownerCount": 2,
+    "physicalAttemptCount": 3,
+    "maxAttemptsPerOwner": 2,
+    "media3MaxRetries": 3,
+    "sessionDuplicateRangeBytes": 0,
+    "originRequestCount": 3
+  },
+  "playback": {
+    "stallCount": 1,
+    "samePlayerRecovered": true,
+    "postRestoreProgress": true
+  },
+  "coverage": {
+    "beforeDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "afterDigest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "oracleDigest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "exactMatch": true
+  },
+  "invariants": {
+    "boundedAttempts": true,
+    "noOverlappingOwners": true,
+    "originBijection": true,
+    "noValidExtentRefetch": true,
+    "clockDomainsKeptSeparate": true
+  }
+}

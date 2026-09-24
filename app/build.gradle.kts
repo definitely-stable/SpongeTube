@@ -33,6 +33,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    sourceSets {
+        getByName("benchmark").assets.srcDir(
+            rootProject.file("test-fixtures/media"),
+        )
+    }
+
     lint {
         abortOnError = true
     }
@@ -52,6 +58,9 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     add("benchmarkImplementation", libs.androidx.profileinstaller)
+    add("benchmarkImplementation", project(":playback:bridge"))
+    add("benchmarkImplementation", project(":test-support:playback-f1"))
+    add("benchmarkImplementation", libs.kotlinx.coroutines.core)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

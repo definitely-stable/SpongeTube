@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/origin-gate-events-v1.schema.json",
+  "title": "SpongeTube M1 Origin Gate Event v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "serverEventSequence",
+    "serverMonotonicNs",
+    "event",
+    "gateGeneration",
+    "commandId",
+    "requestId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "serverEventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "serverMonotonicNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "event": {
+      "enum": [
+        "GATE_CLOSE_ACCEPTED",
+        "REQUEST_BLOCKED",
+        "GATE_OPEN_ACCEPTED",
+        "REQUEST_RELEASED"
+      ]
+    },
+    "gateGeneration": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "commandId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requestId": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false
+}

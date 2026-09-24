@@ -736,14 +736,20 @@ M1 extends the M0 N4 delivery fault into explicit recovery scenarios.
 - deterministic final state.
 
 Evidence separates:
-- configured outage start/end;
-- origin gate actually blocking/unblocking;
-- client-observed no-progress interval;
+- configured gate commands and origin gate generations;
+- origin request actually blocking/unblocking;
+- client fetch progress;
 - durable reserve timeline;
 - player stall interval;
 - first successful post-restore fetch progress;
 - first new durable publication;
 - playback recovery.
+
+Origin and Android timestamps are **not** one clock. Media Lab monotonic time
+may order origin-side events and Android elapsed-realtime may order
+client/player events, but acceptance never subtracts or directly orders values
+across those domains. Cross-domain causal joins use command/request/fetch
+correlation identities.
 
 ### 22.4 Canonical M1 MUST gates
 
@@ -769,10 +775,10 @@ Missing evidence infrastructure is work for the owning slice, not deferred imple
 | M1-ACC-08 | playback joins reserve in-flight fetch | attempt-correlated origin trace + broker events | same fetchId is retained, priority raises RESERVE -> PLAYBACK and no cancel/restart duplicate attempt occurs |
 | M1-ACC-09 | seek fully inside published coverage | Media3 + store trace | no remote media request is required |
 | M1-ACC-10 | seek into missing coverage | bridge/broker trace | inside the seek marker window a bridge MISS owns a broker attempt, reaches SUCCESS, becomes LOCAL_SERVE, and every origin request goes only through FetchBroker |
-| M1-ACC-11 | process death after published coverage | restart + independent reconstruction | identical valid coverage survives restart |
+| M1-ACC-11 | actual target process death after published coverage | PID-before/PID-after + restart + independent reconstruction | PID changes and identical valid coverage survives restart exactly |
 | M1-ACC-12 | N4R-SHORT | reserve/player/network timelines | outage shorter than durable reserve does not cause reserve-exhaustion rebuffer |
-| M1-ACC-13 | N4R-EXHAUST | same | any stall is consistent with actual reserve exhaustion; no coverage overclaim |
-| M1-ACC-14 | N4R-RESTORE | same + recovery events | missing coverage publishes after restore and playback resumes |
+| M1-ACC-13 | N4R-EXHAUST | same + composite retry evidence | any stall is consistent with actual reserve exhaustion; no coverage overclaim; per-owner and Media3 retry budgets remain bounded |
+| M1-ACC-14 | N4R-RESTORE | same + recovery events + player identity | restore is commanded after an observed stall; post-restore progress publishes through FetchBroker/ExtentStore and the same player resumes |
 | M1-ACC-15 | HTTP partial continuation variants | request/response range evidence | incompatible range/full-body/identity responses are never appended as valid continuation |
 | M1-ACC-16 | runtime CoverageIndex snapshot | committed metadata snapshot + independently verified files + offline reconstruction | interval sets and reserve semantics match exactly |
 
@@ -810,9 +816,12 @@ Canonical M1 evidence is versioned rather than silently rewriting an old contrac
 - `extent-events-v1`;
 - `committed-extents-v2` for Room schema v2;
 - `verified-extent-files-v1` because independent file facts are unchanged by asset identity;
-- `fetch-events-v2` for new M1-D ownership/attempt/byte-accounting evidence; historical v1 remains valid;
+- `fetch-events-v2` for accepted M1-D/M1-E ownership/attempt evidence; historical v1 remains valid;
+- `fetch-events-v3` for M1-F progress-range evidence and failed-attempt origin correlation; v2 remains valid for historical M1-D/M1-E evidence;
 - `bridge-events-v1` for M1-E PlaybackBridge local-serve/miss/running-join/cancellation-barrier-wait evidence;
-- `recovery-summary-v1`.
+- `recovery-timeline-v1` for Android-domain player/reserve/recovery events;
+- `origin-gate-events-v1` for Media Lab-domain manual N4R gate generations and blocked request identities;
+- `recovery-summary-v2` derived by the independent host verifier. Historical `recovery-summary-v1` remains a pre-M1-F contract example and is not canonical M1-F evidence.
 
 Artifact ownership is incremental:
 
@@ -823,12 +832,20 @@ Artifact ownership is incremental:
 | `seed-manifest-v2` | deterministic seed construction producer | fixture manifest + MPD identity; never a coverage oracle | M1-C |
 | `coverage-snapshot-v2` | runtime CoverageIndex / independent oracle | exact semantic comparator including MediaAssetId | M1-C |
 | `extent-events-v1` | ExtentStore instrumentation | reducer/schema checks | M1-B/M1-F |
-| `fetch-events-v2` | FetchBroker | schema validation first, then exact fetchId/attempt/transport-correlation cross-check against origin trace | M1-D |
+| `fetch-events-v2` | FetchBroker | schema validation first, then exact fetchId/attempt/transport-correlation cross-check against origin trace | M1-D/M1-E |
+| `fetch-events-v3` | FetchBroker | v2 ownership semantics + chunk-range progress ledger + failed-attempt origin correlation; host recomputes duplicates across owner lifetimes | M1-F |
 | `bridge-events-v1` | PlaybackBridge (`PlaybackReadSession`) | schema validation first; every MISS/JOIN/WAIT_EXISTING correlates to a terminal `fetch-events-v2` owner by (sessionId, fetchId); JOIN means an actual RUNNING-owner join, while WAIT_EXISTING means a cancellation-barrier terminal handoff; bijection between origin data-plane requests and broker attempts (no hidden upstream); seek windows checked by event sequence and broker sequence watermark, never by clock comparison | M1-E |
-| `recovery-summary-v1` | recovery harness | schema + post-reopen oracle | M1-F |
+| `recovery-timeline-v1` | benchmark-only Android recovery harness | schema + same-player/state-machine verification | M1-F |
+| `origin-gate-events-v1` | Media Lab N4R manual body gate | generation/command/request causal checks | M1-F |
+| `recovery-summary-v2` | host recovery verifier | strict schema + ownership/range ledger + post-reopen oracle | M1-F |
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
 
-Every runtime `fetch-events-v2` row MUST validate against the checked-in schema before semantic/origin verification; a serializer/schema mismatch fails the run. The same rule applies to `bridge-events-v1`.
+Every runtime `fetch-events-v2` or `fetch-events-v3` row MUST validate against its checked-in schema before semantic/origin verification; a serializer/schema mismatch fails the run. The same rule applies to `bridge-events-v1`, `recovery-timeline-v1` and `origin-gate-events-v1`.
+
+For M1-F the host verifier independently builds the full-session accepted-range
+ledger across different `fetchId` lifetimes. Per-owner
+`duplicateRangeBytes` alone is insufficient because a Media3 retry may create
+a new SharedFetch and reset the owner's local accumulator.
 
 For M1-E, M1-ACC-09 passes only when a harness-marked cached-seek window contains zero bridge MISS/JOIN/WAIT_EXISTING rows and zero FetchBroker `ATTEMPT_STARTED` rows between the markers' broker sequence watermarks. M1-ACC-10 passes only when every origin data-plane request of the run correlates to exactly one broker attempt (`transportCorrelationId == requestId`), the attempt count equals the origin data-plane request count, the manifest is served from verified packaged bytes (zero manifest origin requests), and inside the SEEK_TO_MISSING_ISSUED..SEEK_TO_MISSING_SETTLED window at least one bridge MISS is followed by a broker `ATTEMPT_STARTED`, terminal SUCCESS and LOCAL_SERVE for the same read/extent.
 

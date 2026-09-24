@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/recovery-timeline-v1.schema.json",
+  "title": "SpongeTube M1 Recovery Timeline Event v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "eventElapsedRealtimeNs",
+    "sessionId",
+    "playerInstanceId",
+    "event",
+    "playerPositionUs",
+    "playerBufferedAheadUs",
+    "durableReserveUs",
+    "playbackState",
+    "playWhenReady",
+    "isPlaying"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "eventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "eventElapsedRealtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "playerInstanceId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "event": {
+      "enum": [
+        "SCENARIO_STARTED",
+        "PLAYER_READY",
+        "PLAYER_PLAYING",
+        "RESERVE_SNAPSHOT",
+        "PLAYER_STALL_STARTED",
+        "PLAYER_STALL_ENDED",
+        "PLAYBACK_PROGRESS",
+        "PROCESS_READY_TO_KILL",
+        "PROCESS_RESTARTED",
+        "SCENARIO_FINISHED"
+      ]
+    },
+    "playerPositionUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "playerBufferedAheadUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "durableReserveUs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "playbackState": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "playWhenReady": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "isPlaying": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

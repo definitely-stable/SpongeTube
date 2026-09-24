@@ -23,7 +23,10 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
 BRIDGE_SCHEMA_PATH = SCHEMAS / "bridge-events-v1.schema.json"
-FETCH_SCHEMA_PATH = SCHEMAS / "fetch-events-v2.schema.json"
+FETCH_SCHEMA_PATHS = {
+    2: SCHEMAS / "fetch-events-v2.schema.json",
+    3: SCHEMAS / "fetch-events-v3.schema.json",
+}
 
 REQUIRED_CASES = ("E1", "E2", "E3", "E4", "E5", "E6")
 # Cases whose transport gate never lets an attempt reach the origin.
@@ -122,7 +125,7 @@ class Case:
         return rows[0]
 
 
-def load_case(root: pathlib.Path, case_id: str, bridge_schema, fetch_schema) -> Case:
+def load_case(root: pathlib.Path, case_id: str, bridge_schema) -> Case:
     directory = root / case_id
     case_path = directory / "case.json"
     if not case_path.is_file():
@@ -131,10 +134,20 @@ def load_case(root: pathlib.Path, case_id: str, bridge_schema, fetch_schema) -> 
     if case.get("caseId") != case_id:
         raise EvidenceError(f"{case_id}: case.json caseId mismatch")
     bridge = read_jsonl(directory / "bridge-events-v1.jsonl")
-    fetch = read_jsonl(directory / "fetch-events-v2.jsonl", allow_empty=True)
+    fetch_path = directory / "fetch-events-v3.jsonl"
+    if not fetch_path.exists():
+        fetch_path = directory / "fetch-events-v2.jsonl"
+    fetch = read_jsonl(fetch_path, allow_empty=True)
     # Schema first, semantics second: serializer drift fails the run.
     _validate_rows(bridge_schema, bridge, f"{case_id}/bridge")
-    _validate_rows(fetch_schema, fetch, f"{case_id}/fetch")
+    if fetch:
+        versions = {row.get("schemaVersion") for row in fetch}
+        if len(versions) != 1:
+            raise EvidenceError(f"{case_id}: mixed fetch event schema versions")
+        fetch_schema_path = FETCH_SCHEMA_PATHS.get(next(iter(versions)))
+        if fetch_schema_path is None:
+            raise EvidenceError(f"{case_id}: unsupported fetch event schema version")
+        _validate_rows(_load_schema(fetch_schema_path), fetch, f"{case_id}/fetch")
     _require_ordered(bridge, f"{case_id}/bridge")
     _require_ordered(fetch, f"{case_id}/fetch")
     loaded = Case(case_id, case, bridge, fetch)
@@ -389,8 +402,7 @@ def verify_e6(case: Case) -> dict[str, Any]:
 
 def verify(cases_root: pathlib.Path, origin: list[dict[str, Any]]) -> dict[str, Any]:
     bridge_schema = _load_schema(BRIDGE_SCHEMA_PATH)
-    fetch_schema = _load_schema(FETCH_SCHEMA_PATH)
-    cases = [load_case(cases_root, case_id, bridge_schema, fetch_schema) for case_id in REQUIRED_CASES]
+    cases = [load_case(cases_root, case_id, bridge_schema) for case_id in REQUIRED_CASES]
     for case in cases:
         verify_case_common(case)
     by_id = {case.case_id: case for case in cases}

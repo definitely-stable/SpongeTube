@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "eventSequence": 4,
+  "eventElapsedRealtimeNs": 5000000000,
+  "sessionId": "m1-f-restore",
+  "playerInstanceId": "player-1",
+  "event": "PLAYER_STALL_STARTED",
+  "playerPositionUs": 9000000,
+  "playerBufferedAheadUs": 0,
+  "durableReserveUs": 0,
+  "playbackState": 2,
+  "playWhenReady": true,
+  "isPlaying": false
+}

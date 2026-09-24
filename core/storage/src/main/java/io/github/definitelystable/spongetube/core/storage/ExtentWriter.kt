@@ -210,6 +210,9 @@ internal class ExtentWriter(
 
             store.publish(stored)
             phase = CommitPhase.PUBLISHED
+            store.hit(
+                ExtentFaultPoint.AFTER_METADATA_COMMIT_BEFORE_PUBLISHED_EVENT,
+            )
             finishTerminal()
 
             store.emit(
