@@ -107,26 +107,27 @@ def require_pass(path: pathlib.Path) -> dict[str, Any]:
     return payload
 
 
-def verify_acc07(host_root: pathlib.Path) -> pathlib.Path:
+def verify_acc07(host_root: pathlib.Path) -> list[pathlib.Path]:
     xml_files = sorted(host_root.rglob("TEST-*FetchBrokerTest*.xml"))
-    require(len(xml_files) == 1, f"expected one FetchBrokerTest XML, found {len(xml_files)}")
-    xml_path = xml_files[0]
-    root = ET.parse(xml_path).getroot()
-    failed = []
+    require(xml_files, "missing retained FetchBrokerTest JUnit XML")
+    failed: list[str] = []
     passed_names: set[str] = set()
-    for case in root.iter("testcase"):
-        name = str(case.attrib.get("name", ""))
-        if case.find("failure") is not None or case.find("error") is not None:
-            failed.append(name)
-        else:
-            passed_names.add(name.rstrip("()"))
+    for xml_path in xml_files:
+        root = ET.parse(xml_path).getroot()
+        for case in root.iter("testcase"):
+            name = str(case.attrib.get("name", ""))
+            qualified = f"{xml_path.as_posix()}::{name}"
+            if case.find("failure") is not None or case.find("error") is not None:
+                failed.append(qualified)
+            else:
+                passed_names.add(name.rstrip("()"))
     require(not failed, f"FetchBrokerTest contains failures: {failed}")
     missing = [
         name for name in ACC07_TESTS
         if not any(actual == name or actual.startswith(name) for actual in passed_names)
     ]
     require(not missing, f"ACC-07 state-machine tests missing/not passed: {missing}")
-    return xml_path
+    return xml_files
 
 
 def verify_m1c(smoke_root: pathlib.Path) -> tuple[list[pathlib.Path], list[pathlib.Path]]:
@@ -183,7 +184,7 @@ def collect(
     require(isinstance(cases, dict) and set(cases) == {"E1","E2","E3","E4","E5","E6"},
             "M1-E canonical case set mismatch")
 
-    acc07_xml = verify_acc07(host)
+    acc07_xmls = verify_acc07(host)
 
     recovery_map = {
         "M1-ACC-11": ("m1-f-process-death", "PROCESS_DEATH"),
@@ -269,7 +270,7 @@ def collect(
         "M1-ACC-04": positive_m1c,
         "M1-ACC-05": negative_m1c,
         "M1-ACC-06": [d_summary_path],
-        "M1-ACC-07": [acc07_xml],
+        "M1-ACC-07": acc07_xmls,
         "M1-ACC-08": [e_summary_path],
         "M1-ACC-09": [e_summary_path],
         "M1-ACC-10": [e_summary_path],
@@ -288,7 +289,7 @@ def collect(
         e_summary_path.parents[1],
         acc15,
         find_unique_dir(recovery, "cases"),
-        find_unique_dir(host, "test-results"),
+        host,
         compat23,
         compat34,
         generated_root,
