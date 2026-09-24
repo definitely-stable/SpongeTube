@@ -152,7 +152,7 @@ class M1AcceptanceIndexTest(unittest.TestCase):
 
     def test_m1c_rejects_missing_oracle(self):
         smoke = self.root / "smoke"
-        with self.assertRaisesRegex(AcceptanceError, "missing M1-C evidence"):
+        with self.assertRaisesRegex(AcceptanceError, "m1-c-evidence"):
             verify_m1c(smoke)
 
 
