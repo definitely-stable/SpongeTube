@@ -85,6 +85,39 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(RecoveryEvidenceError, "overlapping"):
             verify(case, [], fetch, [], gate, [], None, coverage, coverage)
 
+    def test_rejects_one_origin_request_claimed_by_two_attempts(self):
+        case = self.case("N4R-SHORT")
+        case["initialDurableReserveUs"] = 10_000_000
+        fetch = [
+            self.fetch(0, "OWNER_REGISTERED", "f1", "k1"),
+            self.fetch(1, "ATTEMPT_STARTED", "f1", "k1", attempt=1),
+            self.fetch(2, "ATTEMPT_PROGRESS", "f1", "k1", attempt=1, start=0, end=50, request="7"),
+            self.fetch(3, "ATTEMPT_COMPLETED", "f1", "k1", attempt=1, request="7", outcome="SUCCESS"),
+            self.fetch(4, "OWNER_COMPLETED", "f1", "k1", outcome="SUCCESS"),
+            self.fetch(5, "OWNER_REGISTERED", "f2", "k2"),
+            self.fetch(6, "ATTEMPT_STARTED", "f2", "k2", attempt=1),
+            self.fetch(7, "ATTEMPT_PROGRESS", "f2", "k2", attempt=1, start=0, end=50, request="7"),
+            self.fetch(8, "ATTEMPT_COMPLETED", "f2", "k2", attempt=1, request="7", outcome="SUCCESS"),
+            self.fetch(9, "OWNER_COMPLETED", "f2", "k2", outcome="SUCCESS"),
+        ]
+        origin = [{"requestId": 7, "plane": "data", "path": "/fixtures/F1/a"}]
+        coverage = self.coverage()
+        with self.assertRaisesRegex(
+            RecoveryEvidenceError,
+            "multiple broker attempts",
+        ):
+            verify(
+                case,
+                [],
+                fetch,
+                [],
+                self.short_gate(),
+                origin,
+                None,
+                coverage,
+                coverage,
+            )
+
     def test_counts_duplicates_across_owner_lifetimes(self):
         case = self.case("N4R-SHORT")
         case["initialDurableReserveUs"] = 10_000_000
