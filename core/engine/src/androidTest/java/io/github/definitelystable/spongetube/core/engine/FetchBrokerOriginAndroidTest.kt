@@ -257,7 +257,7 @@ class FetchBrokerOriginAndroidTest {
     private fun writeFetchEvents(events: List<FetchEvent>) {
         val output = PlatformTestStorageRegistry.getInstance()
         output.openOutputFile(
-            "m1-d-evidence/fetch-events-v2.jsonl",
+            "m1-d-evidence/fetch-events-v3.jsonl",
         ).bufferedWriter().use { writer ->
             events.sortedBy(FetchEvent::eventSequence).forEach { event ->
                 writer.write(JSONObject(event.toArtifactMap()).toString())

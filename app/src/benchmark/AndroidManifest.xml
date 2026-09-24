@@ -7,6 +7,10 @@
         android:name="io.github.definitelystable.spongetube.permission.READ_M0_EVIDENCE"
         android:protectionLevel="signature" />
 
+    <permission
+        android:name="io.github.definitelystable.spongetube.permission.CONTROL_M1_RECOVERY"
+        android:protectionLevel="signature" />
+
     <application android:networkSecurityConfig="@xml/network_security_config">
         <profileable
             android:shell="true"
@@ -17,5 +21,12 @@
             android:authorities="io.github.definitelystable.spongetube.m0.evidence"
             android:exported="true"
             android:readPermission="io.github.definitelystable.spongetube.permission.READ_M0_EVIDENCE" />
+
+        <provider
+            android:name=".recovery.M1RecoveryProvider"
+            android:authorities="io.github.definitelystable.spongetube.m1.recovery"
+            android:exported="true"
+            android:readPermission="io.github.definitelystable.spongetube.permission.CONTROL_M1_RECOVERY"
+            android:writePermission="io.github.definitelystable.spongetube.permission.CONTROL_M1_RECOVERY" />
     </application>
 </manifest>

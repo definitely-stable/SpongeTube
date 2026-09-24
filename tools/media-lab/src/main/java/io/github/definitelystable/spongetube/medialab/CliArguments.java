@@ -92,7 +92,7 @@ final class CliArguments {
                     --fixture-root=<path> \
                     --trace=<path> \
                     --session-id=<id> \
-                    [--profile=N0|N1|N4] \
+                    [--profile=N0|N1|N4|N4R] \
                     [--data-port=0] \
                     [--data-workers=8] \
                     [--control-port=0] \
@@ -110,6 +110,7 @@ final class CliArguments {
 
                 N1 requires --reference-playback-bitrate-bps.
                 N4 requires --no-progress-start-after-ms; canonical duration is 120000 ms.
+                N4R uses the manual media-body gate under /__lab/gate/media/*.
                 Request trace, session events and calibration summary share the --trace basename.
                 summarize accepts request trace schema v2 and rejects mixed data-plane session/scenario identity.
                 Expected identity options make zero-network cache hits explicit while still validating non-empty traces.

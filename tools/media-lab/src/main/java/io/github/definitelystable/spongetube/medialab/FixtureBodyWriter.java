@@ -11,6 +11,7 @@ final class FixtureBodyWriter {
     private final FirstBodyDelay firstBodyDelay;
     private final NoProgressGate noProgressGate;
     private final GlobalBandwidthGovernor bandwidthGovernor;
+    private final ManualBodyProgressGate manualBodyProgressGate;
     private final SessionCalibration calibration;
 
     FixtureBodyWriter(
@@ -18,10 +19,12 @@ final class FixtureBodyWriter {
             MonotonicClock clock,
             Sleeper sleeper,
             SessionEventRecorder events,
-            SessionCalibration calibration) {
+            SessionCalibration calibration,
+            ManualBodyProgressGate manualBodyProgressGate) {
         this.scenario = scenario;
         this.clock = clock;
         this.calibration = calibration;
+        this.manualBodyProgressGate = manualBodyProgressGate;
         this.firstBodyDelay =
                 new FirstBodyDelay(scenario.firstBodyDelayMs(), clock, sleeper, calibration);
         this.noProgressGate =
@@ -57,6 +60,11 @@ final class FixtureBodyWriter {
             }
 
             long noProgressWaitNs = noProgressGate.awaitOpen();
+            if (manualBodyProgressGate != null) {
+                noProgressWaitNs = Math.addExact(
+                        noProgressWaitNs,
+                        manualBodyProgressGate.awaitOpen(trace.requestId()));
+            }
             trace.addNoProgressWaitNanos(noProgressWaitNs);
 
             try {
@@ -72,7 +80,8 @@ final class FixtureBodyWriter {
 
             // N4 deliberately flushes bounded writes so the real-socket calibration can
             // characterize, rather than accidentally maximize, pre-gate buffering.
-            if (scenario.noProgressDurationMs() != null) {
+            if (scenario.noProgressDurationMs() != null
+                    || manualBodyProgressGate != null) {
                 output.flush();
             }
 

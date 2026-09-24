@@ -13,9 +13,10 @@ from schema_subset import validate_instance, validate_schema_definition
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
-FETCH_EVENTS_SCHEMA_PATH = (
-    REPO_ROOT / ".work" / "schemas" / "fetch-events-v2.schema.json"
-)
+FETCH_EVENTS_SCHEMAS = {
+    2: REPO_ROOT / ".work" / "schemas" / "fetch-events-v2.schema.json",
+    3: REPO_ROOT / ".work" / "schemas" / "fetch-events-v3.schema.json",
+}
 RESOURCE_PATH = "/fixtures/F1/segment-1-00001.m4s"
 RESOURCE_LENGTH = 81_811
 
@@ -49,9 +50,14 @@ def one(rows: list[dict[str, Any]], event: str) -> dict[str, Any]:
 def validate_fetch_events(
     fetch_events: list[dict[str, Any]],
 ) -> None:
-    schema = json.loads(
-        FETCH_EVENTS_SCHEMA_PATH.read_text(encoding="utf-8")
-    )
+    versions = {row.get("schemaVersion") for row in fetch_events}
+    if len(versions) != 1:
+        raise ValueError("fetch evidence must use one schema version")
+    version = next(iter(versions))
+    schema_path = FETCH_EVENTS_SCHEMAS.get(version)
+    if schema_path is None:
+        raise ValueError(f"unsupported fetch event schema version: {version}")
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validate_schema_definition(schema)
     for index, row in enumerate(fetch_events):
         validate_instance(

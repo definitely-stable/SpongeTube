@@ -4,7 +4,7 @@ set -euo pipefail
 # M1-E PlaybackBridge evidence verification.
 #  1. collects the per-case bridge/fetch evidence produced by
 #     PlaybackBridgeAndroidTest (E1-E6);
-#  2. verifies bridge-events-v1 + fetch-events-v2 against the Media Lab origin
+#  2. verifies bridge-events-v1 + fetch-events-v3 against the Media Lab origin
 #     trace (schema first, then fetch join, origin bijection, ACC-09/ACC-10
 #     and per-case checks) with scripts/measurement/m1_bridge_evidence.py;
 #  3. independently reconstructs post-run coverage from the copied Room
@@ -41,7 +41,7 @@ for case_id in "${CASES[@]}"; do
   source_root="$COLLECTED_ROOT/$case_id"
   case_root="$OUTPUT_ROOT/device/$case_id"
   test -s "$source_root/bridge-events-v1.jsonl"
-  test -f "$source_root/fetch-events-v2.jsonl"
+  test -f "$source_root/fetch-events-v3.jsonl"
   test -s "$source_root/case.json"
   test -s "$source_root/runtime-coverage.json"
   test -d "$source_root/storage"

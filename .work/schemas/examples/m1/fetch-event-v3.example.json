@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 3,
+  "eventSequence": 2,
+  "eventElapsedRealtimeNs": 2000000000,
+  "sessionId": "m1-example-session",
+  "fetchId": "fetch-1",
+  "fetchKey": "F1/video-main/video-550k/0-700000",
+  "attempt": 1,
+  "attemptCorrelationId": "fetch-1:attempt-1",
+  "transportCorrelationId": null,
+  "event": "ATTEMPT_STARTED",
+  "consumerIds": [
+    "playback-1",
+    "reserve-1"
+  ],
+  "effectivePriority": "PLAYBACK",
+  "requestedByteStart": 0,
+  "requestedByteEndExclusive": 700000,
+  "networkBytes": 0,
+  "uniqueRangeBytes": 0,
+  "duplicateRangeBytes": 0,
+  "rejectedOrUnmappedBytes": 0,
+  "singleFlightJoined": true,
+  "outcome": null,
+  "chunkByteStart": null,
+  "chunkByteEndExclusive": null
+}

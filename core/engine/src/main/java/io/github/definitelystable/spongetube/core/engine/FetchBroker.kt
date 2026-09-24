@@ -292,6 +292,8 @@ internal class FetchBroker internal constructor(
                     event = FetchEventKind.ATTEMPT_FAILED,
                     attempt = attempt,
                     outcome = attemptResult.kind,
+                    transportCorrelationId =
+                        attemptResult.transportCorrelationId,
                 )
 
                 if (
@@ -362,11 +364,16 @@ internal class FetchBroker internal constructor(
 
         return try {
             val committed = publisher.publish(spec) { sink ->
-                disposition = executor.execute(
-                    request = shared.request,
-                    attempt = attempt,
-                    priority = shared.priority,
-                ) { chunk ->
+                val emitCorrelation: suspend (String) -> Unit = { correlation ->
+                    emit(
+                        shared = shared,
+                        event = FetchEventKind.ATTEMPT_CORRELATED,
+                        attempt = attempt,
+                        joined = shared.consumers.size > 1,
+                        transportCorrelationId = correlation,
+                    )
+                }
+                val emitChunk: suspend (FetchNetworkChunk) -> Unit = { chunk ->
                     val chunkEnd = Math.addExact(
                         chunk.byteStart,
                         chunk.bytes.size.toLong(),
@@ -390,8 +397,35 @@ internal class FetchBroker internal constructor(
                         start = chunk.byteStart,
                         endExclusive = chunkEnd,
                     )
+                    emit(
+                        shared = shared,
+                        event = FetchEventKind.ATTEMPT_PROGRESS,
+                        attempt = attempt,
+                        joined = shared.consumers.size > 1,
+                        transportCorrelationId =
+                            chunk.transportCorrelationId,
+                        chunkByteStart = chunk.byteStart,
+                        chunkByteEndExclusive = chunkEnd,
+                    )
                     sink.write(chunk.bytes)
                     expectedOffset = chunkEnd
+                }
+
+                disposition = if (executor is CorrelatingFetchAttemptExecutor) {
+                    executor.executeCorrelated(
+                        request = shared.request,
+                        attempt = attempt,
+                        priority = shared.priority,
+                        onTransportCorrelation = emitCorrelation,
+                        emitChunk = emitChunk,
+                    )
+                } else {
+                    executor.execute(
+                        request = shared.request,
+                        attempt = attempt,
+                        priority = shared.priority,
+                        emitChunk = emitChunk,
+                    )
                 }
 
                 val terminalDisposition = checkNotNull(disposition) {
@@ -411,6 +445,8 @@ internal class FetchBroker internal constructor(
             AttemptRunResult.Failure(
                 kind = abort.failure.kind,
                 retryable = abort.failure.retryable,
+                transportCorrelationId =
+                    abort.failure.transportCorrelationId,
             )
         } catch (error: ExtentStorageException) {
             AttemptRunResult.Failure(
@@ -421,16 +457,19 @@ internal class FetchBroker internal constructor(
                         FetchOutcomeKind.STORAGE_IO
                 },
                 retryable = false,
+                transportCorrelationId = null,
             )
         } catch (_: ExtentIntegrityException) {
             AttemptRunResult.Failure(
                 kind = FetchOutcomeKind.CONTENT_INTEGRITY_REJECTED,
                 retryable = false,
+                transportCorrelationId = null,
             )
         } catch (_: ExtentConflictException) {
             AttemptRunResult.Failure(
                 kind = FetchOutcomeKind.STORAGE_CONFLICT,
                 retryable = false,
+                transportCorrelationId = null,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -438,6 +477,7 @@ internal class FetchBroker internal constructor(
             AttemptRunResult.Failure(
                 kind = FetchOutcomeKind.INTERNAL_FAILURE,
                 retryable = false,
+                transportCorrelationId = null,
             )
         }
     }
@@ -557,6 +597,8 @@ internal class FetchBroker internal constructor(
         joined: Boolean = false,
         outcome: FetchOutcomeKind? = null,
         transportCorrelationId: String? = null,
+        chunkByteStart: Long? = null,
+        chunkByteEndExclusive: Long? = null,
     ) {
         val listener = eventListener ?: return
         synchronized(eventDeliveryLock) {
@@ -582,6 +624,8 @@ internal class FetchBroker internal constructor(
                         shared.request.extentSpec.byteStart,
                     requestedByteEndExclusive =
                         shared.request.extentSpec.byteEndExclusive,
+                    chunkByteStart = chunkByteStart,
+                    chunkByteEndExclusive = chunkByteEndExclusive,
                     networkBytes = accounting.networkBytes,
                     uniqueRangeBytes = accounting.uniqueRangeBytes,
                     duplicateRangeBytes = accounting.duplicateRangeBytes,
@@ -646,6 +690,7 @@ internal class FetchBroker internal constructor(
 internal data class FetchNetworkChunk(
     val byteStart: Long,
     val bytes: ByteArray,
+    val transportCorrelationId: String? = null,
 ) {
     init {
         require(byteStart >= 0) { "chunk byteStart must be >= 0" }
@@ -661,6 +706,7 @@ internal sealed interface FetchAttemptDisposition {
     data class Failure(
         val kind: FetchOutcomeKind,
         val retryable: Boolean,
+        val transportCorrelationId: String? = null,
     ) : FetchAttemptDisposition {
         init {
             require(kind != FetchOutcomeKind.SUCCESS)
@@ -679,6 +725,20 @@ internal fun interface FetchAttemptExecutor {
         request: FetchRequest,
         attempt: Int,
         priority: StateFlow<FetchPriority>,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition
+}
+
+/**
+ * Optional evidence capability for transports that can expose their physical
+ * request identity before any response-body bytes arrive.
+ */
+internal interface CorrelatingFetchAttemptExecutor : FetchAttemptExecutor {
+    suspend fun executeCorrelated(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition
 }
@@ -747,6 +807,7 @@ private sealed interface AttemptRunResult {
     data class Failure(
         val kind: FetchOutcomeKind,
         val retryable: Boolean,
+        val transportCorrelationId: String?,
     ) : AttemptRunResult
 }
 

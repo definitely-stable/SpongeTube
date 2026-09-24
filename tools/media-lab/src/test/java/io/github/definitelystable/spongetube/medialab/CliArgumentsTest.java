@@ -77,6 +77,24 @@ class CliArgumentsTest {
     }
 
     @Test
+    void parsesN4RManualGateProfile() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("n4r-fixtures"));
+
+        MediaLabConfig config = CliArguments.parse(new String[] {
+                "serve",
+                "--fixture-root=" + fixtureRoot,
+                "--trace=" + temp.resolve("n4r.jsonl"),
+                "--session-id=n4r",
+                "--profile=N4R"
+        });
+
+        assertEquals(MediaLabProfile.N4R, config.profile());
+        assertNull(config.noProgressStartAfterMs());
+        assertNull(config.resolvedScenario().noProgressDurationMs());
+        assertEquals(temp.resolve("n4r.gate.jsonl"), config.gateTracePath());
+    }
+
+    @Test
     void parsesExplicitListenerConfiguration() throws Exception {
         Path fixtureRoot = Files.createDirectory(temp.resolve("explicit-fixtures"));
 

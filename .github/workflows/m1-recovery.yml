@@ -1,0 +1,216 @@
+name: M1 Recovery
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m1-recovery.yml"
+      - "app/**"
+      - "benchmark/**"
+      - "core/storage/**"
+      - "core/engine/**"
+      - "playback/**"
+      - "test-support/**"
+      - "tools/media-lab/**"
+      - "scripts/ci/verify-m1-f-case.sh"
+      - "scripts/measurement/m1_recovery_evidence.py"
+      - "scripts/measurement/m1_oracle.py"
+      - "scripts/measurement/tests/**"
+      - ".work/schemas/**"
+      - "gradle/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m1-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  m1-recovery:
+    name: m1-recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
+      - name: Verify host contracts and build recovery targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/m1-recovery
+          python3 -m unittest discover             -s scripts/measurement/tests             -p 'test_*.py'             -v
+
+          ./gradlew --dependency-verification=strict --configuration-cache             :core:storage:test             :core:engine:test             :tools:media-lab:test             :tools:media-lab:installDist             :app:assembleBenchmark             :benchmark:assembleBenchmark
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh             36             m1f-api36             build/m1-recovery/device
+
+      - name: Install recovery APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_APK="$(find app/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          TEST_APK="$(find benchmark/build/outputs/apk/benchmark -type f -name '*.apk' -print -quit)"
+          test -n "$APP_APK"
+          test -n "$TEST_APK"
+
+          adb install -r -t "$APP_APK"
+          adb install -r -t "$TEST_APK"
+
+          adb shell pm list instrumentation | tr -d '\r'             > build/m1-recovery/instrumentation.txt
+          INSTRUMENTATION="$(awk '
+            /io.github.definitelystable.spongetube.benchmark/ {
+              sub(/^instrumentation:/, "", $1)
+              print $1
+              exit
+            }
+          ' build/m1-recovery/instrumentation.txt)"
+          test -n "$INSTRUMENTATION"
+          echo "$INSTRUMENTATION"             > build/m1-recovery/instrumentation-component.txt
+
+      - name: Verify actual process-death recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTRUMENTATION="$(cat build/m1-recovery/instrumentation-component.txt)"
+          session="m1-f-process-death"
+          device_root="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/m1-f-evidence/$session"
+          root="build/m1-recovery/cases/$session"
+          mkdir -p "$root/device" "$root/verified"
+
+          adb shell rm -rf "$device_root" || true
+          adb shell am instrument -w -r             -e class io.github.definitelystable.spongetube.benchmark.M1ProcessDeathRecoveryTest             "$INSTRUMENTATION"             | tee "$root/instrumentation.txt"
+
+          grep -q 'OK (' "$root/instrumentation.txt"
+          ! grep -q 'FAILURES!!!' "$root/instrumentation.txt"
+
+          adb shell ls -la "$device_root"
+          adb pull "$device_root/." "$root/device/"
+
+          bash scripts/ci/verify-m1-f-case.sh             "$root/device"             "$root/verified"
+
+      - name: Verify N4 recovery scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTRUMENTATION="$(cat build/m1-recovery/instrumentation-component.txt)"
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+
+          run_n4r() {
+            local method="$1"
+            local session="$2"
+            local lab_session="$3"
+            local root="build/m1-recovery/cases/$session"
+            local trace="$PWD/$root/server/requests.jsonl"
+            local gate_trace="$PWD/$root/server/requests.gate.jsonl"
+            local device_root="/sdcard/Android/media/io.github.definitelystable.spongetube.benchmark/additional_test_output/m1-f-evidence/$session"
+
+            rm -rf "$root"
+            mkdir -p "$root"/{server,device,verified}
+
+            "$LAB_BIN" serve               "--fixture-root=$PWD/test-fixtures/media"               "--trace=$trace"               "--session-id=$lab_session"               --profile=N4R               --data-port=18081               --control-port=18082               > "$root/server/media-lab.out"               2> "$root/server/media-lab.err" &
+            local lab_pid=$!
+
+            cleanup_lab() {
+              if kill -0 "$lab_pid" 2>/dev/null; then
+                kill "$lab_pid" || true
+                for _ in {1..40}; do
+                  kill -0 "$lab_pid" 2>/dev/null || break
+                  sleep 0.25
+                done
+              fi
+            }
+            trap cleanup_lab RETURN
+
+            for attempt in {1..30}; do
+              if curl --fail --silent                 http://127.0.0.1:18082/__lab/config                 > "$root/server/scenario.json"; then
+                break
+              fi
+              if [[ "$attempt" -eq 30 ]]; then
+                cat "$root/server/media-lab.out" || true
+                cat "$root/server/media-lab.err" || true
+                return 1
+              fi
+              sleep 1
+            done
+
+            jq -e '.profileId == "N4R" and .scenario.scenarioId == "N4R"'               "$root/server/scenario.json"
+
+            adb reverse --remove-all || true
+            adb reverse tcp:18080 tcp:18081
+            adb reverse tcp:18082 tcp:18082
+            adb shell rm -rf "$device_root" || true
+
+            adb shell am instrument -w -r               -e class "io.github.definitelystable.spongetube.benchmark.M1N4RecoveryTest#$method"               -e spongetube.m1f.originBaseUrl http://127.0.0.1:18080               -e spongetube.m1f.controlBaseUrl http://127.0.0.1:18082               "$INSTRUMENTATION"               | tee "$root/instrumentation.txt"
+
+            grep -q 'OK (' "$root/instrumentation.txt"
+            ! grep -q 'FAILURES!!!' "$root/instrumentation.txt"
+
+            adb shell ls -la "$device_root"
+            adb pull "$device_root/." "$root/device/"
+
+            cleanup_lab
+            trap - RETURN
+
+            test -s "$trace"
+            test -s "$gate_trace"
+
+            bash scripts/ci/verify-m1-f-case.sh               "$root/device"               "$root/verified"               "$trace"               "$gate_trace"
+          }
+
+          run_n4r             n4rShortStaysInsideDurableReserve             m1-f-short             m1-f-short-origin
+
+          run_n4r             n4rExhaustStallsOnlyAfterLocalHorizonIsConsumed             m1-f-exhaust             m1-f-exhaust-origin
+
+          run_n4r             n4rRestoreResumesSamePlayerAfterObservedStall             m1-f-restore             m1-f-restore-origin
+
+      - name: Summarize M1-F evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          find build/m1-recovery/cases             -path '*/verified/recovery-summary-v2.json'             -print             -exec jq -c '{
+              scenarioId,
+              status,
+              process,
+              fetch,
+              playback,
+              coverage,
+              invariants
+            }' {} \;             > build/m1-recovery/recovery-summary.txt || true
+          cat build/m1-recovery/recovery-summary.txt || true
+
+      - name: Upload M1 recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m1-recovery-evidence
+          path: build/m1-recovery/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: adb emu kill || true

@@ -22,6 +22,7 @@ include(":core:storage")
 include(":core:engine")
 include(":tools:media-lab")
 include(":test-support:fixture-f1")
+include(":test-support:playback-f1")
 
 include(":playback:baseline")
 include(":playback:bridge")

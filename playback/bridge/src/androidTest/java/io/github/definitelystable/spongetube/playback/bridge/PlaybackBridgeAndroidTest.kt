@@ -14,6 +14,7 @@ import io.github.definitelystable.spongetube.core.engine.PlaybackTransportGate
 import io.github.definitelystable.spongetube.core.engine.SpongeBridgeApi
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FetchUnit
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureAssets
+import io.github.definitelystable.spongetube.testsupport.playback.f1.F1PlaybackPlanFactory
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -39,7 +40,7 @@ import org.junit.runner.RunWith
 class PlaybackBridgeAndroidTest {
     private lateinit var context: Context
     private lateinit var fixture: F1FixtureAssets
-    private lateinit var plans: F1PlanFactory
+    private lateinit var plans: F1PlaybackPlanFactory
     private lateinit var originBaseUrl: String
 
     @Before
@@ -54,7 +55,7 @@ class PlaybackBridgeAndroidTest {
         originBaseUrl = checkNotNull(baseUrl)
         context = InstrumentationRegistry.getInstrumentation().targetContext
         fixture = F1FixtureAssets(context.assets)
-        plans = F1PlanFactory(fixture, fixture.catalog())
+        plans = F1PlaybackPlanFactory(fixture)
         cleanStoreRoot()
     }
 

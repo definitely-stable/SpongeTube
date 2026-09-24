@@ -78,6 +78,12 @@ record MediaLabConfig(
                             "N4 does not accept --reference-playback-bitrate-bps");
                 }
             }
+            case N4R -> {
+                if (referencePlaybackBitrateBps != null || noProgressStartAfterMs != null) {
+                    throw new IllegalArgumentException(
+                            "N4R uses a manual media-body gate and accepts no N1/N4 parameters");
+                }
+            }
         }
     }
 
@@ -87,6 +93,10 @@ record MediaLabConfig(
 
     Path calibrationPath() {
         return siblingArtifact(".calibration");
+    }
+
+    Path gateTracePath() {
+        return siblingArtifact(".gate");
     }
 
     ResolvedScenario resolvedScenario() {

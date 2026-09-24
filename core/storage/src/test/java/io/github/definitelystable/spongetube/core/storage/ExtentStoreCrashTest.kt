@@ -93,6 +93,40 @@ class ExtentStoreCrashTest {
         }
 
     @Test
+    fun metadataCommitSurvivesEvenWhenPublishedEventWasNeverEmitted() =
+        runBlocking {
+            val root = File(tempDir, "metadata-commit-before-event")
+            val metadata = FakeExtentMetadataStore()
+            val bytes = "committed-without-event".encodeToByteArray()
+            val store = openStore(
+                root = root,
+                metadata = metadata,
+                crashAt =
+                    ExtentFaultPoint.AFTER_METADATA_COMMIT_BEFORE_PUBLISHED_EVENT,
+            )
+
+            expectThrows<SimulatedProcessCrash> {
+                store.writeExtent(spec("committed-without-event", bytes)) {
+                    write(bytes)
+                }
+            }
+
+            assertEquals(1, metadata.snapshot().size)
+            assertEquals(1, finalExtentFiles(root).size)
+
+            val reopened = openStore(root, metadata)
+            assertEquals(
+                1,
+                reopened.initialRecoveryReport.verifiedPublishedExtents,
+            )
+            assertEquals(
+                listOf(ExtentId("committed-without-event")),
+                reopened.committedExtents().map(CommittedExtent::extentId),
+            )
+            reopened.close()
+        }
+
+    @Test
     fun crashAfterPublishSurvivesRecovery() = runBlocking {
         val root = File(tempDir, "after-publish")
         val metadata = FakeExtentMetadataStore()
