@@ -21,6 +21,7 @@ class M1FetchCancellationEvidenceTest(unittest.TestCase):
         self.write_joined_release()
         self.write_barrier_restart()
         self.write_late_success()
+        self.write_late_failure()
 
     def tearDown(self):
         self.temp.cleanup()
@@ -144,6 +145,29 @@ class M1FetchCancellationEvidenceTest(unittest.TestCase):
             ],
         )
 
+    def write_late_failure(self):
+        fid = "fetch-1"
+        self.write_case(
+            "CANCELLING_BARRIER_LATE_FAILURE",
+            {
+                "schemaVersion": 1,
+                "caseId": "CANCELLING_BARRIER_LATE_FAILURE",
+                "executions": 1,
+                "waitingBeforeTerminal": True,
+                "replacementDisposition": "WAITED_CANCELLING",
+                "sameFetchId": True,
+                "terminalOutcome": "INTERNAL_FAILURE",
+            },
+            [
+                self.event(0, "OWNER_REGISTERED", fid, consumers=["late-failure-owner"]),
+                self.event(1, "ATTEMPT_STARTED", fid, consumers=["late-failure-owner"]),
+                self.event(2, "ATTEMPT_PROGRESS", fid, consumers=["late-failure-owner"]),
+                self.event(3, "CONSUMER_RELEASED", fid),
+                self.event(4, "ATTEMPT_COMPLETED", fid, outcome="SUCCESS"),
+                self.event(5, "OWNER_COMPLETED", fid, outcome="INTERNAL_FAILURE"),
+            ],
+        )
+
     def test_accepts_canonical_matrix(self):
         summary = verify(self.root)
         self.assertEqual("PASS", summary["status"])
@@ -183,6 +207,39 @@ class M1FetchCancellationEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(
             FetchCancellationEvidenceError,
             "before cancelling owner was terminal",
+        ):
+            verify(self.root)
+
+    def test_rejects_barrier_restart_without_successful_replacement_terminal(self):
+        path = self.root / "CANCELLING_BARRIER_RESTART" / "fetch-events-v3.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[-1]["outcome"] = "INTERNAL_FAILURE"
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+        with self.assertRaisesRegex(
+            FetchCancellationEvidenceError,
+            "replacement owner did not complete",
+        ):
+            verify(self.root)
+
+    def test_rejects_late_failure_budget_reset(self):
+        case_path = self.root / "CANCELLING_BARRIER_LATE_FAILURE" / "case.json"
+        case = json.loads(case_path.read_text())
+        case["executions"] = 2
+        case_path.write_text(json.dumps(case))
+        with self.assertRaisesRegex(
+            FetchCancellationEvidenceError,
+            "hidden refetch",
+        ):
+            verify(self.root)
+
+    def test_rejects_late_failure_terminal_rewritten(self):
+        path = self.root / "CANCELLING_BARRIER_LATE_FAILURE" / "fetch-events-v3.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[-1]["outcome"] = "SUCCESS"
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+        with self.assertRaisesRegex(
+            FetchCancellationEvidenceError,
+            "terminal INTERNAL_FAILURE",
         ):
             verify(self.root)
 
