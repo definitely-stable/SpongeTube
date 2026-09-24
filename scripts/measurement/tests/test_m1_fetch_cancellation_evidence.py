@@ -171,7 +171,7 @@ class M1FetchCancellationEvidenceTest(unittest.TestCase):
     def test_accepts_canonical_matrix(self):
         summary = verify(self.root)
         self.assertEqual("PASS", summary["status"])
-        self.assertEqual(3, summary["caseCount"])
+        self.assertEqual(4, summary["caseCount"])
 
     def test_rejects_missing_case(self):
         target = self.root / "CANCELLING_BARRIER_LATE_SUCCESS"
