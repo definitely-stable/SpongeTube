@@ -55,6 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p build/m1-recovery
           python3 -m unittest discover             -s scripts/measurement/tests             -p 'test_*.py'             -v
 
           ./gradlew --dependency-verification=strict --configuration-cache             :core:storage:test             :core:engine:test             :tools:media-lab:test             :tools:media-lab:installDist             :app:assembleBenchmark             :benchmark:assembleBenchmark

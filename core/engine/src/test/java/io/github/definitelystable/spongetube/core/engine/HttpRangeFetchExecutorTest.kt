@@ -72,7 +72,11 @@ class HttpRangeFetchExecutorTest {
         val (disposition, received) = execute(start = 100, endExclusive = 1_100)
 
         assertEquals(
-            FetchAttemptDisposition.Failure(FetchOutcomeKind.RANGE_REJECTED, retryable = false),
+            FetchAttemptDisposition.Failure(
+                kind = FetchOutcomeKind.RANGE_REJECTED,
+                retryable = false,
+                transportCorrelationId = "lab-1",
+            ),
             disposition,
         )
         assertEquals(0, received.size)
@@ -85,7 +89,11 @@ class HttpRangeFetchExecutorTest {
         val (disposition, received) = execute(start = 100, endExclusive = 1_100)
 
         assertEquals(
-            FetchAttemptDisposition.Failure(FetchOutcomeKind.RANGE_REJECTED, retryable = false),
+            FetchAttemptDisposition.Failure(
+                kind = FetchOutcomeKind.RANGE_REJECTED,
+                retryable = false,
+                transportCorrelationId = "lab-1",
+            ),
             disposition,
         )
         assertEquals(0, received.size)
@@ -99,8 +107,9 @@ class HttpRangeFetchExecutorTest {
 
         assertEquals(
             FetchAttemptDisposition.Failure(
-                FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
+                kind = FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
                 retryable = true,
+                transportCorrelationId = "lab-1",
             ),
             disposition,
         )
@@ -160,6 +169,7 @@ class HttpRangeFetchExecutorTest {
                 priority = MutableStateFlow(FetchPriority.PLAYBACK),
             ) { chunk ->
                 assertEquals(expected, chunk.byteStart)
+                assertEquals("lab-1", chunk.transportCorrelationId)
                 expected += chunk.bytes.size
                 received.write(chunk.bytes)
             }
