@@ -645,6 +645,14 @@ class M1RecoveryProvider : ContentProvider() {
         return root
     }
 
+    /**
+     * Export only authority inputs consumed by the independent M1 oracle.
+     *
+     * The live store also contains coordination/SQLite runtime files such as
+     * .store.lock and a TRUNCATE journal. They are deliberately excluded:
+     * they are not durable extent authority, may validly be zero-length, and
+     * must not become part of the canonical evidence contract.
+     */
     private fun copyStorageRoot(
         filesDir: File,
         sessionDir: File,
@@ -652,23 +660,49 @@ class M1RecoveryProvider : ContentProvider() {
         val source = File(filesDir, "sponge")
         val target = File(sessionDir, "storage")
         target.deleteRecursively()
-        if (!source.exists()) {
-            check(target.mkdirs())
-            return
+        check(target.mkdirs()) {
+            "failed to create canonical storage snapshot root"
         }
-        source.walkTopDown().forEach { file ->
-            val relative = file.relativeTo(source)
-            val destination = File(target, relative.path)
-            if (file.isDirectory) {
-                check(destination.mkdirs() || destination.isDirectory)
-            } else {
-                destination.parentFile?.mkdirs()
-                file.inputStream().use { input ->
-                    destination.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+
+        val database = File(source, "metadata/extents.db")
+        check(database.isFile) {
+            "canonical storage snapshot is missing metadata/extents.db"
+        }
+        copyEvidenceFile(
+            source = database,
+            target = File(target, "metadata/extents.db"),
+        )
+
+        val extents = File(source, "extents")
+        if (extents.isDirectory) {
+            extents.walkTopDown()
+                .filter(File::isFile)
+                .forEach { file ->
+                    val relative = file.relativeTo(source)
+                    copyEvidenceFile(
+                        source = file,
+                        target = File(target, relative.path),
+                    )
                 }
+        }
+    }
+
+    private fun copyEvidenceFile(
+        source: File,
+        target: File,
+    ) {
+        target.parentFile?.let { parent ->
+            check(parent.mkdirs() || parent.isDirectory) {
+                "failed to create evidence directory: $parent"
             }
+        }
+        source.inputStream().use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        check(target.isFile && target.length() > 0L) {
+            "canonical evidence file is empty: ${target.path}"
         }
     }
 
