@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Benchmark-only: deterministic Media Lab is reached through adb reverse over HTTP. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
