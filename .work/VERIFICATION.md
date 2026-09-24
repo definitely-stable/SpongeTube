@@ -720,7 +720,8 @@ M1 extends the M0 N4 delivery fault into explicit recovery scenarios.
 
 \`N4R-EXHAUST\`
 - outage exceeds initial durable playable reserve;
-- a stall is allowed after usable local data and Media3's already-buffered data are exhausted;
+- a stall is allowed only after all remaining durable playable reserve has already entered Media3's buffered horizon; because Media3 may report `STATE_BUFFERING` with a small non-zero `bufferedPosition - currentPosition`, canonical verification requires `max(0, DurablePlayableReserve - PlayerBufferedAhead) <= 1 ms` rather than the invalid `DurablePlayableReserve == 0` shortcut;
+- the 1 ms allowance is solely the quantization of Media3 millisecond position APIs used by the harness, not a playback-performance tolerance;
 - coverage must never be inflated to hide the stall;
 - retry activity remains bounded by the M1 request budget contract.
 
