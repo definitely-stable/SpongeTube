@@ -425,6 +425,7 @@ class M1RecoveryProvider : ContentProvider() {
                         F1_MANIFEST_KEY,
                     ),
                 )
+                record("RESERVE_SNAPSHOT", player)
                 player.prepare()
                 player.play()
                 samplePlayer()
