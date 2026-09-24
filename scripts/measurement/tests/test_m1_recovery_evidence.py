@@ -201,6 +201,69 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         )
         self.assertEqual(100, result["fetch"]["sessionDuplicateRangeBytes"])
 
+    def test_rejects_exhaust_stall_with_durable_reserve_remaining(self):
+        case = self.case("N4R-EXHAUST")
+        case["initialDurableReserveUs"] = 10_000_000
+        timeline = [
+            {
+                "schemaVersion": 1,
+                "eventSequence": 0,
+                "eventElapsedRealtimeNs": 1,
+                "sessionId": "m1-f",
+                "playerInstanceId": "player-1",
+                "event": "PLAYER_STALL_STARTED",
+                "playerPositionUs": 5_000_000,
+                "playerBufferedAheadUs": 0,
+                "durableReserveUs": 5_000_000,
+                "playbackState": 2,
+                "playWhenReady": True,
+                "isPlaying": False,
+            },
+        ]
+        gate = self.short_gate()
+        origin = [
+            {
+                "requestId": 7,
+                "plane": "data",
+                "path": "/fixtures/F1/a",
+            },
+        ]
+        fetch = [
+            self.fetch(0, "OWNER_REGISTERED", "f1", "k"),
+            self.fetch(1, "ATTEMPT_STARTED", "f1", "k", attempt=1),
+            self.fetch(
+                2,
+                "ATTEMPT_CORRELATED",
+                "f1",
+                "k",
+                attempt=1,
+                request="7",
+            ),
+            self.fetch(
+                3,
+                "OWNER_CANCELLED",
+                "f1",
+                "k",
+                outcome="CANCELLED_NO_CONSUMERS",
+            ),
+        ]
+        coverage = self.coverage()
+        with self.assertRaisesRegex(
+            RecoveryEvidenceError,
+            "before durable reserve was exhausted",
+        ):
+            verify(
+                case,
+                timeline,
+                fetch,
+                [],
+                gate,
+                origin,
+                None,
+                coverage,
+                coverage,
+            )
+
     @staticmethod
     def short_gate():
         return [
