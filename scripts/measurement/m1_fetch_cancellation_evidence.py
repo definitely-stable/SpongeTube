@@ -15,6 +15,7 @@ EXPECTED_CASES = {
     "JOINED_CONSUMER_RELEASE",
     "CANCELLING_BARRIER_RESTART",
     "CANCELLING_BARRIER_LATE_SUCCESS",
+    "CANCELLING_BARRIER_LATE_FAILURE",
 }
 
 
@@ -111,6 +112,15 @@ def verify_barrier_restart(
     if cancelled[0].get("outcome") != "CANCELLED_NO_CONSUMERS":
         raise FetchCancellationEvidenceError("final-consumer cancellation outcome mismatch")
 
+    replacement_completed = [
+        row for row in events_of(rows, "OWNER_COMPLETED")
+        if row.get("fetchId") == owners[1].get("fetchId")
+    ]
+    if len(replacement_completed) != 1 or replacement_completed[0].get("outcome") != "SUCCESS":
+        raise FetchCancellationEvidenceError(
+            "replacement owner did not complete exactly once with SUCCESS"
+        )
+
     first_terminal = sequence_index(
         rows,
         lambda row: row.get("event") == "OWNER_CANCELLED",
@@ -123,6 +133,15 @@ def verify_barrier_restart(
     if first_terminal < 0 or second_owner <= first_terminal:
         raise FetchCancellationEvidenceError(
             "replacement owner appeared before cancelling owner was terminal"
+        )
+    second_attempt = sequence_index(
+        rows,
+        lambda row: row.get("event") == "ATTEMPT_STARTED"
+        and row.get("fetchId") == owners[1].get("fetchId"),
+    )
+    if second_attempt <= second_owner:
+        raise FetchCancellationEvidenceError(
+            "replacement physical attempt did not start after replacement ownership"
         )
 
     return {
@@ -172,6 +191,51 @@ def verify_late_success(
     }
 
 
+def verify_late_failure(
+    rows: list[dict[str, Any]],
+    case: dict[str, Any],
+) -> dict[str, Any]:
+    if case.get("waitingBeforeTerminal") is not True:
+        raise FetchCancellationEvidenceError(
+            "late-failure demand did not wait behind CANCELLING"
+        )
+    if case.get("replacementDisposition") != "WAITED_CANCELLING":
+        raise FetchCancellationEvidenceError(
+            "late failure was not handed through the cancellation barrier"
+        )
+    if case.get("sameFetchId") is not True:
+        raise FetchCancellationEvidenceError(
+            "late failure did not preserve the original fetchId"
+        )
+    if case.get("executions") != 1:
+        raise FetchCancellationEvidenceError(
+            "late failure caused hidden refetch/request-budget reset"
+        )
+    if case.get("terminalOutcome") != "INTERNAL_FAILURE":
+        raise FetchCancellationEvidenceError(
+            "late-failure observation terminal outcome mismatch"
+        )
+
+    one(rows, "OWNER_REGISTERED")
+    one(rows, "ATTEMPT_STARTED")
+    one(rows, "CONSUMER_RELEASED")
+    completed = one(rows, "OWNER_COMPLETED")
+    if events_of(rows, "OWNER_CANCELLED"):
+        raise FetchCancellationEvidenceError(
+            "late-failure owner was incorrectly finalized as cancelled"
+        )
+    if completed.get("outcome") != "INTERNAL_FAILURE":
+        raise FetchCancellationEvidenceError(
+            "late-failure owner did not preserve terminal INTERNAL_FAILURE"
+        )
+
+    return {
+        "caseId": "CANCELLING_BARRIER_LATE_FAILURE",
+        "status": "PASS",
+        "fetchId": completed.get("fetchId"),
+    }
+
+
 def verify_case(case_root: pathlib.Path) -> dict[str, Any]:
     case = read_json(case_root / "case.json")
     case_id = str(case.get("caseId"))
@@ -190,7 +254,9 @@ def verify_case(case_root: pathlib.Path) -> dict[str, Any]:
         return verify_joined_release(rows, case)
     if case_id == "CANCELLING_BARRIER_RESTART":
         return verify_barrier_restart(rows, case)
-    return verify_late_success(rows, case)
+    if case_id == "CANCELLING_BARRIER_LATE_SUCCESS":
+        return verify_late_success(rows, case)
+    return verify_late_failure(rows, case)
 
 
 def verify(cases_root: pathlib.Path) -> dict[str, Any]:
