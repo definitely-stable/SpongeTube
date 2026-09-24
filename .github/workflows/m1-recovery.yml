@@ -1,6 +1,7 @@
 name: M1 Recovery
 
 on:
+  workflow_call:
   pull_request:
     branches: [ main ]
     paths:
