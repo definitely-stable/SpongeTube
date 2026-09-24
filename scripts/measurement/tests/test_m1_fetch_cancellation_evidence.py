@@ -163,8 +163,8 @@ class M1FetchCancellationEvidenceTest(unittest.TestCase):
                 self.event(1, "ATTEMPT_STARTED", fid, consumers=["late-failure-owner"]),
                 self.event(2, "ATTEMPT_PROGRESS", fid, consumers=["late-failure-owner"]),
                 self.event(3, "CONSUMER_RELEASED", fid),
-                self.event(4, "ATTEMPT_COMPLETED", fid, outcome="SUCCESS"),
-                self.event(5, "OWNER_COMPLETED", fid, outcome="INTERNAL_FAILURE"),
+                self.event(4, "ATTEMPT_FAILED", fid, outcome="INTERNAL_FAILURE"),
+                self.event(5, "OWNER_FAILED", fid, outcome="INTERNAL_FAILURE"),
             ],
         )
 
