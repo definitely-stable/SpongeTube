@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/range-continuation-v1.schema.json",
+  "title": "SpongeTube M1 Range Continuation Evidence v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "caseId",
+    "requestedByteStart",
+    "requestedByteEndExclusive",
+    "resourceLength",
+    "requestRange",
+    "responseStatus",
+    "responseContentRange",
+    "outcome",
+    "retryable",
+    "emittedBytes",
+    "transportCorrelationId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "caseId": {
+      "enum": [
+        "MATCHING_206",
+        "FULL_200",
+        "WRONG_START_206",
+        "WRONG_TOTAL_206"
+      ]
+    },
+    "requestedByteStart": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "requestedByteEndExclusive": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "resourceLength": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "requestRange": {
+      "type": "string",
+      "minLength": 1
+    },
+    "responseStatus": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "responseContentRange": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "SUCCESS",
+        "RANGE_REJECTED"
+      ]
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "emittedBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "transportCorrelationId": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

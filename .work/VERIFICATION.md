@@ -822,6 +822,7 @@ Canonical M1 evidence is versioned rather than silently rewriting an old contrac
 - `bridge-events-v1` for M1-E PlaybackBridge local-serve/miss/running-join/cancellation-barrier-wait evidence;
 - `recovery-timeline-v1` for Android-domain player/reserve/recovery events;
 - `origin-gate-events-v1` for Media Lab-domain manual N4R gate generations and blocked request identities;
+- `range-continuation-v1` for M1-ACC-15 request/response Range observations and emitted-byte outcome evidence;
 - `recovery-summary-v2` derived by the independent host verifier. Historical `recovery-summary-v1` remains a pre-M1-F contract example and is not canonical M1-F evidence.
 
 Artifact ownership is incremental:
@@ -838,6 +839,7 @@ Artifact ownership is incremental:
 | `bridge-events-v1` | PlaybackBridge (`PlaybackReadSession`) | schema validation first; every MISS/JOIN/WAIT_EXISTING correlates to a terminal `fetch-events-v2` owner by (sessionId, fetchId); JOIN means an actual RUNNING-owner join, while WAIT_EXISTING means a cancellation-barrier terminal handoff; bijection between origin data-plane requests and broker attempts (no hidden upstream); seek windows checked by event sequence and broker sequence watermark, never by clock comparison | M1-E |
 | `recovery-timeline-v1` | benchmark-only Android recovery harness | schema + same-player/state-machine verification | M1-F |
 | `origin-gate-events-v1` | Media Lab N4R manual body gate | generation/command/request causal checks | M1-F |
+| `range-continuation-v1` | deterministic HttpRangeFetchExecutor harness | strict schema + independent exact request/response/outcome verification; incompatible responses must emit zero accepted bytes | M1-E2 |
 | `recovery-summary-v2` | host recovery verifier | strict schema + ownership/range ledger + post-reopen oracle | M1-F |
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
 
