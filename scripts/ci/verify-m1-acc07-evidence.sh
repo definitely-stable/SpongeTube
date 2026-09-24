@@ -22,7 +22,7 @@ python3 scripts/measurement/m1_fetch_cancellation_evidence.py \
 jq -e '
   .gateId == "M1-ACC-07" and
   .status == "PASS" and
-  .caseCount == 3
+  .caseCount == 4
 ' "$OUTPUT_ROOT/verification-summary.json" >/dev/null
 
 printf 'M1-ACC-07 canonical FetchBroker cancellation evidence verified\n'
