@@ -470,6 +470,15 @@ def _verify_playback(
         raise RecoveryEvidenceError("N4R-SHORT: playback stalled")
     if scenario in {"N4R-EXHAUST", "N4R-RESTORE"} and not stalls:
         raise RecoveryEvidenceError(f"{scenario}: expected a true rebuffer stall")
+    if scenario in {"N4R-EXHAUST", "N4R-RESTORE"}:
+        exhausted_stalls = [
+            row for row in stalls
+            if row.get("durableReserveUs") == 0
+        ]
+        if not exhausted_stalls:
+            raise RecoveryEvidenceError(
+                f"{scenario}: player stalled before durable reserve was exhausted"
+            )
 
     if scenario != "N4R-RESTORE":
         return len(stalls), None, None
