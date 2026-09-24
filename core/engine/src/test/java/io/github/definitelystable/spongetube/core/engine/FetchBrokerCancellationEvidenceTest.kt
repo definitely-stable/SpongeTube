@@ -32,6 +32,7 @@ class FetchBrokerCancellationEvidenceTest {
         joinedConsumerReleaseCase()
         cancellingBarrierRestartCase()
         cancellingBarrierLateSuccessCase()
+        cancellingBarrierLateFailureCase()
     }
 
     private suspend fun TestScope.joinedConsumerReleaseCase() {
@@ -241,6 +242,96 @@ class FetchBrokerCancellationEvidenceTest {
                 "replacementDisposition" to replacementHandle.acquireDisposition.name,
                 "sameFetchId" to true,
                 "terminalOutcome" to "SUCCESS",
+            ),
+        )
+    }
+
+    private suspend fun TestScope.cancellingBarrierLateFailureCase() {
+        val events = mutableListOf<FetchEvent>()
+        val commitStarted = CompletableDeferred<Unit>()
+        val releaseCommit = CompletableDeferred<Unit>()
+        var executions = 0
+
+        val publisher = object : FetchPublisher {
+            override suspend fun publish(
+                spec: ExtentSpec,
+                producer: suspend (FetchPublishSink) -> Unit,
+            ): CommittedExtent {
+                val bytes = mutableListOf<Byte>()
+                producer(
+                    object : FetchPublishSink {
+                        override suspend fun write(bytesToWrite: ByteArray) {
+                            bytes += bytesToWrite.toList()
+                        }
+                    },
+                )
+                check(bytes.size.toLong() == spec.expectedLength)
+                withContext(NonCancellable) {
+                    commitStarted.complete(Unit)
+                    releaseCommit.await()
+                    throw IllegalStateException("terminal publish failure")
+                }
+            }
+        }
+
+        val broker = FetchBroker(
+            publisher = publisher,
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                executions += 1
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+            attemptBudget = FetchAttemptBudget(1),
+            sessionId = "m1-acc07-late-failure",
+            eventListener = FetchEventListener { event -> events += event },
+            ownerScope = backgroundScope,
+            ownsScope = false,
+            monotonicClockNs = { events.size.toLong() },
+        )
+
+        val first = broker.acquire(
+            REQUEST,
+            consumer("late-failure-owner", FetchConsumerKind.RESERVE),
+        )
+        commitStarted.await()
+        first.close()
+
+        val replacement = async {
+            broker.acquire(
+                REQUEST,
+                consumer("late-failure-replacement", FetchConsumerKind.PLAYBACK),
+            )
+        }
+        runCurrent()
+        val waitingBeforeTerminal = !replacement.isCompleted
+        assertFalse(replacement.isCompleted)
+
+        releaseCommit.complete(Unit)
+        runCurrent()
+
+        val replacementHandle = replacement.await()
+        assertEquals(
+            FetchAcquireDisposition.WAITED_CANCELLING,
+            replacementHandle.acquireDisposition,
+        )
+        assertEquals(first.fetchId, replacementHandle.fetchId)
+        assertEquals(1, executions)
+        assertEquals(
+            FetchOutcomeKind.INTERNAL_FAILURE,
+            replacementHandle.await().kind,
+        )
+
+        writeCase(
+            caseId = "CANCELLING_BARRIER_LATE_FAILURE",
+            events = events,
+            observation = linkedMapOf(
+                "schemaVersion" to 1,
+                "caseId" to "CANCELLING_BARRIER_LATE_FAILURE",
+                "executions" to executions,
+                "waitingBeforeTerminal" to waitingBeforeTerminal,
+                "replacementDisposition" to replacementHandle.acquireDisposition.name,
+                "sameFetchId" to true,
+                "terminalOutcome" to "INTERNAL_FAILURE",
             ),
         )
     }
