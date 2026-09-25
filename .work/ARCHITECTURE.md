@@ -428,6 +428,8 @@ UNKNOWN_IO
 
 This enables deterministic recovery and honest UI.
 
+The list above is illustrative. The exact classification enum is Provisional and owned by M2-C; the frozen rules are in `.work/milestones/M2.md` section 9-10 (observation ≠ classification ≠ decision ≠ action; bare 403 is not stale-descriptor evidence; 429 is rate limiting; storage failures are never provider/network failures).
+
 ### 9.4 DescriptorRefresher
 
 On provider-expiry or selected rejection:
@@ -459,6 +461,35 @@ Inputs:
 - reserve remaining.
 
 No request storm is allowed when the provider is already rejecting or throttling traffic.
+
+M2 binds the outer budget to a **RecoveryChain** — one logical attempt to satisfy one immutable media work item — rather than to a whole session or a single SharedFetch. The chain's ledger is monotonic and survives SharedFetch replacement, Media3 reopen, route change, delivery-binding refresh and transport reconnect; none of those grants fresh budget by itself. Budget shape and limits are Provisional (M2-C). See `.work/milestones/M2.md` section 11.
+
+### 9.6 M2 resilience seam
+
+Frozen conceptual decomposition (no Kotlin interfaces are implied by it):
+
+```text
+ProviderAdapter
+      │
+      ▼
+stable PlaybackPlan / FetchUnits      immutable: MediaAssetId, FetchKey, ExtentSpec
+      │
+      ▼
+mutable Delivery Binding              DeliveryBindingRevision: locator/session/provider context
+      │
+      ▼
+Recovery Policy
+ ┌────┼─────────────┐
+Route │ Failure     │ Budget
+State │ Decision    │ Lineage
+ └────┼─────────────┘
+      ▼
+FetchBroker
+      ▼
+ExtentStore
+```
+
+Refreshing or rebinding delivery material may change only the mutable binding. Material incompatible with the immutable expected work fails closed or triggers a higher-level re-resolve; an existing ExtentSpec is never mutated. "DescriptorRefresher" in this document denotes that provider-neutral delivery-binding refresh. Route observation uses Android default-network callbacks through one serialized reducer with tri-state capabilities (API 23 support); `VALIDATED` is a route observation, not proof that a media origin is reachable. The normative contract is `.work/milestones/M2.md`.
 
 ## 10. Transport strategy
 

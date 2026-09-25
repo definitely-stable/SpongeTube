@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-example-run",
+  "sessionId": "m2-example-session",
+  "createdAtUtc": "2026-09-25T04:00:00Z",
+  "gitCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fixture": {
+    "id": "F1",
+    "manifestSha256": "237e64f1d08601946f2a1e57829d458adc1850dac26bb00893d8ddf857c83208"
+  },
+  "scenario": {
+    "family": "N7",
+    "variant": "VPN_DEFAULT_ROUTE_LOSS",
+    "primaryPlane": "ROUTE",
+    "hash": "e1b01de62f90ca92195194c8a4f66348b19fead0431fe58d5ade8c5f511e9843"
+  },
+  "playbackMode": "SPONGE",
+  "mediaPath": "ANDROID_DEFAULT_NETWORK",
+  "transport": {
+    "backendId": "example.transport-backend",
+    "backendVersion": null
+  },
+  "faultHarnesses": [
+    {
+      "plane": "DELIVERY",
+      "harnessId": "sponge-media-lab",
+      "harnessVersion": "example"
+    },
+    {
+      "plane": "ROUTE",
+      "harnessId": "example.android-route-harness",
+      "harnessVersion": "example"
+    }
+  ],
+  "policies": [
+    {
+      "policyId": "route-privacy-default",
+      "version": "example"
+    }
+  ],
+  "device": {
+    "api": 36,
+    "kind": "EXAMPLE"
+  },
+  "runtime": {
+    "media3": "1.11.1"
+  },
+  "clockDomains": [
+    "ANDROID_MONOTONIC",
+    "HOST_MEDIA_LAB_MONOTONIC"
+  ],
+  "limitations": [
+    "Contract example only; not produced by a real run."
+  ]
+}

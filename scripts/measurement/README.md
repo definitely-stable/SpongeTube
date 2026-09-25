@@ -1,3 +1,16 @@
+# Measurement and evidence kernels
+
+## M2 contract verifier
+
+`m2_contracts.py` is the host reference oracle for the FROZEN M2-A contracts in
+`.work/milestones/M2.md`: canonical scenario identity/hash, fault-plane
+ownership, run-manifest binding, VPN privacy transition, tri-state route
+capabilities, 403/429 anchors and `Retry-After` normalization,
+observation/classification/decision separation, RecoveryChain budget lineage,
+delivery-binding immutability, clock-domain separation and evidence privacy.
+It does not simulate future production M2 runtime. Its falsification suite is
+`tests/test_m2_contracts.py`, run by `Verify`.
+
 # M1 evidence kernel
 
 `m1_oracle.py` is the independent host-side verifier for M1 coverage evidence.

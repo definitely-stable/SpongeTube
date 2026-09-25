@@ -73,7 +73,24 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
+Status: **Active — M2-A contract foundation** (parent #74)
+
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
+
+Canonical milestone specification: `.work/milestones/M2.md`.
+
+M2 is split into focused deliveries (an ownership map, not a frozen API):
+
+- **M2-A — Contract & Evidence Foundation** (#75): contract/evidence only — FROZEN/PROVISIONAL/DEFERRED decisions, fault-plane ownership, route/privacy contract, RecoveryChain and budget invariants, stable identity vs mutable delivery binding, `m2-scenario-v1` / `m2-run-manifest-v1`, host falsification suite. No runtime change.
+- **M2-B — Route Observation & Privacy Policy**: real Android `registerDefaultNetworkCallback` serialized reducer, `DefaultRouteState`, privacy/fetch-eligibility decision and `route-events-v1`; API 23 and API 34/36 tested.
+- **M2-C — Recovery Chain, Failure Classification & Request Budget**: RecoveryChain runtime identity, conservative classifier, bounded RecoveryBudget.
+- **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery**: delivery-binding refresh and deterministic 403/429/expiry; depends on the relevant #50 results.
+- **M2-E — Transport / Packet Fault Harness**: external transport and scoped network fault infrastructure with seeded stochastic profiles.
+- **M2-F — Android Route/VPN Recovery Integration**: end-to-end VPN/default-route recovery on Android's actual selected network.
+- **M2-G — Transport Evidence Evaluation**: transport comparison under the controlled experiment contract.
+- **M2-H — Canonical M2 Acceptance**: aggregation of already-working owning-slice evidence.
+
+#50 is a review dependency for M2-D and the production provider seam; it does not block provider-independent M2-A/B/C work.
 
 Build:
 
@@ -92,7 +109,7 @@ Build:
   - provider faults (403/429/expiry) remain deterministic HTTP semantics;
   - Android VPN/default-route tests traverse Android's actual selected network rather than `adb reverse`;
 - explicit seed persisted for every stochastic network scenario;
-- network impairment suite N2/N3/N5–N11.
+- network impairment suite N2/N3/N5–N11, each resolved with `scenarioFamily + variant + primaryPlane` (N3 and N6 are plane-specific per variant; N11 covers only storage/recovery interaction, while quota/eviction policy is M6).
 
 Do not apply netem globally to host loopback when that would also distort ADB/control traffic. Fault injection must be scoped to the media path.
 
