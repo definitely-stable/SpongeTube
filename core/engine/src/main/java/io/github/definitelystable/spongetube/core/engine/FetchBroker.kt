@@ -326,6 +326,7 @@ internal class FetchBroker internal constructor(
                         event = FetchEventKind.ATTEMPT_FAILED,
                         attempt = shared.attemptsStarted.takeIf { it > 0 },
                         outcome = attemptResult.observation.legacyOutcomeKind(),
+                        observation = attemptResult.observation,
                         transportCorrelationId =
                             attemptResult.transportCorrelationId,
                     )
@@ -639,6 +640,7 @@ internal class FetchBroker internal constructor(
             shared = shared,
             event = event,
             outcome = outcome.kind,
+            observation = outcome.failure,
         )
 
         synchronized(registryLock) {
@@ -671,6 +673,7 @@ internal class FetchBroker internal constructor(
         transportCorrelationId: String? = null,
         chunkByteStart: Long? = null,
         chunkByteEndExclusive: Long? = null,
+        observation: FailureObservation? = null,
     ) {
         val listener = eventListener ?: return
         synchronized(eventDeliveryLock) {
@@ -705,6 +708,7 @@ internal class FetchBroker internal constructor(
                         accounting.rejectedOrUnmappedBytes,
                     singleFlightJoined = joined,
                     outcome = outcome,
+                    observation = observation,
                 )
             }
             runCatching { listener.onEvent(snapshot) }
