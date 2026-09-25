@@ -22,7 +22,10 @@ from schema_subset import validate_instance, validate_schema_definition
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
-BRIDGE_SCHEMA_PATH = SCHEMAS / "bridge-events-v1.schema.json"
+BRIDGE_SCHEMA_PATHS = {
+    1: SCHEMAS / "bridge-events-v1.schema.json",
+    2: SCHEMAS / "bridge-events-v2.schema.json",
+}
 FETCH_SCHEMA_PATHS = {
     2: SCHEMAS / "fetch-events-v2.schema.json",
     3: SCHEMAS / "fetch-events-v3.schema.json",
@@ -125,7 +128,7 @@ class Case:
         return rows[0]
 
 
-def load_case(root: pathlib.Path, case_id: str, bridge_schema) -> Case:
+def load_case(root: pathlib.Path, case_id: str) -> Case:
     directory = root / case_id
     case_path = directory / "case.json"
     if not case_path.is_file():
@@ -138,8 +141,15 @@ def load_case(root: pathlib.Path, case_id: str, bridge_schema) -> Case:
     if not fetch_path.exists():
         fetch_path = directory / "fetch-events-v2.jsonl"
     fetch = read_jsonl(fetch_path, allow_empty=True)
-    # Schema first, semantics second: serializer drift fails the run.
-    _validate_rows(bridge_schema, bridge, f"{case_id}/bridge")
+    # Schema first, semantics second. M2-C writes bridge-events-v2 to the
+    # historical filename used by the M1 harness; retained v1 stays valid.
+    bridge_versions = {row.get("schemaVersion") for row in bridge}
+    if len(bridge_versions) != 1:
+        raise EvidenceError(f"{case_id}: mixed bridge event schema versions")
+    bridge_schema_path = BRIDGE_SCHEMA_PATHS.get(next(iter(bridge_versions)))
+    if bridge_schema_path is None:
+        raise EvidenceError(f"{case_id}: unsupported bridge event schema version")
+    _validate_rows(_load_schema(bridge_schema_path), bridge, f"{case_id}/bridge")
     if fetch:
         versions = {row.get("schemaVersion") for row in fetch}
         if len(versions) != 1:
@@ -422,8 +432,7 @@ def verify_e6(case: Case) -> dict[str, Any]:
 
 
 def verify(cases_root: pathlib.Path, origin: list[dict[str, Any]]) -> dict[str, Any]:
-    bridge_schema = _load_schema(BRIDGE_SCHEMA_PATH)
-    cases = [load_case(cases_root, case_id, bridge_schema) for case_id in REQUIRED_CASES]
+    cases = [load_case(cases_root, case_id) for case_id in REQUIRED_CASES]
     for case in cases:
         verify_case_common(case)
     by_id = {case.case_id: case for case in cases}
