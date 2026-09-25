@@ -126,6 +126,52 @@ class HttpRangeFetchExecutorTest {
     }
 
     @Test
+    fun localTargetPreflightDoesNotAdmitPhysicalAttempt() {
+        val request = FetchRequest(
+            fetchKey = FetchKey("fixture:TEST/preflight"),
+            extentSpec = ExtentSpec(
+                mediaAssetId = MediaAssetId("fixture:TEST"),
+                extentId = ExtentId("t:preflight"),
+                trackId = "video",
+                representationId = "v1",
+                mediaStartUs = null,
+                mediaEndUs = null,
+                byteStart = 0,
+                byteEndExclusive = 10,
+                expectedLength = 10,
+            ),
+        )
+        val executor = HttpRangeFetchExecutor(
+            targetFor = { null },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+        )
+        var admissions = 0
+
+        val disposition = runBlocking {
+            executor.executeCorrelatedWithAdmission(
+                request = request,
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                onPhysicalAttemptStart = { admissions += 1 },
+                onTransportCorrelation = { },
+                emitChunk = { },
+            )
+        }
+
+        assertEquals(0, admissions)
+        assertEquals(
+            FetchAttemptDisposition.Failure(
+                FailureObservation.TransportIo(
+                    io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
+                        .TARGET_UNRESOLVED,
+                ),
+            ),
+            disposition,
+        )
+    }
+
+    @Test
     fun contentRangeParserIsStrict() {
         assertEquals(
             HttpRangeFetchExecutor.ContentRange(0, 9, 10),
