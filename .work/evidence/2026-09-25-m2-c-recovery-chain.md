@@ -184,7 +184,7 @@ cleanup, introduced recovery-aware `bridge-events-v2`, and introduced typed
 - `.work/schemas/fetch-events-v4.schema.json`
 - `.work/schemas/recovery-verification-summary-v1.schema.json`
 - examples: `.work/schemas/examples/m2/failure-decision-v1.example.json`,
-  `recovery-budget-v1.example.json`, `recovery-fetch-events-v3.example.jsonl`,
+  `recovery-budget-v1.example.json`, `recovery-fetch-events-v4.example.jsonl`,
   `recovery-verification-summary-v1.example.json`, `recovery/<case>/`
   (all produced by the Kotlin runtime)
 - verifier: `scripts/measurement/m2_recovery_oracle.py` (no production import);
