@@ -899,6 +899,8 @@ Later M2 slices may add gate IDs; no fixed count is reserved.
 
 M2-A defines these contracts and their host reference/falsification tests (`scripts/measurement/tests/test_m2_contracts.py`, run by `Verify`). It does not claim that Android/runtime behavior passes M2-ACC-03..07; that proof belongs to the owning slices and to the M2-H canonical aggregation.
 
+M2-B adds `route-events-v1` and `route-verification-summary-v1`. `Verify` runs the Kotlin reducer/policy tests, verifies the scripted host artifacts with the independent oracle (`scripts/ci/verify-m2-b-route-evidence.sh host`) and runs `test_m2_route_oracle.py`; Android Smoke (API 36) and Android Compatibility (API 34) verify the exported emulator artifact; API 23 is an instrumentation-only compatibility proof of the legacy source. M2-B evidence is a **component** proof for M2-ACC-03: it never claims that a real media fetch paused across an actual VPN/default-route transition (M2-F).
+
 ### 23.3 Additional M2 evidence rules
 
 - a stochastic NETWORK fault without a persisted seed invalidates the run;

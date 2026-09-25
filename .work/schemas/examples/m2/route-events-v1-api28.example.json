@@ -1,0 +1,301 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-b-host-api28-startup-suspended",
+  "sessionId": "m2-b-host-api28-startup-suspended-session",
+  "androidApi": 28,
+  "clockDomain": "ANDROID_MONOTONIC",
+  "events": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1250000,
+      "source": "MONITOR_LIFECYCLE",
+      "signal": "MONITOR_STARTED",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": null,
+      "routeEpochAfter": null,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "INITIALIZING",
+        "routeEpoch": null,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 1500000,
+      "source": "BOOTSTRAP_ACTIVE_NETWORK",
+      "signal": "BOOTSTRAP_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": null,
+      "routeEpochAfter": null,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "UNAVAILABLE",
+        "routeEpoch": null,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 1750000,
+      "source": "DEFAULT_NETWORK_CALLBACK",
+      "signal": "AVAILABLE",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": null,
+      "routeEpochAfter": 1,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 2000000,
+      "source": "DEFAULT_NETWORK_CALLBACK",
+      "signal": "CAPABILITIES_CHANGED",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 1,
+      "observedCapabilities": {
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "UNKNOWN",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "suspended": "FALSE"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "UNKNOWN",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "FALSE"
+      }
+    },
+    {
+      "sequence": 5,
+      "elapsedRealtimeNs": 2250000,
+      "source": "DEFAULT_NETWORK_CALLBACK",
+      "signal": "CAPABILITIES_CHANGED",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 1,
+      "observedCapabilities": {
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "suspended": "TRUE"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "TRUE"
+      }
+    },
+    {
+      "sequence": 6,
+      "elapsedRealtimeNs": 2500000,
+      "source": "DEFAULT_NETWORK_CALLBACK",
+      "signal": "CAPABILITIES_CHANGED",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 1,
+      "observedCapabilities": {
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "TRUE",
+        "suspended": "FALSE"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "TRUE",
+        "blocked": "UNKNOWN",
+        "suspended": "FALSE"
+      }
+    },
+    {
+      "sequence": 7,
+      "elapsedRealtimeNs": 2750000,
+      "source": "DEFAULT_NETWORK_CALLBACK",
+      "signal": "CAPABILITIES_CHANGED",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 1,
+      "observedCapabilities": {
+        "internet": "FALSE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "suspended": "FALSE"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": true,
+        "internet": "FALSE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "FALSE"
+      }
+    },
+    {
+      "sequence": 8,
+      "elapsedRealtimeNs": 3000000,
+      "source": "MONITOR_LIFECYCLE",
+      "signal": "MONITOR_STOPPED",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 1,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": true,
+        "internet": "FALSE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "FALSE"
+      }
+    }
+  ],
+  "policyEvaluations": [
+    {
+      "sequence": 1,
+      "routeEventSequenceWatermark": 1,
+      "routeEpoch": null,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "UNRESOLVED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "INITIALIZING"
+    },
+    {
+      "sequence": 2,
+      "routeEventSequenceWatermark": 2,
+      "routeEpoch": null,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "UNRESOLVED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "NO_USABLE_DEFAULT"
+    },
+    {
+      "sequence": 3,
+      "routeEventSequenceWatermark": 3,
+      "routeEpoch": 1,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "UNRESOLVED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "CAPABILITIES_PENDING"
+    },
+    {
+      "sequence": 4,
+      "routeEventSequenceWatermark": 4,
+      "routeEpoch": 1,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "UNRESOLVED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "SESSION_ROUTE_UNRESOLVED"
+    },
+    {
+      "sequence": 5,
+      "routeEventSequenceWatermark": 5,
+      "routeEpoch": 1,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "SYSTEM_DEFAULT_ALLOWED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "NETWORK_SUSPENDED"
+    },
+    {
+      "sequence": 6,
+      "routeEventSequenceWatermark": 6,
+      "routeEpoch": 1,
+      "guardBefore": "SYSTEM_DEFAULT_ALLOWED",
+      "guardAfter": "SYSTEM_DEFAULT_ALLOWED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "NETWORK_RESTRICTED"
+    },
+    {
+      "sequence": 7,
+      "routeEventSequenceWatermark": 7,
+      "routeEpoch": 1,
+      "guardBefore": "SYSTEM_DEFAULT_ALLOWED",
+      "guardAfter": "SYSTEM_DEFAULT_ALLOWED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "NO_INTERNET_CAPABILITY"
+    }
+  ]
+}

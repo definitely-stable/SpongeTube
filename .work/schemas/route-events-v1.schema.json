@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/route-events-v1.schema.json",
+  "title": "SpongeTube M2-B Route Events v1",
+  "description": "Android default-route observation and session route-policy evidence (.work/milestones/M2.md sections 8 and 16). Route events and policy evaluations are separate rows. Replay semantics (epochs, stale suppression, API floors, session guard, decisions) are checked independently by scripts/measurement/m2_route_oracle.py. No Network handle, netId, address, DNS, interface, proxy, SSID or BSSID is representable.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "androidApi",
+    "clockDomain",
+    "events",
+    "policyEvaluations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "androidApi": {
+      "type": "integer",
+      "minimum": 23
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "ANDROID_MONOTONIC"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/routeEvent"
+      }
+    },
+    "policyEvaluations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policyEvaluation"
+      }
+    }
+  },
+  "$defs": {
+    "observedBoolean": {
+      "type": "string",
+      "enum": [
+        "TRUE",
+        "FALSE",
+        "UNKNOWN"
+      ]
+    },
+    "guard": {
+      "type": "string",
+      "enum": [
+        "UNRESOLVED",
+        "SYSTEM_DEFAULT_ALLOWED",
+        "VPN_CONTINUITY_REQUIRED"
+      ]
+    },
+    "routeState": {
+      "type": "object",
+      "required": [
+        "state",
+        "routeEpoch",
+        "capabilitiesReceived",
+        "internet",
+        "validated",
+        "vpn",
+        "metered",
+        "restricted",
+        "blocked",
+        "suspended"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "INITIALIZING",
+            "UNAVAILABLE",
+            "AVAILABLE"
+          ]
+        },
+        "routeEpoch": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "capabilitiesReceived": {
+          "type": "boolean"
+        },
+        "internet": {
+          "$ref": "#/$defs/observedBoolean"
+        },
+        "validated": {
+          "$ref": "#/$defs/observedBoolean"
+        },
+        "vpn": {
+          "$ref": "#/$defs/observedBoolean"
+        },
+        "metered": {
+          "$ref": "#/$defs/observedBoolean"
+        },
+        "restricted": {
+          "$ref": "#/$defs/observedBoolean"
+        },
+        "blocked": {
+          "$ref": "#/$defs/observedBoolean"
+        },
+        "suspended": {
+          "$ref": "#/$defs/observedBoolean"
+        }
+      }
+    },
+    "routeEvent": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "elapsedRealtimeNs",
+        "source",
+        "signal",
+        "disposition",
+        "platformRouteRef",
+        "routeEpochBefore",
+        "routeEpochAfter",
+        "observedCapabilities",
+        "observedBlocked",
+        "runtimeStateAfter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "elapsedRealtimeNs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "MONITOR_LIFECYCLE",
+            "DEFAULT_NETWORK_CALLBACK",
+            "API23_ACTIVE_NETWORK_SNAPSHOT",
+            "BOOTSTRAP_ACTIVE_NETWORK"
+          ]
+        },
+        "signal": {
+          "type": "string",
+          "enum": [
+            "MONITOR_STARTED",
+            "AVAILABLE",
+            "CAPABILITIES_CHANGED",
+            "LINK_PROPERTIES_CHANGED",
+            "BLOCKED_CHANGED",
+            "LOST",
+            "LEGACY_SNAPSHOT",
+            "BOOTSTRAP_SNAPSHOT",
+            "MONITOR_STOPPED"
+          ]
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "APPLIED",
+            "UNCHANGED",
+            "STALE_IGNORED"
+          ]
+        },
+        "platformRouteRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^p[1-9][0-9]*$"
+        },
+        "routeEpochBefore": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "routeEpochAfter": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "observedCapabilities": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "internet",
+            "validated",
+            "vpn",
+            "metered",
+            "restricted",
+            "suspended"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "internet": {
+              "$ref": "#/$defs/observedBoolean"
+            },
+            "validated": {
+              "$ref": "#/$defs/observedBoolean"
+            },
+            "vpn": {
+              "$ref": "#/$defs/observedBoolean"
+            },
+            "metered": {
+              "$ref": "#/$defs/observedBoolean"
+            },
+            "restricted": {
+              "$ref": "#/$defs/observedBoolean"
+            },
+            "suspended": {
+              "$ref": "#/$defs/observedBoolean"
+            }
+          }
+        },
+        "observedBlocked": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "TRUE",
+            "FALSE",
+            null
+          ]
+        },
+        "runtimeStateAfter": {
+          "$ref": "#/$defs/routeState"
+        }
+      }
+    },
+    "policyEvaluation": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "routeEventSequenceWatermark",
+        "routeEpoch",
+        "guardBefore",
+        "guardAfter",
+        "explicitDirectOverride",
+        "decision",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "routeEventSequenceWatermark": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "routeEpoch": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "guardBefore": {
+          "$ref": "#/$defs/guard"
+        },
+        "guardAfter": {
+          "$ref": "#/$defs/guard"
+        },
+        "explicitDirectOverride": {
+          "type": "boolean"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "ALLOW",
+            "PAUSE"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "ROUTE_READY",
+            "EXPLICIT_DIRECT_OVERRIDE",
+            "INITIALIZING",
+            "NO_USABLE_DEFAULT",
+            "CAPABILITIES_PENDING",
+            "SESSION_ROUTE_UNRESOLVED",
+            "VPN_CONTINUITY_REQUIRED",
+            "NETWORK_BLOCKED",
+            "NETWORK_SUSPENDED",
+            "NETWORK_RESTRICTED",
+            "NO_INTERNET_CAPABILITY"
+          ]
+        }
+      }
+    }
+  }
+}

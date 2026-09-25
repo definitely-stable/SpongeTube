@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-b-host-api23-legacy-snapshots",
+  "sessionId": "m2-b-host-api23-legacy-snapshots-session",
+  "androidApi": 23,
+  "clockDomain": "ANDROID_MONOTONIC",
+  "events": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1250000,
+      "source": "MONITOR_LIFECYCLE",
+      "signal": "MONITOR_STARTED",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": null,
+      "routeEpochAfter": null,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "INITIALIZING",
+        "routeEpoch": null,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 1500000,
+      "source": "API23_ACTIVE_NETWORK_SNAPSHOT",
+      "signal": "LEGACY_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": null,
+      "routeEpochAfter": null,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "UNAVAILABLE",
+        "routeEpoch": null,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 1750000,
+      "source": "API23_ACTIVE_NETWORK_SNAPSHOT",
+      "signal": "LEGACY_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": null,
+      "routeEpochAfter": 1,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 2000000,
+      "source": "API23_ACTIVE_NETWORK_SNAPSHOT",
+      "signal": "LEGACY_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p1",
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 1,
+      "observedCapabilities": {
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "TRUE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "suspended": "UNKNOWN"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 1,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "TRUE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 5,
+      "elapsedRealtimeNs": 2250000,
+      "source": "API23_ACTIVE_NETWORK_SNAPSHOT",
+      "signal": "LEGACY_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p2",
+      "routeEpochBefore": 1,
+      "routeEpochAfter": 2,
+      "observedCapabilities": {
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "suspended": "UNKNOWN"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 2,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "FALSE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 6,
+      "elapsedRealtimeNs": 2500000,
+      "source": "API23_ACTIVE_NETWORK_SNAPSHOT",
+      "signal": "LEGACY_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": 2,
+      "routeEpochAfter": null,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "UNAVAILABLE",
+        "routeEpoch": null,
+        "capabilitiesReceived": false,
+        "internet": "UNKNOWN",
+        "validated": "UNKNOWN",
+        "vpn": "UNKNOWN",
+        "metered": "UNKNOWN",
+        "restricted": "UNKNOWN",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 7,
+      "elapsedRealtimeNs": 2750000,
+      "source": "API23_ACTIVE_NETWORK_SNAPSHOT",
+      "signal": "LEGACY_SNAPSHOT",
+      "disposition": "APPLIED",
+      "platformRouteRef": "p2",
+      "routeEpochBefore": null,
+      "routeEpochAfter": 3,
+      "observedCapabilities": {
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "TRUE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "suspended": "UNKNOWN"
+      },
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 3,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "TRUE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    },
+    {
+      "sequence": 8,
+      "elapsedRealtimeNs": 3000000,
+      "source": "MONITOR_LIFECYCLE",
+      "signal": "MONITOR_STOPPED",
+      "disposition": "APPLIED",
+      "platformRouteRef": null,
+      "routeEpochBefore": 3,
+      "routeEpochAfter": 3,
+      "observedCapabilities": null,
+      "observedBlocked": null,
+      "runtimeStateAfter": {
+        "state": "AVAILABLE",
+        "routeEpoch": 3,
+        "capabilitiesReceived": true,
+        "internet": "TRUE",
+        "validated": "TRUE",
+        "vpn": "TRUE",
+        "metered": "FALSE",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN"
+      }
+    }
+  ],
+  "policyEvaluations": [
+    {
+      "sequence": 1,
+      "routeEventSequenceWatermark": 2,
+      "routeEpoch": null,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "UNRESOLVED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "NO_USABLE_DEFAULT"
+    },
+    {
+      "sequence": 2,
+      "routeEventSequenceWatermark": 3,
+      "routeEpoch": 1,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "UNRESOLVED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "CAPABILITIES_PENDING"
+    },
+    {
+      "sequence": 3,
+      "routeEventSequenceWatermark": 4,
+      "routeEpoch": 1,
+      "guardBefore": "UNRESOLVED",
+      "guardAfter": "VPN_CONTINUITY_REQUIRED",
+      "explicitDirectOverride": false,
+      "decision": "ALLOW",
+      "reason": "ROUTE_READY"
+    },
+    {
+      "sequence": 4,
+      "routeEventSequenceWatermark": 5,
+      "routeEpoch": 2,
+      "guardBefore": "VPN_CONTINUITY_REQUIRED",
+      "guardAfter": "VPN_CONTINUITY_REQUIRED",
+      "explicitDirectOverride": false,
+      "decision": "PAUSE",
+      "reason": "VPN_CONTINUITY_REQUIRED"
+    },
+    {
+      "sequence": 5,
+      "routeEventSequenceWatermark": 7,
+      "routeEpoch": 3,
+      "guardBefore": "VPN_CONTINUITY_REQUIRED",
+      "guardAfter": "VPN_CONTINUITY_REQUIRED",
+      "explicitDirectOverride": false,
+      "decision": "ALLOW",
+      "reason": "ROUTE_READY"
+    }
+  ]
+}

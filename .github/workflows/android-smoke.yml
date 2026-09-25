@@ -100,6 +100,13 @@ jobs:
           bash scripts/ci/verify-m1-c-evidence.sh \
             build/android-smoke/m1-c-evidence
 
+      - name: Verify M2-B route observation smoke
+        shell: bash
+        run: |
+          bash scripts/ci/verify-m2-b-route-evidence.sh device \
+            build/android-smoke/m2-b-route \
+            36
+
       - name: Run M1 FetchBroker origin acceptance
         shell: bash
         run: |
@@ -413,6 +420,7 @@ jobs:
             benchmark/build/outputs/androidTest-results/
             core/storage/build/outputs/androidTest-results/
             core/engine/build/outputs/androidTest-results/
+            core/engine/build/outputs/connected_android_test_additional_output/
             core/engine/build/reports/
             playback/bridge/build/outputs/androidTest-results/
             playback/bridge/build/outputs/connected_android_test_additional_output/

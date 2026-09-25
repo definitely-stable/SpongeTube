@@ -85,6 +85,13 @@ jobs:
             :core:storage:connectedDebugAndroidTest \
             :core:engine:connectedDebugAndroidTest
 
+      - name: Verify M2-B route adapter compatibility
+        shell: bash
+        run: |
+          bash scripts/ci/verify-m2-b-route-evidence.sh device \
+            "build/android-compat/api-${{ matrix.api }}/m2-b-route" \
+            "${{ matrix.api }}"
+
       - name: Run N0 compatibility smoke
         shell: bash
         run: |
@@ -220,6 +227,7 @@ jobs:
             core/storage/build/outputs/androidTest-results/
             core/storage/build/reports/
             core/engine/build/outputs/androidTest-results/
+            core/engine/build/outputs/connected_android_test_additional_output/
             core/engine/build/reports/
             build/reports/dependency-verification/
             build/reports/configuration-cache/

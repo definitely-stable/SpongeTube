@@ -16,6 +16,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from m2_contracts import (
     HISTORICAL_SCHEMA_SHA256,
+    M2_SLICE_SCHEMAS,
     PLANE_FAULT_FIELDS,
     M2ContractError,
     canonicalize_scenario,
@@ -228,8 +229,12 @@ class M2HistoricalContractTest(unittest.TestCase):
             path.name
             for path in SCHEMAS.glob("*.schema.json")
             if not path.name.startswith("m2-")
+            and path.name not in M2_SLICE_SCHEMAS
         }
         self.assertEqual(set(HISTORICAL_SCHEMA_SHA256), present)
+        self.assertFalse(M2_SLICE_SCHEMAS & set(HISTORICAL_SCHEMA_SHA256))
+        for name in M2_SLICE_SCHEMAS:
+            self.assertTrue((SCHEMAS / name).is_file(), name)
         for name, digest in HISTORICAL_SCHEMA_SHA256.items():
             with self.subTest(schema=name):
                 actual = hashlib.sha256((SCHEMAS / name).read_bytes()).hexdigest()
