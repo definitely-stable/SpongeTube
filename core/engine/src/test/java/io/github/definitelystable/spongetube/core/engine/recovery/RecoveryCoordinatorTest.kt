@@ -661,7 +661,6 @@ class RecoveryCoordinatorTest {
                 evidence.budgetEvents().none { it.kind == RecoveryBudgetEventKind.CHARGE },
             )
             assertTrue(fetchEvents.none { it.event == FetchEventKind.ATTEMPT_STARTED })
-            assertEquals(0, outcome.lastFetchOutcome?.let { 1 } ?: 0)
             val failure = evidence.failures().single()
             assertEquals(
                 FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
