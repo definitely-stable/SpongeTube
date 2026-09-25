@@ -29,6 +29,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 
 /**
  * The only logical retry owner (M2-C, ADR-0003).
@@ -99,6 +100,9 @@ internal class RecoveryCoordinator(
                     initialPriority = consumer.kind.priority,
                 )
                 chain.consumers[consumer.id] = consumer
+                val job = scope.launch(start = CoroutineStart.LAZY) { drive(chain) }
+                chain.job = job
+                job.invokeOnCompletion { onDriverCompleted(chain) }
                 activeChains[request.fetchKey] = chain
                 created = chain
                 disposition = RecoveryAcquireDisposition.NEW_CHAIN
@@ -153,9 +157,11 @@ internal class RecoveryCoordinator(
 
         handleToRaise?.raisePriority(consumer.kind.priority)
         if (created != null) {
-            val job = scope.launch(start = CoroutineStart.LAZY) { drive(chain) }
-            synchronized(lock) { chain.job = job }
-            job.start()
+            // The driver Job was installed before the chain became visible to
+            // shutdown/acquire. Starting it here is race-safe: shutdown can
+            // always observe and join the Job even if this coroutine is
+            // descheduled between publication and start.
+            checkNotNull(chain.job).start()
         }
 
         val handle = Handle(chain, consumer.id, disposition)
@@ -175,29 +181,73 @@ internal class RecoveryCoordinator(
      * wait) and wait for them. FetchBroker is shut down afterwards by the
      * runtime; no chain starts an attempt after this returns.
      */
+    private val shutdownCompletion = CompletableDeferred<Unit>()
+
     suspend fun shutdown() {
-        val chains: List<RecoveryChain>
+        var chains: List<RecoveryChain> = emptyList()
         val handles = mutableListOf<FetchHandle>()
-        synchronized(lock) {
+        val owner = synchronized(lock) {
             if (closing) {
-                return
-            }
-            closing = true
-            chains = activeChains.values.toList()
-            chains.forEach { chain ->
-                chain.stopWaiting.value = true
-                chain.brokerHandle?.let(handles::add)
+                false
+            } else {
+                closing = true
+                true
             }
         }
-        handles.forEach(FetchHandle::close)
-        chains.forEach { chain -> chain.job?.join() }
-        if (ownsScope) {
-            scope.cancel()
+        if (!owner) {
+            shutdownCompletion.await()
+            return
+        }
+
+        try {
+            withContext(NonCancellable) {
+                synchronized(lock) {
+                    chains = activeChains.values.toList()
+                    chains.forEach { chain ->
+                        chain.stopWaiting.value = true
+                        chain.brokerHandle?.let(handles::add)
+                    }
+                }
+                handles.forEach(FetchHandle::close)
+                chains.forEach { chain -> chain.job?.join() }
+                if (ownsScope) {
+                    scope.cancel()
+                }
+            }
+        } finally {
+            shutdownCompletion.complete(Unit)
         }
     }
 
     internal fun activeChainCountForTest(): Int =
         synchronized(lock) { activeChains.size }
+
+    /**
+     * Last-resort lifecycle barrier. A lazy driver can be cancelled before its
+     * body runs, and a fatal Error may escape [drive]. Neither is allowed to
+     * leave a published RecoveryChain with unresolved settled/result deferreds.
+     */
+    private fun onDriverCompleted(chain: RecoveryChain) {
+        val outcome = synchronized(lock) {
+            if (chain.state == RecoveryChainState.TERMINAL) {
+                null
+            } else {
+                terminateLocked(
+                    chain,
+                    if (closing) {
+                        RecoveryTerminalReason.SESSION_TERMINATION
+                    } else if (chain.consumers.isEmpty()) {
+                        RecoveryTerminalReason.NO_REMAINING_DEMAND
+                    } else {
+                        RecoveryTerminalReason.TERMINAL_FAILURE
+                    },
+                )
+            }
+        }
+        if (outcome != null) {
+            complete(chain, outcome)
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Chain driver
