@@ -36,6 +36,10 @@
     {
       "policyId": "route-privacy-default",
       "version": "example"
+    },
+    {
+      "policyId": "sponge-recovery-v1",
+      "version": "1"
     }
   ],
   "device": {

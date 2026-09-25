@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A and M2-B complete; M2-C next** (parent #74)
+Status: **Active — M2-A and M2-B complete; M2-C in review** (parent #74)
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -83,7 +83,7 @@ M2 is split into focused deliveries (an ownership map, not a frozen API):
 
 - **M2-A — Contract & Evidence Foundation** (#75, complete): contract/evidence only — FROZEN/PROVISIONAL/DEFERRED decisions, fault-plane ownership, route/privacy contract, RecoveryChain and budget invariants, stable identity vs mutable delivery binding, `m2-scenario-v1` / `m2-run-manifest-v1`, host falsification suite. No runtime change.
 - **M2-B — Route Observation & Privacy Policy** (complete, `.work/evidence/2026-09-25-m2-b-route-observation.md`): Android default-route observation (API 24+ `registerDefaultNetworkCallback`, API 23 `CONNECTIVITY_ACTION` snapshot fallback), one serialized reducer, `DefaultRouteState`, per-session `SessionRouteGuard` and `ExternalFetchRouteDecision`, `route-events-v1`; API 23 and API 34/36 tested. No FetchBroker wiring (M2-C/M2-F).
-- **M2-C — Recovery Chain, Failure Classification & Request Budget** (next): RecoveryChain runtime identity, conservative classifier, bounded RecoveryBudget.
+- **M2-C — Recovery Chain, Failure Classification & Request Budget** (in review, `.work/evidence/2026-09-25-m2-c-recovery-chain.md`, ADR-0003): `RecoveryCoordinator` as the only logical retry owner, RecoveryChain identity, typed `FailureObservation` + conservative `FailureClassifier`, `sponge-recovery-v1` (`REMOTE_ATTEMPT = 4`, exponential backoff with full jitter), `RecoveryAttemptGate` seam, one FetchBroker owner = one attempt, no Media3 retry; `failure-decision-events-v1`, `recovery-budget-events-v1`; M2-ACC-05/06 executable. Provider actions fail closed until M2-D; route gate wiring is M2-F.
 - **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery**: delivery-binding refresh and deterministic 403/429/expiry; depends on the relevant #50 results.
 - **M2-E — Transport / Packet Fault Harness**: external transport and scoped network fault infrastructure with seeded stochastic profiles.
 - **M2-F — Android Route/VPN Recovery Integration**: end-to-end VPN/default-route recovery on Android's actual selected network.

@@ -72,7 +72,7 @@ Current repository sequencing:
 
 - M2-A contract/evidence foundation (`.work/milestones/M2.md`, #75) — complete;
 - M2-B route observation & privacy policy (`.work/evidence/2026-09-25-m2-b-route-observation.md`) — complete;
-- M2-C recovery chain, failure classification & request budget — next;
+- M2-C recovery chain, failure classification & request budget (`.work/evidence/2026-09-25-m2-c-recovery-chain.md`, ADR-0003) — in review;
 - YouTube delivery feasibility (M3-A, #50) remains a parallel risk track and is a review dependency for M2-D provider/delivery-binding work.
 
 Analytical reports under `.analysis/` or externally supplied audit files are inputs, not authority. Accepted conclusions become normative only when consolidated into the authority chain above through the normal PR/ADR process.
