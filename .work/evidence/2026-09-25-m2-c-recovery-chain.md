@@ -1,7 +1,7 @@
 # Evidence: M2-C recovery chain, failure classification and request budget
 
 Date: **2026-09-25**
-Status: **Local verification complete; CI verification pending** (see Results)
+Status: **Complete — final-head CI verification green**
 
 ## Question
 
@@ -23,7 +23,9 @@ decision and executed action separate and independently verifiable
 
 ## Build
 
-- Branch: `claude/m2-c-recovery-chain-6z7dp2` (the commit that adds this record)
+- PR: #80
+- Verified implementation head: `f6258d88dab2bd015022b1a15e2e7041bdca7898`
+- Branch: `claude/m2-c-recovery-chain-6z7dp2`
 - `main` base: `1f060dee95a1127e356b26285bc0def17d36b711` (#78, M2-B)
 - Decision record: `.work/adr/0003-centralize-recovery-ownership.md`
 - Policy: `sponge-recovery-v1`, `REMOTE_ATTEMPT = 4`, backoff
@@ -82,10 +84,10 @@ item across unrelated counters.
   (equivalent to `verify-m2-c-recovery-evidence.sh host` minus its Gradle
   step, which needs the Android SDK).
 - Host contracts: `python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py'`.
-- CI (pending): `Verify` (`verify-m2-c-recovery-evidence.sh host`),
+- CI: `Verify` (`verify-m2-c-recovery-evidence.sh host`),
   `Android Smoke` API 36 (`RecoveryOriginAndroidTest` + `verify-m2-c-recovery-evidence.sh device`
   against the Media Lab trace), `Android Compatibility` API 23/34,
-  `M1 Recovery`.
+  and `M1 Recovery`, all green on the verified implementation head.
 
 ## Results
 
@@ -161,19 +163,18 @@ cleanup, introduced recovery-aware `bridge-events-v2`, and introduced typed
 
 | Check | Run | Result |
 | --- | --- | --- |
-| Verify (incl. `verify-m2-c-recovery-evidence.sh host`) | not yet run | pending |
-| Windows verify | not yet run | pending |
-| Android Smoke API 36 (incl. `RecoveryOriginAndroidTest`, expected 3 physical requests) | not yet run | pending |
-| Android Compatibility API 23 / 34 | not yet run | pending |
-| M1 Recovery | not yet run | pending |
+| Verify (incl. `verify-m2-c-recovery-evidence.sh host`) | 36149635693 | PASS |
+| Windows verify | 36149635693 | PASS |
+| Android Smoke API 36 (incl. `RecoveryOriginAndroidTest`, expected 3 physical requests) | 36149635799 | PASS |
+| Android Compatibility API 23 / 34 | 36149635545 | PASS |
+| M1 Recovery | 36149635564 | PASS |
 
 ## Gates
 
-- **M2-ACC-05 — Failure Separation:** PASS on host evidence (7/7 cases);
-  Android device evidence pending CI.
-- **M2-ACC-06 — Bounded Recovery Lineage:** PASS on host evidence (5 cases
-  with several owner lifetimes on one ledger, exact charge = attempt count);
-  device evidence with origin-trace request count pending CI.
+- **M2-ACC-05 — Failure Separation:** PASS on host and Android device evidence.
+- **M2-ACC-06 — Bounded Recovery Lineage:** PASS on host evidence and Android
+  origin-trace correlation; charge = physical attempt = origin request for the
+  canonical device proof.
 
 ## Schemas and verifier
 
@@ -203,8 +204,7 @@ cleanup, introduced recovery-aware `bridge-events-v2`, and introduced typed
   barriers, recovery after restore) are unchanged. Expected behavioral
   difference under N4R: a chain tolerates about `4 x readTimeout` of body
   stall before BUDGET_EXHAUSTED, where M1 tolerated up to 8 owner attempts.
-  Whether N4R-RESTORE/EXHAUST stay green is decided by the pending M1
-  Recovery run, not assumed here.
+  N4R-RESTORE/EXHAUST remained green in final-head M1 Recovery run 36149635564.
 
 ## Limitations
 
@@ -217,8 +217,8 @@ or transport superiority.
 
 Additional limitations of this record:
 
-- Android and Media3 code paths were not compiled or executed in the
-  authoring environment; their status depends on the pending CI rows.
+- The authoring container did not provide the Android/Media3 build environment;
+  authoritative Android/Media3 proof is the green final-head repository CI listed above.
 - `CONNECTION_RESET` means "socket error after connect"
   (`java.net.SocketException`); the errno is not observable without parsing
   exception messages, which M2-C forbids.
@@ -227,7 +227,7 @@ Additional limitations of this record:
 
 ## Conclusion
 
-On host evidence the hypothesis holds: one retry owner, one ledger per chain,
-charge = physical attempt, at most 4 physical requests, no implicit reset, and
-four separated failure layers that an independent oracle re-derives. M2-C is
-not closed until the CI rows above are green on the final head.
+The hypothesis holds on independent host evidence and repository Android
+evidence: one retry owner, one ledger per chain, charge = physical attempt,
+at most 4 physical requests, no implicit reset, and separated failure layers
+that an independent oracle re-derives. M2-C is complete.
