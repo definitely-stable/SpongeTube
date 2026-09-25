@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A contract foundation** (parent #74)
+Status: **Active — M2-A complete; M2-B route observation active** (parent #74)
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -81,8 +81,8 @@ Canonical milestone specification: `.work/milestones/M2.md`.
 
 M2 is split into focused deliveries (an ownership map, not a frozen API):
 
-- **M2-A — Contract & Evidence Foundation** (#75): contract/evidence only — FROZEN/PROVISIONAL/DEFERRED decisions, fault-plane ownership, route/privacy contract, RecoveryChain and budget invariants, stable identity vs mutable delivery binding, `m2-scenario-v1` / `m2-run-manifest-v1`, host falsification suite. No runtime change.
-- **M2-B — Route Observation & Privacy Policy**: real Android `registerDefaultNetworkCallback` serialized reducer, `DefaultRouteState`, privacy/fetch-eligibility decision and `route-events-v1`; API 23 and API 34/36 tested.
+- **M2-A — Contract & Evidence Foundation** (#75, complete): contract/evidence only — FROZEN/PROVISIONAL/DEFERRED decisions, fault-plane ownership, route/privacy contract, RecoveryChain and budget invariants, stable identity vs mutable delivery binding, `m2-scenario-v1` / `m2-run-manifest-v1`, host falsification suite. No runtime change.
+- **M2-B — Route Observation & Privacy Policy** (active): Android default-route observation (API 24+ `registerDefaultNetworkCallback`, API 23 `CONNECTIVITY_ACTION` snapshot fallback), one serialized reducer, `DefaultRouteState`, per-session `SessionRouteGuard` and `ExternalFetchRouteDecision`, `route-events-v1`; API 23 and API 34/36 tested. No FetchBroker wiring (M2-C/M2-F).
 - **M2-C — Recovery Chain, Failure Classification & Request Budget**: RecoveryChain runtime identity, conservative classifier, bounded RecoveryBudget.
 - **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery**: delivery-binding refresh and deterministic 403/429/expiry; depends on the relevant #50 results.
 - **M2-E — Transport / Packet Fault Harness**: external transport and scoped network fault infrastructure with seeded stochastic profiles.
