@@ -51,7 +51,10 @@ from schema_subset import SchemaContractError, validate_instance  # noqa: E402
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
 FAILURE_SCHEMA = SCHEMAS / "failure-decision-events-v1.schema.json"
 BUDGET_SCHEMA = SCHEMAS / "recovery-budget-events-v1.schema.json"
-FETCH_SCHEMA = SCHEMAS / "fetch-events-v3.schema.json"
+FETCH_SCHEMAS = {
+    3: SCHEMAS / "fetch-events-v3.schema.json",
+    4: SCHEMAS / "fetch-events-v4.schema.json",
+}
 SUMMARY_SCHEMA = SCHEMAS / "recovery-verification-summary-v1.schema.json"
 
 
@@ -808,8 +811,13 @@ def _verify_failure_lineage(
 
 def _load_fetch(rows: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
     loaded = list(rows)
-    for index, row in enumerate(loaded):
-        _validate(FETCH_SCHEMA, row, f"fetch[{index}]")
+    versions = {row.get("schemaVersion") for row in loaded}
+    _require(len(versions) <= 1, "fetch evidence mixes schema versions")
+    if loaded:
+        schema_path = FETCH_SCHEMAS.get(next(iter(versions)))
+        _require(schema_path is not None, "unsupported fetch event schema version")
+        for index, row in enumerate(loaded):
+            _validate(schema_path, row, f"fetch[{index}]")
     for index, row in enumerate(loaded):
         _require(row["eventSequence"] == index, f"fetch[{index}]: eventSequence not contiguous")
     return loaded
