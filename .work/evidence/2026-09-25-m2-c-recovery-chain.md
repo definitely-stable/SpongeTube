@@ -147,8 +147,12 @@ and the chain ended as TERMINAL_FAILURE instead of NO_REMAINING_DEMAND (about
 1 in 20 runs under load). Separately, a FetchBroker owner cancelled before its
 coroutine body was dispatched never completed (latent since M1, made reachable
 by M2-C). Fixes: `FetchHandle.awaitTerminal()` (observes the terminal after
-release; the M1 cancellation barrier) and a completion handler that terminates
-an owner cancelled before it ran. Regression tests:
+release; the M1 cancellation barrier) and completion handlers that terminate
+both a broker owner and a RecoveryChain driver cancelled before their bodies
+run. Review hardening also moved REMOTE_ATTEMPT admission after transport
+preflight, made concurrent RecoveryCoordinator shutdown callers await one
+cleanup, introduced recovery-aware `bridge-events-v2`, and introduced typed
+`fetch-events-v4` instead of reinterpreting historical schemas. Regression tests:
 `RecoveryCoordinatorTest.lastConsumerLeavingAtAnyPointNeverFailsOrHangsTheChain`
 (fails without the fix) and
 `FetchBrokerTest.ownerCancelledBeforeItsBodyRunsStillReachesATerminal`.
@@ -175,6 +179,8 @@ an owner cancelled before it ran. Regression tests:
 
 - `.work/schemas/failure-decision-events-v1.schema.json`
 - `.work/schemas/recovery-budget-events-v1.schema.json`
+- `.work/schemas/bridge-events-v2.schema.json`
+- `.work/schemas/fetch-events-v4.schema.json`
 - `.work/schemas/recovery-verification-summary-v1.schema.json`
 - examples: `.work/schemas/examples/m2/failure-decision-v1.example.json`,
   `recovery-budget-v1.example.json`, `recovery-fetch-events-v3.example.jsonl`,
