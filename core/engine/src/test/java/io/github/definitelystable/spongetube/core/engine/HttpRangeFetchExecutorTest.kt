@@ -2,6 +2,11 @@ package io.github.definitelystable.spongetube.core.engine
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureClassifier
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionContext
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionKind
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
@@ -17,7 +22,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 
@@ -101,20 +108,67 @@ class HttpRangeFetchExecutorTest {
     }
 
     @Test
-    fun serverErrorIsRetryableTransportFailure() {
+    fun serverErrorIsAProviderPlaneHttpObservationNotATransportFailure() {
         mode = Mode.SERVER_ERROR
 
         val (disposition, _) = execute(start = 0, endExclusive = 10)
 
+        // M2-C: a received status is a provider-plane observation; the
+        // executor carries no retryability.
         assertEquals(
             FetchAttemptDisposition.Failure(
-                kind = FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
-                retryable = true,
+                observation = FailureObservation.HttpResponse(503),
                 transportCorrelationId = "lab-1",
             ),
             disposition,
         )
         assertEquals(listOf("lab-1"), transportCorrelations.toList())
+    }
+
+    @Test
+    fun localTargetPreflightDoesNotAdmitPhysicalAttempt() {
+        val request = FetchRequest(
+            fetchKey = FetchKey("fixture:TEST/preflight"),
+            extentSpec = ExtentSpec(
+                mediaAssetId = MediaAssetId("fixture:TEST"),
+                extentId = ExtentId("t:preflight"),
+                trackId = "video",
+                representationId = "v1",
+                mediaStartUs = null,
+                mediaEndUs = null,
+                byteStart = 0,
+                byteEndExclusive = 10,
+                expectedLength = 10,
+            ),
+        )
+        val executor = HttpRangeFetchExecutor(
+            targetFor = { null },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+        )
+        var admissions = 0
+
+        val disposition = runBlocking {
+            executor.executeCorrelatedWithAdmission(
+                request = request,
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                onPhysicalAttemptStart = { admissions += 1 },
+                onTransportCorrelation = { },
+                emitChunk = { },
+            )
+        }
+
+        assertEquals(0, admissions)
+        assertEquals(
+            FetchAttemptDisposition.Failure(
+                FailureObservation.TransportIo(
+                    io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
+                        .TARGET_UNRESOLVED,
+                ),
+            ),
+            disposition,
+        )
     }
 
     @Test
@@ -163,13 +217,16 @@ class HttpRangeFetchExecutorTest {
         val index = rangeHeaders.size
         val (disposition, received) = execute(start = 100, endExclusive = 1_100)
 
+        // range-continuation-v1 keeps its M1 fields: `outcome` is the legacy
+        // projection of the observation and `retryable` is whether the M2-C
+        // recovery policy would retry it (never the executor's opinion).
         val (outcome, retryable, correlation) = when (disposition) {
             is FetchAttemptDisposition.Success ->
                 Triple("SUCCESS", false, disposition.transportCorrelationId)
             is FetchAttemptDisposition.Failure ->
                 Triple(
-                    disposition.kind.name,
-                    disposition.retryable,
+                    disposition.observation.legacyOutcomeKind().name,
+                    policyWouldRetry(disposition.observation),
                     disposition.transportCorrelationId,
                 )
         }
@@ -202,15 +259,26 @@ class HttpRangeFetchExecutorTest {
         disposition: FetchAttemptDisposition,
         correlation: String,
     ) {
-        assertEquals(
-            FetchAttemptDisposition.Failure(
-                kind = FetchOutcomeKind.RANGE_REJECTED,
-                retryable = false,
-                transportCorrelationId = correlation,
-            ),
-            disposition,
+        disposition as FetchAttemptDisposition.Failure
+        assertTrue(
+            disposition.observation is FailureObservation.RangeProtocolFailure,
+            disposition.toString(),
         )
+        assertEquals(correlation, disposition.transportCorrelationId)
+        assertEquals(FetchOutcomeKind.RANGE_REJECTED, disposition.observation.legacyOutcomeKind())
+        assertFalse(policyWouldRetry(disposition.observation))
     }
+
+    private fun policyWouldRetry(observation: FailureObservation): Boolean =
+        RecoveryPolicy.DEFAULT.decide(
+            FailureClassifier.classify(observation),
+            observation,
+            RecoveryDecisionContext(
+                demandPresent = true,
+                sessionClosing = false,
+                remoteAttemptsRemaining = 1,
+            ),
+        ).kind == RecoveryDecisionKind.RETRY_AFTER_BACKOFF
 
     private fun execute(
         start: Long?,

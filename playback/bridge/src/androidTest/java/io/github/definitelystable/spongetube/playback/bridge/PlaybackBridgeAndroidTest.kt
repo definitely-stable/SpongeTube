@@ -211,6 +211,10 @@ class PlaybackBridgeAndroidTest {
                 runtime.acquireReserve(FetchKey(target.fetchKeyValue), "harness-reserve")
             }
             reserveFetchId = reserve.fetchId
+            // M2-C: the broker consumer is the RecoveryChain; the verifier
+            // joins the reserve lease to its owner through this fetchId.
+            extra["reserveFetchId"] = reserve.fetchId
+            extra["reserveRecoveryChainId"] = reserve.recoveryChainId
             startPlayer()
             awaitCondition(60_000, "bridge JOIN on ${target.extentId}") {
                 events(PlaybackBridgeEventKind.JOIN).any { it.extentId == target.extentId }

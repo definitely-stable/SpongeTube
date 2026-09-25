@@ -851,7 +851,14 @@ Artifact ownership is incremental:
 | `m1-run-manifest-v1` | canonical acceptance harness | schema + bound artifact identities | M1-G |
 | `m1-acceptance-index-v1` | canonical acceptance aggregator | schema + exact 16 unique MUST gates + proof membership + SHA-256/size recheck + manifest/commit identity | M1-G |
 
-Every runtime `fetch-events-v2` or `fetch-events-v3` row MUST validate against its checked-in schema before semantic/origin verification; a serializer/schema mismatch fails the run. The same rule applies to `bridge-events-v1`, `recovery-timeline-v1` and `origin-gate-events-v1`.
+Every runtime fetch-event row MUST validate against its declared checked-in
+schema before semantic/origin verification; retained M1 evidence uses
+`fetch-events-v2/v3`, while M2-C runtime evidence uses `fetch-events-v4`
+with a typed raw observation. Likewise retained M1 PlaybackBridge evidence
+uses `bridge-events-v1`; M2-C runtime evidence uses `bridge-events-v2`
+with explicit RecoveryChain identity and nullable real `fetchId`. A
+serializer/schema mismatch fails the run. The same rule applies to
+`recovery-timeline-v1` and `origin-gate-events-v1`.
 
 For M1-F the host verifier independently builds the full-session accepted-range
 ledger across different `fetchId` lifetimes. Per-owner
@@ -900,6 +907,21 @@ Later M2 slices may add gate IDs; no fixed count is reserved.
 M2-A defines these contracts and their host reference/falsification tests (`scripts/measurement/tests/test_m2_contracts.py`, run by `Verify`). It does not claim that Android/runtime behavior passes M2-ACC-03..07; that proof belongs to the owning slices and to the M2-H canonical aggregation.
 
 M2-B adds `route-events-v1` and `route-verification-summary-v1`. `Verify` runs the Kotlin reducer/policy tests, verifies the scripted host artifacts with the independent oracle (`scripts/ci/verify-m2-b-route-evidence.sh host`) and runs `test_m2_route_oracle.py`; Android Smoke (API 36) and Android Compatibility (API 34) verify the exported emulator artifact; API 23 is an instrumentation-only compatibility proof of the legacy source. M2-B evidence is a **component** proof for M2-ACC-03: it never claims that a real media fetch paused across an actual VPN/default-route transition (M2-F).
+
+M2-C adds the recovery artifacts and makes **M2-ACC-05** and **M2-ACC-06** runtime-executable:
+
+| Artifact | Producer | Independent verifier | Owning slice |
+| --- | --- | --- | --- |
+| `failure-decision-events-v1` | Kotlin `RecoveryCoordinator` via `RecoveryEvidenceRecorder` (`RecoveryEvidenceHostTest`, `RecoveryOriginAndroidTest`) | `scripts/measurement/m2_recovery_oracle.py` | M2-C |
+| `recovery-budget-events-v1` | same | same | M2-C |
+| `bridge-events-v2` | PlaybackBridge | schema + version-aware M1 bridge verifier | M2-C |
+| `fetch-events-v4` | FetchBroker | schema + recovery oracle / version-aware M1 verifiers | M2-C |
+| `recovery-verification-summary-v1` | `m2_recovery_oracle.py` | schema + `test_m2_recovery_oracle.py` | M2-C |
+
+The oracle never imports the production coordinator. It re-derives every classification, decision, executed action and backoff window from its own tables, replays each chain's ledger (monotonic, persistent dimensions, spent ≤ limit, no change except by an explicit charge), joins every REMOTE_ATTEMPT charge to exactly one FetchBroker
+`ATTEMPT_STARTED` in versioned fetch evidence (v4 for M2-C) and, with a
+Media Lab trace, to exactly one origin request. Target/range preflight failures
+must have zero charge, zero `ATTEMPT_STARTED` and zero origin request. M2-ACC-05 passes when at least one real/synthetic owner failure has independently verified observation, classification, decision and executed action; M2-ACC-06 passes when at least one chain spans several owner lifetimes on one ledger with an exact physical request count and no implicit reset. `Verify` runs the Kotlin tests, `scripts/ci/verify-m2-c-recovery-evidence.sh host` (seven scripted cases; both gates must pass in at least one case) and the falsification suite; Android Smoke (API 36) runs `RecoveryOriginAndroidTest` against Media Lab N4R and verifies the exported artifacts against the origin trace (`verify-m2-c-recovery-evidence.sh device`, both gates required). M1 Recovery remains a mandatory regression gate for the retry-ownership change. M2-C does not prove provider delivery-binding refresh, `Retry-After` behavior, real VPN/default-route fetch suppression, packet/network fault attribution, or transport superiority.
 
 ### 23.3 Additional M2 evidence rules
 

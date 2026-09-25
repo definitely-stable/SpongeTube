@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/bridge-events-v2.schema.json",
+  "title": "SpongeTube M2 PlaybackBridge Event v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventSequence",
+    "eventElapsedRealtimeNs",
+    "sessionId",
+    "readId",
+    "resourceKey",
+    "requestedRangeStart",
+    "requestedRangeEndExclusive",
+    "event",
+    "extentId",
+    "dependencyExtentId",
+    "recoveryChainId",
+    "recoveryDisposition",
+    "fetchId",
+    "fetchOutcome",
+    "bytesLocal",
+    "openReadCalls",
+    "coverageRefreshCalls",
+    "markerName",
+    "fetchEventSequenceWatermark"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "eventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "eventElapsedRealtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "readId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resourceKey": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requestedRangeStart": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "requestedRangeEndExclusive": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "event": {
+      "enum": [
+        "OPEN",
+        "LOCAL_SERVE",
+        "MISS",
+        "JOIN",
+        "WAIT_EXISTING",
+        "DEPENDENCY_WAIT",
+        "FETCH_WAIT_END",
+        "CLOSE",
+        "HARNESS_MARKER"
+      ]
+    },
+    "extentId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dependencyExtentId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recoveryChainId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recoveryDisposition": {
+      "enum": [
+        null,
+        "NEW_CHAIN",
+        "JOINED_ACTIVE",
+        "JOINED_CANCELLING"
+      ]
+    },
+    "fetchId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fetchOutcome": {
+      "enum": [
+        null,
+        "SUCCESS",
+        "RETRYABLE_TRANSPORT_FAILURE",
+        "TERMINAL_TRANSPORT_FAILURE",
+        "DESCRIPTOR_STALE",
+        "RANGE_REJECTED",
+        "CONTENT_INTEGRITY_REJECTED",
+        "STORAGE_NO_SPACE",
+        "STORAGE_IO",
+        "STORAGE_CONFLICT",
+        "CANCELLED_NO_CONSUMERS",
+        "CANCELLED_BROKER_SHUTDOWN",
+        "INTERNAL_FAILURE"
+      ]
+    },
+    "bytesLocal": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "openReadCalls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "coverageRefreshCalls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "markerName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fetchEventSequenceWatermark": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

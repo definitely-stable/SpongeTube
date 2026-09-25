@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-c-host-transient-then-success-run",
+  "sessionId": "m2-c-host-transient-then-success",
+  "policyId": "sponge-recovery-test-v1",
+  "status": "PASS",
+  "chainCount": 1,
+  "physicalAttemptCount": 3,
+  "chargedAttemptCount": 3,
+  "failureCount": 2,
+  "originRequestCount": null,
+  "terminalCounts": {
+    "SUCCESS": 1
+  },
+  "classificationCounts": {
+    "TRANSIENT_TRANSPORT": 2
+  },
+  "decisionCounts": {
+    "RETRY_AFTER_BACKOFF": 2
+  },
+  "actionCounts": {
+    "SCHEDULE_BACKOFF": 2
+  },
+  "gates": {
+    "M2-ACC-05": {
+      "status": "PASS",
+      "checks": [
+        "2 failure rows with independently re-derived classification, decision and executed action",
+        "observation layer carries only typed fields; no free text, URL or header",
+        "every failed owner has exactly one failure row whose observation projects to its FetchBroker outcome"
+      ]
+    },
+    "M2-ACC-06": {
+      "status": "PASS",
+      "checks": [
+        "1 chains spanning several owner lifetimes on one ledger",
+        "3 charges == 3 physical attempts",
+        "ledger monotonic, dimensions persistent, spent <= limit, no reset on new fetchId, priority, permit or backoff"
+      ]
+    }
+  },
+  "limitations": [
+    "M2-C proves provider-independent failure classification, single-owner recovery lineage and bounded remote-attempt accounting.",
+    "It does not prove provider delivery-binding refresh, Retry-After behavior, real VPN/default-route fetch suppression, packet/network fault attribution, or transport superiority."
+  ]
+}

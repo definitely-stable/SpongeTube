@@ -214,7 +214,7 @@ internal class BridgeScenario(
                 "sessionId" to sessionId,
                 "seededExtentIds" to JSONArray(seededExtentIds),
                 "bridgeConfig" to JSONObject(config.toArtifactMap()),
-                "loadErrorPolicy" to JSONObject(policy.config.toArtifactMap()),
+                "loadErrorPolicy" to JSONObject(policy.toArtifactMap()),
                 "playerErrors" to JSONArray(playerErrors.toList()),
             ) + extra,
         )

@@ -1,5 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
@@ -21,6 +23,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -266,7 +269,6 @@ class FetchBrokerTest {
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
                 FetchAttemptDisposition.Success()
             },
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "test-session",
             ownerScope = backgroundScope,
             ownsScope = false,
@@ -333,7 +335,6 @@ class FetchBrokerTest {
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
                 FetchAttemptDisposition.Success()
             },
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "test-session",
             ownerScope = backgroundScope,
             ownsScope = false,
@@ -372,68 +373,158 @@ class FetchBrokerTest {
     }
 
     @Test
-    fun retryIsSequentialBoundedAndAccountsDuplicateRanges() = runTest {
+    fun ownerMakesExactlyOneAttemptAndNeverRetriesATransientFailure() = runTest {
         val attempts = mutableListOf<Int>()
+        val events = mutableListOf<FetchEvent>()
         val broker = broker(
-            budget = FetchAttemptBudget(2),
-            executor = FetchAttemptExecutor { _, attempt, _, emit ->
-                attempts += attempt
-                if (attempt == 1) {
-                    emit(FetchNetworkChunk(0, byteArrayOf(1, 2)))
-                    FetchAttemptDisposition.Failure(
-                        FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
-                        retryable = true,
-                    )
-                } else {
-                    emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
-                    FetchAttemptDisposition.Success()
-                }
-            },
-        )
-
-        val outcome = broker.acquire(
-            REQUEST,
-            consumer("retry", FetchConsumerKind.RESERVE),
-        ).await()
-
-        assertEquals(listOf(1, 2), attempts)
-        assertEquals(FetchOutcomeKind.SUCCESS, outcome.kind)
-        assertEquals(2, outcome.attempts)
-        assertEquals(6L, outcome.bytes.networkBytes)
-        assertEquals(4L, outcome.bytes.uniqueRangeBytes)
-        assertEquals(2L, outcome.bytes.duplicateRangeBytes)
-        assertEquals(0L, outcome.bytes.rejectedOrUnmappedBytes)
-    }
-
-    @Test
-    fun retryBudgetExhaustionStopsAtConfiguredAttemptCount() = runTest {
-        val attempts = mutableListOf<Int>()
-        val broker = broker(
-            budget = FetchAttemptBudget(2),
+            events = events,
             executor = FetchAttemptExecutor { _, attempt, _, emit ->
                 attempts += attempt
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2)))
                 FetchAttemptDisposition.Failure(
-                    FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
-                    retryable = true,
+                    FailureObservation.TransportIo(TransportIoKind.READ_TIMEOUT),
                 )
             },
         )
 
         val outcome = broker.acquire(
             REQUEST,
-            consumer("retry-exhausted", FetchConsumerKind.RESERVE),
+            consumer("single-attempt", FetchConsumerKind.RESERVE),
         ).await()
 
-        assertEquals(listOf(1, 2), attempts)
+        // M2-C: retry ownership moved to RecoveryCoordinator.
+        assertEquals(listOf(1), attempts)
+        assertEquals(1, outcome.attempts)
         assertEquals(
-            FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
-            outcome.kind,
+            FailureObservation.TransportIo(TransportIoKind.READ_TIMEOUT),
+            outcome.failure,
         )
-        assertEquals(2, outcome.attempts)
-        assertEquals(4L, outcome.bytes.networkBytes)
-        assertEquals(2L, outcome.bytes.uniqueRangeBytes)
-        assertEquals(2L, outcome.bytes.duplicateRangeBytes)
+        // Legacy fetch-events-v3 projection keeps its M1 meaning.
+        assertEquals(FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE, outcome.kind)
+        assertEquals(1, events.count { it.event == FetchEventKind.ATTEMPT_STARTED })
+        assertEquals(2L, outcome.bytes.networkBytes)
+    }
+
+    @Test
+    fun admissionRunsOnceImmediatelyBeforeTheSingleAttempt() = runTest {
+        val order = mutableListOf<String>()
+        val events = mutableListOf<FetchEvent>()
+        val broker = broker(
+            events = events,
+            executor = FetchAttemptExecutor { _, _, _, emit ->
+                order += "attempt"
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val handle = broker.acquire(
+            REQUEST,
+            consumer("admitted", FetchConsumerKind.RESERVE),
+            admission = FetchAttemptAdmission { fetchId, correlation ->
+                order += "admit:$fetchId:$correlation"
+            },
+        )
+        val outcome = handle.await()
+
+        assertEquals(
+            listOf("admit:${handle.fetchId}:${handle.fetchId}:attempt-1", "attempt"),
+            order,
+        )
+        assertEquals(FetchOutcomeKind.SUCCESS, outcome.kind)
+        assertNull(outcome.failure)
+    }
+
+    @Test
+    fun refusedAdmissionMakesNoAttempt() = runTest {
+        var executed = false
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, _ ->
+                executed = true
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val outcome = broker.acquire(
+            REQUEST,
+            consumer("refused", FetchConsumerKind.RESERVE),
+            admission = FetchAttemptAdmission { _, _ -> error("budget exhausted") },
+        ).await()
+
+        assertEquals(false, executed)
+        assertEquals(0, outcome.attempts)
+        assertEquals(FailureObservation.InternalFailure, outcome.failure)
+    }
+
+    @Test
+    fun raisePriorityEscalatesTheRunningOwnerWithoutRestart() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val observed = mutableListOf<FetchPriority>()
+        val events = mutableListOf<FetchEvent>()
+        val broker = broker(
+            events = events,
+            executor = FetchAttemptExecutor { _, _, priority, emit ->
+                observed += priority.value
+                entered.complete(Unit)
+                release.await()
+                observed += priority.value
+                emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val handle = broker.acquire(
+            REQUEST,
+            consumer("reserve", FetchConsumerKind.RESERVE),
+        )
+        entered.await()
+        handle.raisePriority(FetchPriority.PLAYBACK)
+        handle.raisePriority(FetchPriority.RESERVE)
+        release.complete(Unit)
+        handle.await()
+
+        assertEquals(listOf(FetchPriority.RESERVE, FetchPriority.PLAYBACK), observed)
+        assertEquals(1, events.count { it.event == FetchEventKind.PRIORITY_RAISED })
+        assertEquals(1, events.count { it.event == FetchEventKind.ATTEMPT_STARTED })
+    }
+
+    @Test
+    fun ownerCancelledBeforeItsBodyRunsStillReachesATerminal() {
+        val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+        try {
+            val broker = FetchBroker(
+                publisher = FakePublisher(),
+                executor = FetchAttemptExecutor { _, _, _, emit ->
+                    emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+                    FetchAttemptDisposition.Success()
+                },
+                sessionId = "test-session",
+                ownerScope = scope,
+                ownsScope = false,
+                monotonicClockNs = { 1L },
+            )
+            repeat(200) { index ->
+                val outcome = kotlinx.coroutines.runBlocking {
+                    val handle = broker.acquire(
+                        REQUEST,
+                        consumer("fast-close-$index", FetchConsumerKind.RESERVE),
+                    )
+                    handle.close()
+                    kotlinx.coroutines.withTimeout(5_000) { handle.awaitTerminal() }
+                }
+                assertTrue(
+                    outcome.kind in setOf(
+                        FetchOutcomeKind.SUCCESS,
+                        FetchOutcomeKind.CANCELLED_NO_CONSUMERS,
+                    ),
+                    outcome.toString(),
+                )
+            }
+            assertEquals(0, broker.activeFetchCountForTest())
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -533,7 +624,6 @@ class FetchBrokerTest {
             executor = FetchAttemptExecutor { _, _, _, _ ->
                 throw AssertionError("fatal-owner")
             },
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "test-session",
             ownerScope = scope,
             ownsScope = false,
@@ -599,7 +689,6 @@ class FetchBrokerTest {
                 emit(FetchNetworkChunk(1, byteArrayOf(1, 2)))
                 FetchAttemptDisposition.Success()
             },
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "test-session",
             ownerScope = backgroundScope,
             ownsScope = false,
@@ -619,12 +708,10 @@ class FetchBrokerTest {
 
     private fun TestScope.broker(
         executor: FetchAttemptExecutor,
-        budget: FetchAttemptBudget = FetchAttemptBudget(1),
         events: MutableList<FetchEvent> = mutableListOf(),
     ): FetchBroker = FetchBroker(
         publisher = FakePublisher(),
         executor = executor,
-        attemptBudget = budget,
         sessionId = "test-session",
         eventListener = FetchEventListener { event -> events += event },
         ownerScope = backgroundScope,

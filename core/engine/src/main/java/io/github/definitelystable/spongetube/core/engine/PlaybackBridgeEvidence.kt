@@ -18,11 +18,14 @@ enum class PlaybackBridgeEventKind {
 /**
  * One `bridge-events-v1` row.
  *
- * Timestamps share the Android `elapsedRealtimeNanos` domain with
- * `fetch-events-v2`, but acceptance never compares clocks: MISS/JOIN/
- * WAIT_EXISTING rows join FetchBroker evidence by (sessionId, fetchId), and
- * harness markers carry
- * the FetchBroker event-sequence watermark observed at the marker.
+ * Since M2-C this is `bridge-events-v2`. Recovery demand is identified by
+ * (sessionId, recoveryChainId); fetchId is nullable because a chain may be
+ * waiting for backoff/route permit or may fail local transport preflight
+ * before any physical owner starts. Historical `bridge-events-v1` keeps its
+ * original RUNNING-owner JOIN semantics and is never rewritten.
+ *
+ * Timestamps share Android `elapsedRealtimeNanos`, but acceptance never
+ * compares clocks across domains.
  */
 @SpongeBridgeApi
 data class PlaybackBridgeEvent(
@@ -36,6 +39,8 @@ data class PlaybackBridgeEvent(
     val event: PlaybackBridgeEventKind,
     val extentId: String?,
     val dependencyExtentId: String?,
+    val recoveryChainId: String?,
+    val recoveryDisposition: String?,
     val fetchId: String?,
     val fetchOutcome: String?,
     val bytesLocal: Long?,
@@ -59,7 +64,9 @@ data class PlaybackBridgeEvent(
             event == PlaybackBridgeEventKind.WAIT_EXISTING ||
             event == PlaybackBridgeEventKind.FETCH_WAIT_END
         ) {
-            require(!fetchId.isNullOrBlank()) { "$event requires fetchId" }
+            require(!recoveryChainId.isNullOrBlank()) {
+                "$event requires recoveryChainId"
+            }
             require(!extentId.isNullOrBlank()) { "$event requires extentId" }
         }
     }
@@ -76,6 +83,8 @@ data class PlaybackBridgeEvent(
         "event" to event.name,
         "extentId" to extentId,
         "dependencyExtentId" to dependencyExtentId,
+        "recoveryChainId" to recoveryChainId,
+        "recoveryDisposition" to recoveryDisposition,
         "fetchId" to fetchId,
         "fetchOutcome" to fetchOutcome,
         "bytesLocal" to bytesLocal,
@@ -86,7 +95,7 @@ data class PlaybackBridgeEvent(
     )
 
     companion object {
-        const val SCHEMA_VERSION: Int = 1
+        const val SCHEMA_VERSION: Int = 2
     }
 }
 
@@ -117,9 +126,12 @@ enum class PlaybackBridgeFailure {
 }
 
 /**
- * Typed bridge failure. [fetchOutcome] carries the FetchBroker terminal
- * outcome name for [PlaybackBridgeFailure.FETCH_FAILED]; retry decisions are
- * taken by the player-side LoadErrorHandlingPolicy, never hidden here.
+ * Typed bridge failure. For [PlaybackBridgeFailure.FETCH_FAILED],
+ * [fetchOutcome] carries the legacy outcome name of the last FetchBroker owner
+ * and [recoveryTerminalReason] the terminal reason of the RecoveryChain.
+ *
+ * Since M2-C a FETCH_FAILED is always terminal: the RecoveryCoordinator has
+ * already applied its bounded policy, so the Media3 loader must not retry it.
  */
 @SpongeBridgeApi
 class PlaybackBridgeException(
@@ -127,4 +139,5 @@ class PlaybackBridgeException(
     val fetchOutcome: String? = null,
     message: String,
     cause: Throwable? = null,
+    val recoveryTerminalReason: String? = null,
 ) : IOException(message, cause)

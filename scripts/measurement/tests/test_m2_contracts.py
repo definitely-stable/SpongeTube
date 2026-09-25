@@ -15,6 +15,7 @@ REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from m2_contracts import (
+    ACCEPTED_M2_SCHEMA_SHA256,
     HISTORICAL_SCHEMA_SHA256,
     M2_SLICE_SCHEMAS,
     PLANE_FAULT_FIELDS,
@@ -239,6 +240,21 @@ class M2HistoricalContractTest(unittest.TestCase):
             with self.subTest(schema=name):
                 actual = hashlib.sha256((SCHEMAS / name).read_bytes()).hexdigest()
                 self.assertEqual(digest, actual)
+
+    def test_accepted_m2a_and_m2b_schemas_are_not_rewritten(self):
+        # M2-C adds failure-decision/recovery-budget schemas; M2-A/M2-B
+        # contracts keep their exact bytes.
+        for name, digest in ACCEPTED_M2_SCHEMA_SHA256.items():
+            with self.subTest(schema=name):
+                actual = hashlib.sha256((SCHEMAS / name).read_bytes()).hexdigest()
+                self.assertEqual(digest, actual)
+        registered = set(ACCEPTED_M2_SCHEMA_SHA256) | M2_SLICE_SCHEMAS
+        m2_present = {
+            path.name
+            for path in SCHEMAS.glob("*.schema.json")
+            if path.name not in HISTORICAL_SCHEMA_SHA256
+        }
+        self.assertEqual(registered, m2_present)
 
     def test_m2_contract_suite_does_not_alter_m1_examples(self):
         for path in sorted((SCHEMAS / "examples" / "m1").glob("*.json")):

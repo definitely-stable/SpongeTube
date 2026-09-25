@@ -1,5 +1,10 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryCoordinator
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryEvidenceRecorder
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryJitterSource
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoverySleeper
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentConflictException
 import io.github.definitelystable.spongetube.core.storage.ExtentId
@@ -264,12 +269,15 @@ internal class TestPlanFixture {
         )
 }
 
-/** Real FetchBroker + CoverageIndex over the fakes. */
+/**
+ * Real RecoveryCoordinator + FetchBroker + CoverageIndex over the fakes.
+ * Backoff uses zero jitter and records delays instead of sleeping.
+ */
 @OptIn(SpongeBridgeApi::class)
 internal class BridgeHarness(
     val fixture: TestPlanFixture = TestPlanFixture(),
     val store: FakeExtentStore = FakeExtentStore(),
-    budget: Int = 1,
+    val policy: RecoveryPolicy = RecoveryPolicy.DEFAULT,
 ) {
     val origin = FakeOrigin(fixture::bytesFor)
     val bridgeEvents = CopyOnWriteArrayList<PlaybackBridgeEvent>()
@@ -281,12 +289,25 @@ internal class BridgeHarness(
     val broker = FetchBroker(
         publisher = store.publisher,
         executor = origin,
-        attemptBudget = FetchAttemptBudget(budget),
         sessionId = "jvm-bridge",
         eventListener = FetchEventListener { fetchEvents += it },
         ownerScope = scope,
         ownsScope = true,
         monotonicClockNs = { 1L },
+    )
+
+    val recoveryEvidence = RecoveryEvidenceRecorder("jvm-bridge-run", "jvm-bridge")
+    val backoffDelays = CopyOnWriteArrayList<Long>()
+
+    val recovery = RecoveryCoordinator(
+        broker = broker,
+        sessionId = "jvm-bridge",
+        policy = policy,
+        reconciler = coverageReconciler(index),
+        jitter = RecoveryJitterSource { 0L },
+        sleeper = RecoverySleeper { backoffDelays += it },
+        evidence = recoveryEvidence,
+        clockNs = { 1L },
     )
 
     lateinit var runtime: PlaybackBridgeRuntime
@@ -298,6 +319,7 @@ internal class BridgeHarness(
             plan = fixture.plan,
             coverageIndex = index,
             broker = broker,
+            recovery = recovery,
             reader = store.reader,
             sessionId = "jvm-bridge",
             clockNs = { 1L },
@@ -341,6 +363,9 @@ internal class BridgeHarness(
     }
 
     fun shutdown() {
-        runBlocking { broker.shutdown() }
+        runBlocking {
+            recovery.shutdown()
+            broker.shutdown()
+        }
     }
 }

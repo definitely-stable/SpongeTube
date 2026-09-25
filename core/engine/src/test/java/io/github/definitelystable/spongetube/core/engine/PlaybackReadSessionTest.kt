@@ -1,5 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import java.io.InterruptedIOException
@@ -26,8 +28,8 @@ class PlaybackReadSessionTest {
         harnesses.forEach(BridgeHarness::shutdown)
     }
 
-    private fun harness(budget: Int = 1): BridgeHarness =
-        BridgeHarness(budget = budget).also(harnesses::add)
+    private fun harness(): BridgeHarness =
+        BridgeHarness().also(harnesses::add)
 
     // 1
     @Test
@@ -125,7 +127,8 @@ class PlaybackReadSessionTest {
         val owner = h.fetchEvents.first { it.event == FetchEventKind.OWNER_REGISTERED }
         assertEquals(miss.fetchId, owner.fetchId.value)
         assertEquals(FetchPriority.PLAYBACK, owner.effectivePriority)
-        assertEquals(listOf("bridge:r1:t:v:2"), owner.consumerIds)
+        // M2-C: the RecoveryChain, not the read session, is the broker consumer.
+        assertEquals(listOf("recovery:recovery-1:1"), owner.consumerIds)
         // MISS -> wait -> LOCAL_SERVE ordering.
         val kinds = h.bridgeEvents.map(PlaybackBridgeEvent::event)
         assertTrue(
@@ -312,14 +315,18 @@ class PlaybackReadSessionTest {
         f.seed(h.store, f.videoInit)
         h.start()
         h.origin.failure = FetchAttemptDisposition.Failure(
-            kind = FetchOutcomeKind.RANGE_REJECTED,
-            retryable = false,
+            FailureObservation.RangeProtocolFailure(
+                RangeProtocolKind.CONTENT_RANGE_MISMATCH,
+            ),
         )
 
         val error = assertThrows(PlaybackBridgeException::class.java) { h.readAll("v-2") }
 
         assertEquals(PlaybackBridgeFailure.FETCH_FAILED, error.failure)
         assertEquals("RANGE_REJECTED", error.fetchOutcome)
+        assertEquals("TERMINAL_FAILURE", error.recoveryTerminalReason)
+        // Range rejection is terminal: exactly one physical attempt.
+        assertEquals(1, h.origin.executions.size)
     }
 
     // 12

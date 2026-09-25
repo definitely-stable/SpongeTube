@@ -1,6 +1,6 @@
 # ADR-0002: PlaybackBridge Media3 seam
 
-Status: **Accepted**
+Status: **Accepted** (superseded in part by ADR-0003: the bounded Media3 retry policy only)
 Date: **2026-09-23**
 
 ## Context
@@ -78,7 +78,12 @@ Operational/recovery implications:
 
 ## Supersession
 
-None.
+Superseded in part by [ADR-0003](0003-centralize-recovery-ownership.md)
+(2026-09-25): only the bounded Media3 retry policy. Since M2-C the
+RecoveryCoordinator is the only retry owner and `SpongeLoadErrorHandlingPolicy`
+never retries a Sponge-managed load (`C.TIME_UNSET`, minimum retry count 0,
+no fallback). The PlaybackBridge Media3 seam decided here remains Accepted.
+The text above is kept as the historical M1 decision.
 
 ## Canonical-doc impact
 

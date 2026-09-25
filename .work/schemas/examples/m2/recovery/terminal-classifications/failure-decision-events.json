@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-c-host-terminal-classifications-run",
+  "sessionId": "m2-c-host-terminal-classifications",
+  "policyId": "sponge-recovery-test-v1",
+  "clockDomain": "ANDROID_MONOTONIC",
+  "failures": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1012000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-1",
+      "fetchKey": "fixture:M2C/video/http-403",
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "HTTP_RESPONSE",
+        "kind": "HTTP_STATUS",
+        "httpStatus": 403
+      },
+      "classification": "PROVIDER_REJECTED",
+      "decision": {
+        "kind": "FAIL_TERMINAL",
+        "reason": "NON_RETRYABLE_CLASSIFICATION"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "TERMINATE_FAILURE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 1025000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-2",
+      "failureId": "recovery-2:failure-1",
+      "fetchKey": "fixture:M2C/video/http-429",
+      "fetchId": "fetch-2",
+      "attemptCorrelationId": "fetch-2:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "HTTP_RESPONSE",
+        "kind": "HTTP_STATUS",
+        "httpStatus": 429
+      },
+      "classification": "PROVIDER_RATE_LIMITED",
+      "decision": {
+        "kind": "WAIT_UNTIL_PROVIDER",
+        "reason": "PROVIDER_THROTTLED"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "FAIL_CLOSED_ACTION_UNAVAILABLE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 1038000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-3",
+      "failureId": "recovery-3:failure-1",
+      "fetchKey": "fixture:M2C/video/http-302",
+      "fetchId": "fetch-3",
+      "attemptCorrelationId": "fetch-3:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "HTTP_RESPONSE",
+        "kind": "HTTP_STATUS",
+        "httpStatus": 302
+      },
+      "classification": "UNKNOWN",
+      "decision": {
+        "kind": "FAIL_TERMINAL",
+        "reason": "UNKNOWN_FAILS_CLOSED"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "TERMINATE_FAILURE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 1051000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-4",
+      "failureId": "recovery-4:failure-1",
+      "fetchKey": "fixture:M2C/video/range",
+      "fetchId": "fetch-4",
+      "attemptCorrelationId": "fetch-4:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "RESPONSE_CONTRACT",
+        "type": "RANGE_PROTOCOL",
+        "kind": "FULL_BODY_FOR_RANGE_REQUEST",
+        "httpStatus": null
+      },
+      "classification": "RANGE_REJECTED",
+      "decision": {
+        "kind": "FAIL_TERMINAL",
+        "reason": "NON_RETRYABLE_CLASSIFICATION"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "TERMINATE_FAILURE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 5,
+      "elapsedRealtimeNs": 1064000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-5",
+      "failureId": "recovery-5:failure-1",
+      "fetchKey": "fixture:M2C/video/stale",
+      "fetchId": "fetch-5",
+      "attemptCorrelationId": "fetch-5:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "DELIVERY_DESCRIPTOR",
+        "kind": "DESCRIPTOR_STALE",
+        "httpStatus": null
+      },
+      "classification": "DELIVERY_BINDING_STALE",
+      "decision": {
+        "kind": "REFRESH_DELIVERY_BINDING",
+        "reason": "STALE_BINDING_SIGNAL"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "FAIL_CLOSED_ACTION_UNAVAILABLE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 6,
+      "elapsedRealtimeNs": 1077000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-6",
+      "failureId": "recovery-6:failure-1",
+      "fetchKey": "fixture:M2C/video/enospc",
+      "fetchId": "fetch-6",
+      "attemptCorrelationId": "fetch-6:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "STORAGE",
+        "type": "STORAGE",
+        "kind": "NO_SPACE",
+        "httpStatus": null
+      },
+      "classification": "STORAGE_FAILURE",
+      "decision": {
+        "kind": "FAIL_TERMINAL",
+        "reason": "NON_RETRYABLE_CLASSIFICATION"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "TERMINATE_FAILURE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 7,
+      "elapsedRealtimeNs": 1091000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-7",
+      "failureId": "recovery-7:failure-1",
+      "fetchKey": "fixture:M2C/video/integrity",
+      "fetchId": "fetch-7",
+      "attemptCorrelationId": "fetch-7:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "RESPONSE_CONTRACT",
+        "type": "CONTENT_INTEGRITY",
+        "kind": "DIGEST_OR_LENGTH_MISMATCH",
+        "httpStatus": null
+      },
+      "classification": "CONTENT_INTEGRITY",
+      "decision": {
+        "kind": "FAIL_TERMINAL",
+        "reason": "NON_RETRYABLE_CLASSIFICATION"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "TERMINATE_FAILURE",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 8,
+      "elapsedRealtimeNs": 1105000,
+      "sessionId": "m2-c-host-terminal-classifications",
+      "recoveryChainId": "recovery-8",
+      "failureId": "recovery-8:failure-1",
+      "fetchKey": "fixture:M2C/video/conflict",
+      "fetchId": "fetch-8",
+      "attemptCorrelationId": "fetch-8:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "STORAGE",
+        "type": "STORAGE",
+        "kind": "CONFLICT",
+        "httpStatus": null
+      },
+      "classification": "PUBLICATION_CONFLICT",
+      "decision": {
+        "kind": "RECONCILE_LOCAL_COVERAGE",
+        "reason": "LOCAL_PUBLICATION_CONFLICT"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "LOCAL_COVERAGE_READY",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": "COVERAGE_PRESENT"
+      }
+    }
+  ]
+}

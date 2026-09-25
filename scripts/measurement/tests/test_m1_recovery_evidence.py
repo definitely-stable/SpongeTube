@@ -201,6 +201,71 @@ class M1RecoveryEvidenceTest(unittest.TestCase):
         )
         self.assertEqual(100, result["fetch"]["sessionDuplicateRangeBytes"])
 
+    def _m2c_case(self):
+        case = self.case("N4R-SHORT")
+        case["initialDurableReserveUs"] = 10_000_000
+        case.update(
+            maxAttemptsPerOwner=1,
+            media3MaxRetries=0,
+            recoveryPolicyId="sponge-recovery-v1",
+            recoveryRemoteAttemptLimit=4,
+        )
+        return case
+
+    def _sequential_owners(self, count):
+        fetch, origin, sequence = [], [], 0
+        for index in range(1, count + 1):
+            owner, request = f"f{index}", str(6 + index)
+            last = index == count
+            rows = [
+                ("OWNER_REGISTERED", {}),
+                ("ATTEMPT_STARTED", {"attempt": 1}),
+                ("ATTEMPT_CORRELATED", {"attempt": 1, "request": request}),
+                (
+                    "ATTEMPT_COMPLETED" if last else "ATTEMPT_FAILED",
+                    {
+                        "attempt": 1,
+                        "request": request,
+                        "outcome": "SUCCESS" if last else "RETRYABLE_TRANSPORT_FAILURE",
+                    },
+                ),
+                (
+                    "OWNER_COMPLETED" if last else "OWNER_FAILED",
+                    {"outcome": "SUCCESS" if last else "RETRYABLE_TRANSPORT_FAILURE"},
+                ),
+            ]
+            for event, fields in rows:
+                fetch.append(self.fetch(sequence, event, owner, "k", **fields))
+                sequence += 1
+            origin.append({"requestId": int(request), "plane": "data", "path": "/fixtures/F1/a"})
+        return fetch, origin
+
+    def test_m2c_case_accepts_four_single_attempt_owners_of_one_chain(self):
+        fetch, origin = self._sequential_owners(4)
+        coverage = self.coverage()
+        result = verify(
+            self._m2c_case(), [], fetch, [], self.short_gate(), origin, None, coverage, coverage
+        )
+        self.assertEqual(4, result["fetch"]["physicalAttemptCount"])
+        self.assertEqual(1, result["fetch"]["maxAttemptsPerOwner"])
+        self.assertEqual(0, result["fetch"]["media3MaxRetries"])
+
+    def test_m2c_case_rejects_a_fifth_owner(self):
+        fetch, origin = self._sequential_owners(5)
+        coverage = self.coverage()
+        with self.assertRaisesRegex(RecoveryEvidenceError, "owner budget exceeded"):
+            verify(
+                self._m2c_case(), [], fetch, [], self.short_gate(), origin, None,
+                coverage, coverage,
+            )
+
+    def test_m2c_case_rejects_multiplied_inner_bounds(self):
+        case = self._m2c_case()
+        case["media3MaxRetries"] = 3
+        coverage = self.coverage()
+        with self.assertRaisesRegex(RecoveryEvidenceError, "M2-C recovery case"):
+            verify(case, [], [], [], self.short_gate(), [], None, coverage, coverage)
+
     def test_accepts_exhaust_stall_when_remaining_reserve_is_already_player_buffered(self):
         case = self.case("N4R-EXHAUST")
         case["initialDurableReserveUs"] = 10_000_000

@@ -23,7 +23,10 @@ SCHEMAS = REPO_ROOT / ".work" / "schemas"
 
 TIMELINE_SCHEMA = SCHEMAS / "recovery-timeline-v1.schema.json"
 EXTENT_SCHEMA = SCHEMAS / "extent-events-v1.schema.json"
-FETCH_SCHEMA = SCHEMAS / "fetch-events-v3.schema.json"
+FETCH_SCHEMA_PATHS = {
+    3: SCHEMAS / "fetch-events-v3.schema.json",
+    4: SCHEMAS / "fetch-events-v4.schema.json",
+}
 GATE_SCHEMA = SCHEMAS / "origin-gate-events-v1.schema.json"
 SUMMARY_SCHEMA = SCHEMAS / "recovery-summary-v2.schema.json"
 
@@ -167,12 +170,43 @@ def _verify_fetch(
     origin: list[dict[str, Any]],
 ) -> tuple[dict[str, int], bool, bool, bool]:
     if rows:
-        _validate_rows(rows, FETCH_SCHEMA, "fetch")
+        versions = {row.get("schemaVersion") for row in rows}
+        if len(versions) != 1:
+            raise RecoveryEvidenceError("fetch: mixed schema versions")
+        schema_path = FETCH_SCHEMA_PATHS.get(next(iter(versions)))
+        if schema_path is None:
+            raise RecoveryEvidenceError("fetch: unsupported schema version")
+        _validate_rows(rows, schema_path, "fetch")
         _ordered(rows, "eventSequence", "fetch")
 
     max_attempts = int(case["maxAttemptsPerOwner"])
     media3_retries = int(case["media3MaxRetries"])
     retry_owner_ceiling = media3_retries + 1
+
+    # M2-C (ADR-0003): one owner is one attempt, Media3 never retries, and
+    # the RecoveryChain bounds owners per immutable work item. A case from an
+    # M2-C runtime declares that bound; the M1 per-owner/Media3 bounds must
+    # then be the degenerate ones, never a multiplier.
+    recovery_limit = case.get("recoveryRemoteAttemptLimit")
+    if recovery_limit is not None:
+        if (
+            not isinstance(recovery_limit, int)
+            or isinstance(recovery_limit, bool)
+            or recovery_limit < 1
+        ):
+            raise RecoveryEvidenceError(
+                "recoveryRemoteAttemptLimit must be a positive integer"
+            )
+        if max_attempts != 1 or media3_retries != 0:
+            raise RecoveryEvidenceError(
+                "an M2-C recovery case must declare maxAttemptsPerOwner=1 "
+                "and media3MaxRetries=0"
+            )
+        if not str(case.get("recoveryPolicyId") or ""):
+            raise RecoveryEvidenceError(
+                "an M2-C recovery case must declare recoveryPolicyId"
+            )
+        retry_owner_ceiling = recovery_limit
 
     active_by_key: dict[str, str] = {}
     owner_key: dict[str, str] = {}

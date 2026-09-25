@@ -147,7 +147,6 @@ class FetchBrokerOriginAndroidTest {
                         connection.disconnect()
                     }
                 },
-                attemptBudget = FetchAttemptBudget(1),
                 sessionId = SESSION_ID,
                 eventListener = FetchEventListener { event -> events += event },
             )

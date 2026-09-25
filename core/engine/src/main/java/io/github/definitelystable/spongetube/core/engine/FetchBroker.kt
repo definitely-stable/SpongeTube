@@ -1,6 +1,10 @@
 package io.github.definitelystable.spongetube.core.engine
 
 import android.os.SystemClock
+import io.github.definitelystable.spongetube.core.engine.recovery.CancellationKind
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
+import io.github.definitelystable.spongetube.core.engine.recovery.StorageFailureKind
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentConflictException
 import io.github.definitelystable.spongetube.core.storage.ExtentIntegrityException
@@ -25,10 +29,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * Single-flight physical owner registry (M1-D, narrowed by M2-C / ADR-0003).
+ *
+ * One owner is exactly one physical remote attempt. The broker never decides
+ * to try again: the executor reports a raw [FailureObservation] and the owner
+ * terminates. Whether a next owner is created is decided only by the
+ * RecoveryCoordinator above it.
+ */
 internal class FetchBroker internal constructor(
     private val publisher: FetchPublisher,
     private val executor: FetchAttemptExecutor,
-    private val attemptBudget: FetchAttemptBudget,
     private val sessionId: String,
     private val eventListener: FetchEventListener? = null,
     private val ownerScope: CoroutineScope =
@@ -50,7 +61,6 @@ internal class FetchBroker internal constructor(
     internal constructor(
         extentStore: ExtentStore,
         executor: FetchAttemptExecutor,
-        attemptBudget: FetchAttemptBudget,
         sessionId: String,
         eventListener: FetchEventListener? = null,
         ownerScope: CoroutineScope =
@@ -62,7 +72,6 @@ internal class FetchBroker internal constructor(
     ) : this(
         publisher = ExtentStoreFetchPublisher(extentStore),
         executor = executor,
-        attemptBudget = attemptBudget,
         sessionId = sessionId,
         eventListener = eventListener,
         ownerScope = ownerScope,
@@ -74,9 +83,19 @@ internal class FetchBroker internal constructor(
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
     }
 
+    /**
+     * Registers [consumer] on the single-flight owner for [request].
+     *
+     * [admission] is invoked only for a NEW_OWNER, inside the owner, after
+     * cancellation checks and immediately before the physical attempt starts;
+     * it is where the RecoveryCoordinator charges its budget, so a charge
+     * exists if and only if the attempt is made. If it throws, the owner ends
+     * as INTERNAL_FAILURE with zero attempts.
+     */
     internal suspend fun acquire(
         request: FetchRequest,
         consumer: FetchConsumer,
+        admission: FetchAttemptAdmission? = null,
     ): FetchHandle {
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -97,6 +116,7 @@ internal class FetchBroker internal constructor(
                             "fetch-" + fetchCounter.incrementAndGet(),
                         ),
                         initialConsumer = consumer,
+                        admission = admission,
                     )
                     active[request.fetchKey] = shared
                     created = shared
@@ -190,8 +210,7 @@ internal class FetchBroker internal constructor(
                     continue
                 }
                 shared.state = SharedFetchState.CANCELLING
-                shared.cancelOutcome =
-                    FetchOutcomeKind.CANCELLED_BROKER_SHUTDOWN
+                shared.cancelOutcome = CancellationKind.SESSION_SHUTDOWN
                 val job = shared.ownerJob
                 if (job == null) {
                     orphaned += shared
@@ -207,10 +226,11 @@ internal class FetchBroker internal constructor(
         orphaned.forEach { shared ->
             completeTerminal(
                 shared,
-                FetchOutcome(
-                    kind = FetchOutcomeKind.CANCELLED_BROKER_SHUTDOWN,
-                    attempts = shared.attemptsStarted,
-                    bytes = shared.accounting.snapshot(),
+                failureOutcome(
+                    shared,
+                    FailureObservation.Cancellation(
+                        CancellationKind.SESSION_SHUTDOWN,
+                    ),
                 ),
             )
         }
@@ -249,6 +269,26 @@ internal class FetchBroker internal constructor(
         }
 
         if (shouldStart) {
+            // A job cancelled before its body is dispatched never runs
+            // runOwner; the owner must still reach its terminal outcome.
+            job.invokeOnCompletion {
+                val kind = synchronized(registryLock) {
+                    if (shared.state == SharedFetchState.TERMINAL) {
+                        null
+                    } else {
+                        shared.cancelOutcome
+                            ?: if (closed) {
+                                CancellationKind.SESSION_SHUTDOWN
+                            } else {
+                                CancellationKind.NO_CONSUMERS
+                            }
+                    }
+                } ?: return@invokeOnCompletion
+                completeTerminal(
+                    shared,
+                    failureOutcome(shared, FailureObservation.Cancellation(kind)),
+                )
+            }
             job.start()
         } else {
             job.cancel()
@@ -257,105 +297,87 @@ internal class FetchBroker internal constructor(
 
     private suspend fun runOwner(shared: SharedFetch) {
         try {
-            for (attempt in 1..attemptBudget.maxAttempts) {
-                currentCoroutineContext().ensureActive()
-                shared.attemptsStarted = attempt
-                emit(
-                    shared = shared,
-                    event = FetchEventKind.ATTEMPT_STARTED,
-                    attempt = attempt,
-                )
+            currentCoroutineContext().ensureActive()
 
-                val attemptResult = runAttempt(shared, attempt)
-                if (attemptResult is AttemptRunResult.Success) {
-                    val outcome = FetchOutcome(
-                        kind = FetchOutcomeKind.SUCCESS,
-                        attempts = attempt,
-                        bytes = shared.accounting.snapshot(),
-                        committedExtent = attemptResult.extent,
-                    )
+            when (val attemptResult = runAttempt(shared)) {
+                is AttemptRunResult.Success -> {
                     emit(
                         shared = shared,
                         event = FetchEventKind.ATTEMPT_COMPLETED,
-                        attempt = attempt,
+                        attempt = SINGLE_ATTEMPT,
                         outcome = FetchOutcomeKind.SUCCESS,
                         transportCorrelationId =
                             attemptResult.transportCorrelationId,
                     )
-                    completeTerminal(shared, outcome)
-                    return
+                    completeTerminal(
+                        shared,
+                        FetchOutcome(
+                            kind = FetchOutcomeKind.SUCCESS,
+                            attempts = SINGLE_ATTEMPT,
+                            bytes = shared.accounting.snapshot(),
+                            committedExtent = attemptResult.extent,
+                        ),
+                    )
                 }
 
-                attemptResult as AttemptRunResult.Failure
-                emit(
-                    shared = shared,
-                    event = FetchEventKind.ATTEMPT_FAILED,
-                    attempt = attempt,
-                    outcome = attemptResult.kind,
-                    transportCorrelationId =
-                        attemptResult.transportCorrelationId,
-                )
-
-                if (
-                    attemptResult.retryable &&
-                    attempt < attemptBudget.maxAttempts
-                ) {
-                    continue
+                is AttemptRunResult.Failure -> {
+                    emit(
+                        shared = shared,
+                        event = FetchEventKind.ATTEMPT_FAILED,
+                        attempt = shared.attemptsStarted.takeIf { it > 0 },
+                        outcome = attemptResult.observation.legacyOutcomeKind(),
+                        observation = attemptResult.observation,
+                        transportCorrelationId =
+                            attemptResult.transportCorrelationId,
+                    )
+                    completeTerminal(
+                        shared,
+                        failureOutcome(shared, attemptResult.observation),
+                    )
                 }
-
-                completeTerminal(
-                    shared,
-                    FetchOutcome(
-                        kind = attemptResult.kind,
-                        attempts = attempt,
-                        bytes = shared.accounting.snapshot(),
-                    ),
-                )
-                return
             }
         } catch (_: CancellationException) {
             val kind = synchronized(registryLock) {
                 shared.cancelOutcome
                     ?: if (closed) {
-                        FetchOutcomeKind.CANCELLED_BROKER_SHUTDOWN
+                        CancellationKind.SESSION_SHUTDOWN
                     } else {
-                        FetchOutcomeKind.CANCELLED_NO_CONSUMERS
+                        CancellationKind.NO_CONSUMERS
                     }
             }
             completeTerminal(
                 shared,
-                FetchOutcome(
-                    kind = kind,
-                    attempts = shared.attemptsStarted,
-                    bytes = shared.accounting.snapshot(),
-                ),
+                failureOutcome(shared, FailureObservation.Cancellation(kind)),
             )
         } catch (_: Exception) {
             completeTerminal(
                 shared,
-                FetchOutcome(
-                    kind = FetchOutcomeKind.INTERNAL_FAILURE,
-                    attempts = shared.attemptsStarted,
-                    bytes = shared.accounting.snapshot(),
-                ),
+                failureOutcome(shared, FailureObservation.InternalFailure),
             )
         } catch (fatal: Error) {
             completeTerminal(
                 shared,
-                FetchOutcome(
-                    kind = FetchOutcomeKind.INTERNAL_FAILURE,
-                    attempts = shared.attemptsStarted,
-                    bytes = shared.accounting.snapshot(),
-                ),
+                failureOutcome(shared, FailureObservation.InternalFailure),
             )
             throw fatal
         }
     }
 
+    private fun failureOutcome(
+        shared: SharedFetch,
+        observation: FailureObservation,
+    ): FetchOutcome =
+        FetchOutcome(
+            kind = observation.legacyOutcomeKind(),
+            attempts = shared.attemptsStarted,
+            bytes = shared.accounting.snapshot(),
+            failure = observation,
+        )
+
     private suspend fun runAttempt(
         shared: SharedFetch,
-        attempt: Int,
     ): AttemptRunResult {
+        val attempt = SINGLE_ATTEMPT
         var disposition: FetchAttemptDisposition? = null
         val spec = shared.request.extentSpec
         var expectedOffset = spec.byteStart ?: 0L
@@ -387,8 +409,9 @@ internal class FetchBroker internal constructor(
                         )
                         throw FetchAttemptAbort(
                             FetchAttemptDisposition.Failure(
-                                kind = FetchOutcomeKind.RANGE_REJECTED,
-                                retryable = false,
+                                observation = FailureObservation.RangeProtocolFailure(
+                                    RangeProtocolKind.RESPONSE_BYTES_OUTSIDE_RANGE,
+                                ),
                             ),
                         )
                     }
@@ -411,15 +434,38 @@ internal class FetchBroker internal constructor(
                     expectedOffset = chunkEnd
                 }
 
+                val started = AtomicBoolean(false)
+                val startPhysicalAttempt = {
+                    check(started.compareAndSet(false, true)) {
+                        "fetch executor started the same physical attempt twice"
+                    }
+                    shared.admission?.admit(
+                        shared.fetchId,
+                        attemptCorrelationId(shared.fetchId),
+                    )
+                    // No suspension point is permitted between admission and
+                    // the executor starting physical I/O. Preflight failures
+                    // therefore consume neither REMOTE_ATTEMPT nor
+                    // ATTEMPT_STARTED evidence.
+                    shared.attemptsStarted = SINGLE_ATTEMPT
+                    emit(
+                        shared = shared,
+                        event = FetchEventKind.ATTEMPT_STARTED,
+                        attempt = SINGLE_ATTEMPT,
+                    )
+                }
+
                 disposition = if (executor is CorrelatingFetchAttemptExecutor) {
-                    executor.executeCorrelated(
+                    executor.executeCorrelatedWithAdmission(
                         request = shared.request,
                         attempt = attempt,
                         priority = shared.priority,
+                        onPhysicalAttemptStart = startPhysicalAttempt,
                         onTransportCorrelation = emitCorrelation,
                         emitChunk = emitChunk,
                     )
                 } else {
+                    startPhysicalAttempt()
                     executor.execute(
                         request = shared.request,
                         attempt = attempt,
@@ -430,6 +476,11 @@ internal class FetchBroker internal constructor(
 
                 val terminalDisposition = checkNotNull(disposition) {
                     "fetch executor returned without a disposition"
+                }
+                if (terminalDisposition is FetchAttemptDisposition.Success) {
+                    check(started.get()) {
+                        "fetch executor succeeded without starting a physical attempt"
+                    }
                 }
                 if (terminalDisposition is FetchAttemptDisposition.Failure) {
                     throw FetchAttemptAbort(terminalDisposition)
@@ -443,40 +494,39 @@ internal class FetchBroker internal constructor(
             )
         } catch (abort: FetchAttemptAbort) {
             AttemptRunResult.Failure(
-                kind = abort.failure.kind,
-                retryable = abort.failure.retryable,
+                observation = abort.failure.observation,
                 transportCorrelationId =
                     abort.failure.transportCorrelationId,
             )
         } catch (error: ExtentStorageException) {
             AttemptRunResult.Failure(
-                kind = when (error.kind) {
-                    ExtentStorageFailureKind.NO_SPACE ->
-                        FetchOutcomeKind.STORAGE_NO_SPACE
-                    ExtentStorageFailureKind.IO ->
-                        FetchOutcomeKind.STORAGE_IO
-                },
-                retryable = false,
+                observation = FailureObservation.StorageFailure(
+                    when (error.kind) {
+                        ExtentStorageFailureKind.NO_SPACE ->
+                            StorageFailureKind.NO_SPACE
+                        ExtentStorageFailureKind.IO ->
+                            StorageFailureKind.IO
+                    },
+                ),
                 transportCorrelationId = null,
             )
         } catch (_: ExtentIntegrityException) {
             AttemptRunResult.Failure(
-                kind = FetchOutcomeKind.CONTENT_INTEGRITY_REJECTED,
-                retryable = false,
+                observation = FailureObservation.ContentIntegrityFailure,
                 transportCorrelationId = null,
             )
         } catch (_: ExtentConflictException) {
             AttemptRunResult.Failure(
-                kind = FetchOutcomeKind.STORAGE_CONFLICT,
-                retryable = false,
+                observation = FailureObservation.StorageFailure(
+                    StorageFailureKind.CONFLICT,
+                ),
                 transportCorrelationId = null,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             AttemptRunResult.Failure(
-                kind = FetchOutcomeKind.INTERNAL_FAILURE,
-                retryable = false,
+                observation = FailureObservation.InternalFailure,
                 transportCorrelationId = null,
             )
         }
@@ -505,8 +555,7 @@ internal class FetchBroker internal constructor(
                 shared.state == SharedFetchState.RUNNING
             ) {
                 shared.state = SharedFetchState.CANCELLING
-                shared.cancelOutcome =
-                    FetchOutcomeKind.CANCELLED_NO_CONSUMERS
+                shared.cancelOutcome = CancellationKind.NO_CONSUMERS
                 cancelJob = shared.ownerJob
                 completeWithoutOwner = cancelJob == null
             }
@@ -523,15 +572,39 @@ internal class FetchBroker internal constructor(
         if (completeWithoutOwner) {
             completeTerminal(
                 shared,
-                FetchOutcome(
-                    kind = FetchOutcomeKind.CANCELLED_NO_CONSUMERS,
-                    attempts = shared.attemptsStarted,
-                    bytes = shared.accounting.snapshot(),
+                failureOutcome(
+                    shared,
+                    FailureObservation.Cancellation(
+                        CancellationKind.NO_CONSUMERS,
+                    ),
                 ),
             )
         } else {
             cancelJob?.cancel(
                 CancellationException("no consumers remain"),
+            )
+        }
+    }
+
+    private fun raisePriority(
+        shared: SharedFetch,
+        requested: FetchPriority,
+    ) {
+        val raised = synchronized(registryLock) {
+            if (
+                shared.state != SharedFetchState.RUNNING ||
+                requested.ordinal <= shared.priority.value.ordinal
+            ) {
+                false
+            } else {
+                shared.priority.value = requested
+                true
+            }
+        }
+        if (raised) {
+            emit(
+                shared = shared,
+                event = FetchEventKind.PRIORITY_RAISED,
             )
         }
     }
@@ -567,6 +640,7 @@ internal class FetchBroker internal constructor(
             shared = shared,
             event = event,
             outcome = outcome.kind,
+            observation = outcome.failure,
         )
 
         synchronized(registryLock) {
@@ -599,6 +673,7 @@ internal class FetchBroker internal constructor(
         transportCorrelationId: String? = null,
         chunkByteStart: Long? = null,
         chunkByteEndExclusive: Long? = null,
+        observation: FailureObservation? = null,
     ) {
         val listener = eventListener ?: return
         synchronized(eventDeliveryLock) {
@@ -612,7 +687,7 @@ internal class FetchBroker internal constructor(
                     fetchKey = shared.request.fetchKey,
                     attempt = attempt,
                     attemptCorrelationId = attempt?.let {
-                        shared.fetchId.value + ":attempt-" + it
+                        attemptCorrelationId(shared.fetchId, it)
                     },
                     transportCorrelationId = transportCorrelationId,
                     event = event,
@@ -633,6 +708,7 @@ internal class FetchBroker internal constructor(
                         accounting.rejectedOrUnmappedBytes,
                     singleFlightJoined = joined,
                     outcome = outcome,
+                    observation = observation,
                 )
             }
             runCatching { listener.onEvent(snapshot) }
@@ -648,6 +724,10 @@ internal class FetchBroker internal constructor(
             get() = FetchAcquireDisposition.WAITED_CANCELLING
 
         override suspend fun await(): FetchOutcome = outcome
+
+        override suspend fun awaitTerminal(): FetchOutcome = outcome
+
+        override fun raisePriority(priority: FetchPriority) = Unit
 
         override fun close() = Unit
     }
@@ -672,6 +752,14 @@ internal class FetchBroker internal constructor(
                 shared.result.await()
             } finally {
                 releaseOnce()
+            }
+        }
+
+        override suspend fun awaitTerminal(): FetchOutcome = shared.result.await()
+
+        override fun raisePriority(priority: FetchPriority) {
+            if (!released.get()) {
+                broker.raisePriority(shared, priority)
             }
         }
 
@@ -703,22 +791,33 @@ internal sealed interface FetchAttemptDisposition {
         val transportCorrelationId: String? = null,
     ) : FetchAttemptDisposition
 
+    /**
+     * What the transport observed. It carries no retryability: whether
+     * anything is tried again is decided only by the RecoveryCoordinator.
+     */
     data class Failure(
-        val kind: FetchOutcomeKind,
-        val retryable: Boolean,
+        val observation: FailureObservation,
         val transportCorrelationId: String? = null,
-    ) : FetchAttemptDisposition {
-        init {
-            require(kind != FetchOutcomeKind.SUCCESS)
-            require(
-                !retryable ||
-                    kind == FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
-            ) {
-                "only retryable transport failure may request an M1 retry"
-            }
-        }
-    }
+    ) : FetchAttemptDisposition
 }
+
+/**
+ * Invoked by a new owner immediately before its single physical attempt;
+ * see [FetchBroker.acquire].
+ */
+internal fun interface FetchAttemptAdmission {
+    fun admit(
+        fetchId: FetchId,
+        attemptCorrelationId: String,
+    )
+}
+
+internal const val SINGLE_ATTEMPT = 1
+
+internal fun attemptCorrelationId(
+    fetchId: FetchId,
+    attempt: Int = SINGLE_ATTEMPT,
+): String = fetchId.value + ":attempt-" + attempt
 
 internal fun interface FetchAttemptExecutor {
     suspend fun execute(
@@ -741,6 +840,31 @@ internal interface CorrelatingFetchAttemptExecutor : FetchAttemptExecutor {
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition
+
+    /**
+     * Admission-aware variant used by FetchBroker. The default preserves the
+     * contract for correlation-capable executors whose call itself is the
+     * physical attempt. Executors with local preflight (HttpRangeFetchExecutor)
+     * override this and invoke [onPhysicalAttemptStart] only after preflight
+     * succeeds and immediately before physical I/O.
+     */
+    suspend fun executeCorrelatedWithAdmission(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition {
+        onPhysicalAttemptStart()
+        return executeCorrelated(
+            request = request,
+            attempt = attempt,
+            priority = priority,
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+        )
+    }
 }
 
 internal interface FetchPublishSink {
@@ -783,6 +907,7 @@ private class SharedFetch(
     val request: FetchRequest,
     val fetchId: FetchId,
     initialConsumer: FetchConsumer,
+    val admission: FetchAttemptAdmission?,
 ) {
     val consumers = linkedMapOf(
         initialConsumer.id to initialConsumer,
@@ -795,7 +920,7 @@ private class SharedFetch(
     var ownerJob: Job? = null
     @Volatile
     var attemptsStarted: Int = 0
-    var cancelOutcome: FetchOutcomeKind? = null
+    var cancelOutcome: CancellationKind? = null
 }
 
 private sealed interface AttemptRunResult {
@@ -805,8 +930,7 @@ private sealed interface AttemptRunResult {
     ) : AttemptRunResult
 
     data class Failure(
-        val kind: FetchOutcomeKind,
-        val retryable: Boolean,
+        val observation: FailureObservation,
         val transportCorrelationId: String?,
     ) : AttemptRunResult
 }

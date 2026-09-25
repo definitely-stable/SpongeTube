@@ -278,14 +278,14 @@ SharedFetch(fetchId)
   ├── Player consumer lease
   ├── Reserve consumer lease
   └── owner pipeline
-        ├── sequential origin attempt(s)
+        ├── exactly one origin attempt
         └── ExtentStore publication sink
 ```
 
 Properties:
 
 - single-flight owner pipeline per FetchKey;
-- physical retry attempts under one owner are sequential and carry explicit attempt correlation identity;
+- one owner is exactly one physical attempt with explicit attempt correlation identity; the broker never decides to retry — the RecoveryCoordinator (§9.5, ADR-0003) decides whether a next owner is opened;
 - cancellation is reference-counted, not "cancel and restart";
 - final-consumer cancellation keeps the CANCELLING owner registered until its physical attempt is terminal, preventing overlap with a replacement owner;
 - a waiter that arrives during CANCELLING inherits the terminal result so request budgets cannot be silently reset; only CANCELLED_NO_CONSUMERS creates a fresh owner after the barrier;
@@ -434,7 +434,7 @@ UNKNOWN_IO
 
 This enables deterministic recovery and honest UI.
 
-The list above is illustrative. The exact classification enum is Provisional and owned by M2-C; the frozen rules are in `.work/milestones/M2.md` section 9-10 (observation ≠ classification ≠ decision ≠ action; bare 403 is not stale-descriptor evidence; 429 is rate limiting; storage failures are never provider/network failures).
+The list above is illustrative. The implemented M2-C vocabulary is `TRANSIENT_TRANSPORT`, `TERMINAL_TRANSPORT`, `PROVIDER_TRANSIENT_RESPONSE`, `PROVIDER_RATE_LIMITED`, `PROVIDER_REJECTED`, `DELIVERY_BINDING_STALE`, `RANGE_REJECTED`, `CONTENT_INTEGRITY`, `STORAGE_FAILURE`, `PUBLICATION_CONFLICT`, `CANCELLED`, `INTERNAL` and `UNKNOWN` (fails closed). The pure `FailureClassifier` interprets a typed raw `FailureObservation` reported by the transport; it never reads exception text and never takes route state as input. The frozen rules are in `.work/milestones/M2.md` section 9-10 (observation ≠ classification ≠ decision ≠ action; bare 403 is not stale-descriptor evidence; 429 is rate limiting; storage failures are never provider/network failures).
 
 ### 9.4 DescriptorRefresher
 
@@ -468,7 +468,33 @@ Inputs:
 
 No request storm is allowed when the provider is already rejecting or throttling traffic.
 
-M2 binds the outer budget to a **RecoveryChain** — one logical attempt to satisfy one immutable media work item — rather than to a whole session or a single SharedFetch. The chain's ledger is monotonic and survives SharedFetch replacement, Media3 reopen, route change, delivery-binding refresh and transport reconnect; none of those grants fresh budget by itself. Budget shape and limits are Provisional (M2-C). See `.work/milestones/M2.md` section 11.
+M2 binds the budget to a **RecoveryChain** — one logical attempt to satisfy one immutable media work item — rather than to a whole session or a single SharedFetch. The chain's ledger is monotonic and survives SharedFetch replacement, Media3 reopen, route change, delivery-binding refresh and transport reconnect; none of those grants fresh budget by itself. See `.work/milestones/M2.md` section 11.
+
+Since M2-C ([ADR-0003](adr/0003-centralize-recovery-ownership.md)) the internal `RecoveryCoordinator` is the only logical retry owner:
+
+```text
+Playback / Reserve
+        │
+        ▼
+RecoveryCoordinator          one open RecoveryChain per immutable FetchKey
+        │
+        ▼
+RecoveryChain
+ ┌────────────────┐
+ │ Attempt Gate   │          wait without charge (route gate: M2-F)
+ │ Budget Ledger  │          sponge-recovery-v1: REMOTE_ATTEMPT = 4
+ │ Classifier     │          raw observation -> classification
+ │ Policy         │          classification -> decision -> executed action
+ └───────┬────────┘
+         ▼
+     FetchBroker             one owner = one physical attempt
+         ▼
+  physical attempt
+         ▼
+    ExtentStore
+```
+
+The REMOTE_ATTEMPT charge happens inside the new broker owner immediately before the request, so every physical request has exactly one ledger charge. Transient failures retry after exponential backoff with full jitter; provider actions (wait for provider, binding refresh, re-resolve) are decided but fail closed until M2-D; Media3 never retries a Sponge-managed load.
 
 ### 9.6 M2 resilience seam
 

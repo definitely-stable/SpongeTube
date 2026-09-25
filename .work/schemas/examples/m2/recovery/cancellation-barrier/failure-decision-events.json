@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-c-host-cancellation-barrier-run",
+  "sessionId": "m2-c-host-cancellation-barrier",
+  "policyId": "sponge-recovery-test-v1",
+  "clockDomain": "ANDROID_MONOTONIC",
+  "failures": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1015000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-1",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "LOCAL",
+        "type": "CANCELLATION",
+        "kind": "NO_CONSUMERS",
+        "httpStatus": null
+      },
+      "classification": "CANCELLED",
+      "decision": {
+        "kind": "CONTINUE_FOR_DEMAND",
+        "reason": "DEMAND_PRESENT_AFTER_CANCELLATION"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "START_NEXT_OWNER",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    }
+  ]
+}

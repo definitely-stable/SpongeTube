@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "caseId": "terminal-classifications",
+  "policyId": "sponge-recovery-test-v1",
+  "expectedPhysicalAttempts": 8,
+  "expectedTerminals": {
+    "TERMINAL_FAILURE": 7,
+    "SUCCESS": 1
+  }
+}

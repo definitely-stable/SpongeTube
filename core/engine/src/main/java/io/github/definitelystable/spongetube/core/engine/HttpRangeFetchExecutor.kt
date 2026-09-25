@@ -1,7 +1,12 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
+import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.URL
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +32,13 @@ internal data class HttpRangeTarget(
  *
  * One call = one physical origin request for exactly the FetchUnit range.
  * Accepts only `206` with a matching `Content-Range`; a `200` full body to a
- * range request is never appended (RANGE_REJECTED). The Media Lab request id
+ * range request is never appended. The Media Lab request id
  * (`X-Sponge-Lab-Request`) becomes the attempt transport correlation id.
+ *
+ * Since M2-C the executor only reports what it observed as a typed
+ * [FailureObservation]: a received HTTP status is a provider-plane
+ * [FailureObservation.HttpResponse], never a transport failure, and nothing
+ * here decides retryability. Exception messages are never inspected.
  *
  * This is not the production transport: HttpEngine/OkHttp/Cronet selection is
  * M2 and nothing here is a performance claim.
@@ -68,17 +78,41 @@ internal class HttpRangeFetchExecutor(
         priority: StateFlow<FetchPriority>,
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition =
+        executeCorrelatedWithAdmission(
+            request = request,
+            attempt = attempt,
+            priority = priority,
+            onPhysicalAttemptStart = { },
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+        )
+
+    override suspend fun executeCorrelatedWithAdmission(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition {
+        // These checks are local preflight. They must not consume
+        // REMOTE_ATTEMPT because no socket/request exists yet.
         val target = targetFor(request)
             ?: return failure(
-                FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE,
+                FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
                 null,
             )
         val spec = request.extentSpec
         val start = spec.byteStart ?: 0L
         val endExclusive = spec.byteEndExclusive ?: (start + spec.expectedLength)
         if (endExclusive > target.resourceLength) {
-            return failure(FetchOutcomeKind.RANGE_REJECTED, null)
+            return failure(
+                FailureObservation.RangeProtocolFailure(
+                    RangeProtocolKind.REQUEST_OUTSIDE_RESOURCE,
+                ),
+                null,
+            )
         }
 
         return withContext(Dispatchers.IO) {
@@ -93,6 +127,10 @@ internal class HttpRangeFetchExecutor(
                 setRequestProperty(FETCH_KEY_HEADER, request.fetchKey.value)
                 setRequestProperty(ATTEMPT_HEADER, attempt.toString())
             }
+            // Non-suspending admission is immediately adjacent to physical
+            // transport start. A successful preflight therefore has exactly
+            // one budget charge; failed preflight has none.
+            onPhysicalAttemptStart()
             coroutineScope {
                 // Blocking socket reads do not observe coroutine cancellation;
                 // disconnecting from the cancelled scope aborts them.
@@ -127,11 +165,20 @@ internal class HttpRangeFetchExecutor(
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition {
-        val status = try {
-            connection.responseCode
+        try {
+            connection.connect()
+        } catch (_: SocketTimeoutException) {
+            currentCoroutineContext().ensureActive()
+            return transport(TransportIoKind.CONNECT_TIMEOUT, null)
         } catch (_: IOException) {
             currentCoroutineContext().ensureActive()
-            return retryable(null)
+            return transport(TransportIoKind.IO, null)
+        }
+        val status = try {
+            connection.responseCode
+        } catch (error: IOException) {
+            currentCoroutineContext().ensureActive()
+            return transport(error.transportKind(), null)
         }
         val correlation = connection.getHeaderField(LAB_REQUEST_HEADER)
         if (!correlation.isNullOrBlank()) {
@@ -140,27 +187,49 @@ internal class HttpRangeFetchExecutor(
 
         when {
             status == HttpURLConnection.HTTP_PARTIAL -> Unit
-            status == HttpURLConnection.HTTP_OK ->
-                return failure(FetchOutcomeKind.RANGE_REJECTED, correlation)
-            status == HTTP_REQUEST_TIMEOUT ||
-                status == HTTP_TOO_MANY_REQUESTS ||
-                status >= 500 -> return retryable(correlation)
-            else -> return failure(
-                FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE,
+            status == HttpURLConnection.HTTP_OK -> return failure(
+                FailureObservation.RangeProtocolFailure(
+                    RangeProtocolKind.FULL_BODY_FOR_RANGE_REQUEST,
+                ),
                 correlation,
             )
+            status in 100..599 -> return failure(
+                FailureObservation.HttpResponse(status),
+                correlation,
+            )
+            // Not a parseable HTTP status line.
+            else -> return transport(TransportIoKind.IO, correlation)
         }
 
-        val contentRange = ContentRange.parse(
-            connection.getHeaderField("Content-Range"),
-        )
+        val rawContentRange = connection.getHeaderField("Content-Range")
+            ?: return rangeFailure(
+                RangeProtocolKind.CONTENT_RANGE_MISSING,
+                correlation,
+            )
+        val contentRange = ContentRange.parse(rawContentRange)
         if (
             contentRange == null ||
             contentRange.start != start ||
             contentRange.endInclusive != endExclusive - 1 ||
             (contentRange.total != null && contentRange.total != resourceLength)
         ) {
-            return failure(FetchOutcomeKind.RANGE_REJECTED, correlation)
+            return rangeFailure(
+                RangeProtocolKind.CONTENT_RANGE_MISMATCH,
+                correlation,
+            )
+        }
+        val rawContentLength = connection.getHeaderField("Content-Length")
+        val contentLength = rawContentLength?.trim()?.toLongOrNull()
+        if (
+            rawContentLength != null &&
+            (contentLength == null ||
+                contentLength < 0 ||
+                contentLength != endExclusive - start)
+        ) {
+            return rangeFailure(
+                RangeProtocolKind.RESPONSE_LENGTH_MISMATCH,
+                correlation,
+            )
         }
 
         var position = start
@@ -190,37 +259,47 @@ internal class HttpRangeFetchExecutor(
                     position += read
                 }
             }
-        } catch (_: IOException) {
+        } catch (error: IOException) {
             currentCoroutineContext().ensureActive()
-            return retryable(correlation)
+            return transport(error.transportKind(), correlation)
         }
 
         if (position != endExclusive) {
-            return retryable(correlation)
+            return transport(TransportIoKind.PREMATURE_EOF, correlation)
         }
         return FetchAttemptDisposition.Success(
             transportCorrelationId = correlation,
         )
     }
 
-    private fun retryable(
+    private fun transport(
+        kind: TransportIoKind,
+        transportCorrelationId: String?,
+    ): FetchAttemptDisposition =
+        failure(FailureObservation.TransportIo(kind), transportCorrelationId)
+
+    private fun rangeFailure(
+        kind: RangeProtocolKind,
+        transportCorrelationId: String?,
+    ): FetchAttemptDisposition =
+        failure(FailureObservation.RangeProtocolFailure(kind), transportCorrelationId)
+
+    private fun failure(
+        observation: FailureObservation,
         transportCorrelationId: String?,
     ): FetchAttemptDisposition =
         FetchAttemptDisposition.Failure(
-            kind = FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE,
-            retryable = true,
+            observation = observation,
             transportCorrelationId = transportCorrelationId,
         )
 
-    private fun failure(
-        kind: FetchOutcomeKind,
-        transportCorrelationId: String?,
-    ): FetchAttemptDisposition =
-        FetchAttemptDisposition.Failure(
-            kind = kind,
-            retryable = false,
-            transportCorrelationId = transportCorrelationId,
-        )
+    /** Type-based only; exception messages are never inspected. */
+    private fun IOException.transportKind(): TransportIoKind =
+        when (this) {
+            is SocketTimeoutException -> TransportIoKind.READ_TIMEOUT
+            is SocketException -> TransportIoKind.CONNECTION_RESET
+            else -> TransportIoKind.IO
+        }
 
     internal data class ContentRange(
         val start: Long,
@@ -249,7 +328,5 @@ internal class HttpRangeFetchExecutor(
         const val FETCH_KEY_HEADER = "X-Sponge-Fetch-Key"
         const val ATTEMPT_HEADER = "X-Sponge-Attempt"
         private const val DEFAULT_CHUNK_SIZE = 16 * 1024
-        private const val HTTP_REQUEST_TIMEOUT = 408
-        private const val HTTP_TOO_MANY_REQUESTS = 429
     }
 }

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "cancellation-barrier",
+  "policyId": "sponge-recovery-test-v1",
+  "expectedPhysicalAttempts": 2,
+  "expectedTerminals": {
+    "SUCCESS": 1
+  }
+}

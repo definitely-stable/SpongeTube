@@ -176,6 +176,86 @@ jobs:
             build/android-smoke/m1-d-evidence \
             "$trace"
 
+      - name: Run M2-C bounded origin recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="build/android-smoke/m2-c-origin"
+          trace="$PWD/$root/server/requests.jsonl"
+          rm -rf "$root"
+          mkdir -p "$root/server"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+
+          "$LAB_BIN" serve \
+            "--fixture-root=$PWD/test-fixtures/media" \
+            "--trace=$trace" \
+            "--session-id=m2-c-origin" \
+            --profile=N4R \
+            --data-port=18081 \
+            --control-port=18082 \
+            > "$root/server/media-lab.out" \
+            2> "$root/server/media-lab.err" &
+          lab_pid=$!
+
+          cleanup_m2c_lab() {
+            if kill -0 "$lab_pid" 2>/dev/null; then
+              kill "$lab_pid" || true
+              for _ in {1..40}; do
+                kill -0 "$lab_pid" 2>/dev/null || break
+                sleep 0.25
+              done
+            fi
+          }
+          trap cleanup_m2c_lab EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://127.0.0.1:18082/__lab/config \
+              > "$root/server/scenario.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$root/server/media-lab.out" || true
+              cat "$root/server/media-lab.err" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          jq -e \
+            '.profileId == "N4R" and .sessionId == "m2-c-origin"' \
+            "$root/server/scenario.json"
+
+          adb reverse tcp:18080 tcp:18081
+          adb reverse tcp:18082 tcp:18082
+
+          ./gradlew --dependency-verification=strict \
+            :core:engine:connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.RecoveryOriginAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2c.originBaseUrl=http://127.0.0.1:18080 \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2c.controlBaseUrl=http://127.0.0.1:18082
+
+          # Timed-out requests are traced when their handler finishes after
+          # the gate opened; wait for all three data-plane rows.
+          for _ in {1..60}; do
+            count="$(python3 -c 'import json,sys; print(sum(1 for l in open(sys.argv[1]) if l.strip() and json.loads(l).get("plane") == "data"))' "$trace" 2>/dev/null || echo 0)"
+            [[ "$count" -ge 3 ]] && break
+            sleep 0.25
+          done
+
+          cleanup_m2c_lab
+          trap - EXIT
+          adb reverse --remove tcp:18082 || true
+
+          test -s "$trace"
+
+          bash scripts/ci/verify-m2-c-recovery-evidence.sh device \
+            build/android-smoke/m2-c-evidence \
+            "$trace"
+
       - name: Run M1 PlaybackBridge acceptance
         shell: bash
         run: |
