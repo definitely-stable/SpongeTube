@@ -61,7 +61,7 @@ class AndroidDefaultRouteMonitorTest {
     }
 
     @Test
-    fun observesActualDefaultRouteAndProducesRouteEvidence() = runBlocking {
+    fun observesActualDefaultRouteAndProducesRouteEvidence() = runBlocking<Unit> {
         val api = Build.VERSION.SDK_INT
         val recorder = RouteEvidenceRecorder(
             runId = "m2-b-android-api$api",
@@ -143,11 +143,20 @@ class AndroidDefaultRouteMonitorTest {
     }
 
     @Test
-    fun repeatedOpenAndShutdownLeaksNoPlatformRegistration() = runBlocking {
+    fun repeatedOpenAndShutdownLeaksNoPlatformRegistration() = runBlocking<Unit> {
         // Android limits outstanding network callbacks per UID (~100). A leak
         // of one registration per cycle would fail well before the loop ends.
         repeat(LEAK_CYCLES) {
             val monitor = AndroidDefaultRouteMonitor.open(context, scope)
+            // ConnectivityService releases a callback asynchronously on its
+            // handler. Waiting for this cycle's first observed capabilities
+            // (delivered from that same handler) lets the previous release
+            // drain, so only a real leak can reach the per-UID limit.
+            withTimeoutOrNull(LEAK_CYCLE_SETTLE_MS) {
+                monitor.observations.first { observation ->
+                    (observation.state as? DefaultRouteState.Available)?.capabilitiesReceived == true
+                }
+            }
             monitor.shutdown()
             assertTrue(monitor.isClosed)
         }
@@ -156,7 +165,7 @@ class AndroidDefaultRouteMonitorTest {
     }
 
     @Test
-    fun callbacksAfterShutdownDoNotChangeState() = runBlocking {
+    fun callbacksAfterShutdownDoNotChangeState() = runBlocking<Unit> {
         val recorder = RouteEvidenceRecorder("m2-b-shutdown", "m2-b-shutdown", Build.VERSION.SDK_INT)
         val monitor = AndroidDefaultRouteMonitor.open(context, scope, recorder)
         monitor.shutdown()
@@ -221,6 +230,7 @@ class AndroidDefaultRouteMonitorTest {
         const val ROUTE_TIMEOUT_MS = 10_000L
         const val POST_SHUTDOWN_WAIT_MS = 500L
         const val LEAK_CYCLES = 128
+        const val LEAK_CYCLE_SETTLE_MS = 1_000L
         const val BLOCKED_API_FLOOR = 29
         const val EVIDENCE_EXPORT_API = 34
     }
