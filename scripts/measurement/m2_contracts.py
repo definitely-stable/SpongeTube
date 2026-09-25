@@ -514,16 +514,24 @@ OBSERVATION_PLANES = {
     "STORAGE_IO": "STORAGE",
 }
 
-# PROVISIONAL vocabulary (M2-C owns the final enum).
+# M2-C owns this vocabulary. The M2-A provisional set is kept (route classes
+# stay reserved for M2-F) and extended with the final M2-C classifications
+# (FailureClassifier.kt, scripts/measurement/m2_recovery_oracle.py).
 CLASSIFICATIONS = (
     "TRANSIENT_TRANSPORT",
+    "TERMINAL_TRANSPORT",
+    "PROVIDER_TRANSIENT_RESPONSE",
     "PROVIDER_RATE_LIMITED",
     "PROVIDER_REJECTED",
     "DELIVERY_BINDING_STALE",
     "ROUTE_UNAVAILABLE",
     "ROUTE_POLICY_BLOCKED",
     "RANGE_REJECTED",
+    "CONTENT_INTEGRITY",
     "STORAGE_FAILURE",
+    "PUBLICATION_CONFLICT",
+    "CANCELLED",
+    "INTERNAL",
     "UNKNOWN",
 )
 
@@ -1087,7 +1095,23 @@ def scan_evidence_privacy(document: Any, path: str = "$") -> None:
 M2_SLICE_SCHEMAS = frozenset({
     "route-events-v1.schema.json",
     "route-verification-summary-v1.schema.json",
+    "failure-decision-events-v1.schema.json",
+    "recovery-budget-events-v1.schema.json",
+    "recovery-verification-summary-v1.schema.json",
 })
+
+# SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B).
+# A later slice adds a new versioned schema instead of rewriting these.
+ACCEPTED_M2_SCHEMA_SHA256 = {
+    "m2-run-manifest-v1.schema.json":
+        "b9d034b36c845bd58e957b1332c29e885420b6e65e72aa63706ead9fe6ead9d3",
+    "m2-scenario-v1.schema.json":
+        "fc761ff394a2c598158152f0ab12edf225e59114e5e69dcfdae5d70c6ff512f4",
+    "route-events-v1.schema.json":
+        "6ca6d7066b166acd3860e9122d09d7dfd105c0fc4d432b4e67a65194060c583e",
+    "route-verification-summary-v1.schema.json":
+        "d07dbb61aea5f12bd67b8dca5d63448c7bbb30fdb6617238a395f8e47c799c21",
+}
 
 # SHA-256 of every pre-M2 (M0/M1) schema at M2-A. M2 work must add a new
 # versioned artifact rather than rewrite these.

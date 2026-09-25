@@ -1,5 +1,8 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAcquireDisposition
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumerKind
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryOutcome
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import java.io.Closeable
 import java.io.IOException
@@ -10,10 +13,12 @@ import kotlinx.coroutines.runBlocking
 /**
  * One open/read/close cycle over a plan resource (M1-E §6).
  *
- * Reads are served only from PUBLISHED + VALID extents. A miss acquires the
- * whole FetchUnit through the FetchBroker as a PLAYBACK consumer (joining
- * in-flight work), waits for durable publication, refreshes the CoverageIndex
- * and then reads locally; in-flight bytes are never exposed.
+ * Reads are served only from PUBLISHED + VALID extents. A miss joins or
+ * starts the RecoveryChain for the whole FetchUnit as a PLAYBACK consumer,
+ * waits for durable publication, refreshes the CoverageIndex and then reads
+ * locally; in-flight bytes are never exposed. The chain, not this session or
+ * Media3, owns every retry; a terminal chain surfaces as one
+ * [PlaybackBridgeException].
  *
  * Blocking API for the Media3 loader thread. Thread interruption during a
  * wait releases the broker lease and surfaces as [InterruptedIOException].
@@ -291,11 +296,11 @@ class PlaybackReadSession internal constructor(
     }
 
     private suspend fun ensureFetched(unit: PlaybackFetchUnit) {
-        val fetch = try {
+        val recovery = try {
             runtime.acquire(
                 unit = unit,
                 consumerId = "bridge:$readId:${unit.extentId}",
-                kind = FetchConsumerKind.PLAYBACK,
+                kind = RecoveryConsumerKind.PLAYBACK,
             )
         } catch (conflict: FetchIdentityConflictException) {
             throw PlaybackBridgeException(
@@ -303,56 +308,47 @@ class PlaybackReadSession internal constructor(
                 message = conflict.message ?: "fetch identity conflict",
                 cause = conflict,
             )
-        } catch (closedBroker: IllegalStateException) {
+        } catch (closedRuntime: IllegalStateException) {
             throw PlaybackBridgeException(
                 failure = PlaybackBridgeFailure.RUNTIME_CLOSED,
-                message = "fetch broker is closed",
-                cause = closedBroker,
+                message = "recovery coordinator is closed",
+                cause = closedRuntime,
             )
         }
 
-        val fetchId = fetch.fetchId.value
-        val acquireEvent = when (fetch.acquireDisposition) {
-            FetchAcquireDisposition.NEW_OWNER ->
+        val acquiredFetchId = recovery.fetchIdAtAcquire?.value
+            ?: recovery.recoveryChainId.value
+        val acquireEvent = when (recovery.acquireDisposition) {
+            RecoveryAcquireDisposition.NEW_CHAIN ->
                 PlaybackBridgeEventKind.MISS
-            FetchAcquireDisposition.JOINED_RUNNING ->
+            RecoveryAcquireDisposition.JOINED_ACTIVE ->
                 PlaybackBridgeEventKind.JOIN
-            FetchAcquireDisposition.WAITED_CANCELLING ->
+            RecoveryAcquireDisposition.JOINED_CANCELLING ->
                 PlaybackBridgeEventKind.WAIT_EXISTING
         }
         emit(
             event = acquireEvent,
             extentId = unit.extentId,
-            fetchId = fetchId,
+            fetchId = acquiredFetchId,
         )
         val outcome = try {
-            fetch.await()
+            recovery.await()
         } finally {
-            fetch.close()
+            recovery.close()
         }
         emit(
             event = PlaybackBridgeEventKind.FETCH_WAIT_END,
             extentId = unit.extentId,
-            fetchId = fetchId,
-            fetchOutcome = outcome.kind.name,
+            fetchId = outcome.lastFetchId?.value ?: acquiredFetchId,
+            fetchOutcome = outcome.lastFetchOutcome?.name
+                ?: outcome.terminalReason.name,
         )
 
-        when (outcome.kind) {
-            FetchOutcomeKind.SUCCESS -> refresh()
-            FetchOutcomeKind.STORAGE_CONFLICT -> {
-                // Our projection was stale: another publisher committed the
-                // same immutable extent. Refresh once and re-resolve.
-                refresh()
-                when (runtime.coverageIndex.resolveExtent(unit.extentSpec)) {
-                    ExtentResolution.Absent ->
-                        throw fetchFailure(unit, outcome.kind)
-                    ExtentResolution.IdentityConflict ->
-                        throw identityConflict(unit)
-                    ExtentResolution.Ready,
-                    is ExtentResolution.PublishedNotReady -> Unit
-                }
-            }
-            else -> throw fetchFailure(unit, outcome.kind)
+        when {
+            // Includes a STORAGE_CONFLICT the chain reconciled locally.
+            outcome.isSuccess -> refresh()
+            outcome.identityConflict -> throw identityConflict(unit)
+            else -> throw fetchFailure(unit, outcome)
         }
     }
 
@@ -366,12 +362,16 @@ class PlaybackReadSession internal constructor(
 
     private fun fetchFailure(
         unit: PlaybackFetchUnit,
-        kind: FetchOutcomeKind,
+        outcome: RecoveryOutcome,
     ): PlaybackBridgeException =
         PlaybackBridgeException(
             failure = PlaybackBridgeFailure.FETCH_FAILED,
-            fetchOutcome = kind.name,
-            message = "fetch of ${unit.extentId} ended with $kind",
+            fetchOutcome = outcome.lastFetchOutcome?.name
+                ?: outcome.terminalReason.name,
+            recoveryTerminalReason = outcome.terminalReason.name,
+            message = "recovery ${outcome.recoveryChainId} of ${unit.extentId} " +
+                "ended with ${outcome.terminalReason}" +
+                (outcome.classification?.let { " ($it)" } ?: ""),
         )
 
     private fun requireRepairable(

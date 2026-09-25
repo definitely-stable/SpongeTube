@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "budget-exhausted",
+  "policyId": "sponge-recovery-test-v1",
+  "expectedPhysicalAttempts": 4,
+  "expectedTerminals": {
+    "BUDGET_EXHAUSTED": 1
+  }
+}

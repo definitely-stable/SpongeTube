@@ -196,7 +196,6 @@ class FetchBrokerCancellationEvidenceTest {
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
                 FetchAttemptDisposition.Success()
             },
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "m1-acc07-late-success",
             eventListener = FetchEventListener { event -> events += event },
             ownerScope = backgroundScope,
@@ -283,7 +282,6 @@ class FetchBrokerCancellationEvidenceTest {
                 emit(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
                 FetchAttemptDisposition.Success()
             },
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "m1-acc07-late-failure",
             eventListener = FetchEventListener { event -> events += event },
             ownerScope = backgroundScope,
@@ -345,7 +343,6 @@ class FetchBrokerCancellationEvidenceTest {
         FetchBroker(
             publisher = FakePublisher(),
             executor = executor,
-            attemptBudget = FetchAttemptBudget(1),
             sessionId = "m1-acc07",
             eventListener = FetchEventListener { event -> events += event },
             ownerScope = backgroundScope,

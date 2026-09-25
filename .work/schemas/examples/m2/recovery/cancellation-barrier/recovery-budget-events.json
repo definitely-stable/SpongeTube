@@ -1,0 +1,491 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-c-host-cancellation-barrier-run",
+  "sessionId": "m2-c-host-cancellation-barrier",
+  "policyId": "sponge-recovery-test-v1",
+  "clockDomain": "ANDROID_MONOTONIC",
+  "events": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1001000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CHAIN_STARTED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 0
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 1002000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CONSUMER_JOINED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 0
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": "reserve",
+      "consumerKind": "RESERVE",
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 1003000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "ATTEMPT_PERMIT_WAIT",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 0
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 1004000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "ATTEMPT_PERMIT_GRANTED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 0
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": {
+        "routeEpoch": null,
+        "reason": "ALWAYS_PERMIT"
+      },
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 5,
+      "elapsedRealtimeNs": 1006000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CHARGE",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": {
+        "dimension": "REMOTE_ATTEMPT",
+        "amount": 1,
+        "spentBefore": 0,
+        "spentAfter": 1,
+        "limit": 4
+      },
+      "ownerOrdinal": 1,
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 6,
+      "elapsedRealtimeNs": 1007000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "OWNER_STARTED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": 1,
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 7,
+      "elapsedRealtimeNs": 1009000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CONSUMER_RELEASED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": "reserve",
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 8,
+      "elapsedRealtimeNs": 1011000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CONSUMER_JOINED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "RESERVE",
+      "consumerId": "playback",
+      "consumerKind": "PLAYBACK",
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 9,
+      "elapsedRealtimeNs": 1012000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "PRIORITY_RAISED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": "RESERVE",
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 10,
+      "elapsedRealtimeNs": 1014000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "OWNER_FINISHED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": 1,
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "ownerOutcome": "CANCELLED_NO_CONSUMERS",
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 11,
+      "elapsedRealtimeNs": 1016000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "ATTEMPT_PERMIT_WAIT",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 12,
+      "elapsedRealtimeNs": 1017000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "ATTEMPT_PERMIT_GRANTED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 1
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": {
+        "routeEpoch": null,
+        "reason": "ALWAYS_PERMIT"
+      },
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 13,
+      "elapsedRealtimeNs": 1019000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CHARGE",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 2
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": {
+        "dimension": "REMOTE_ATTEMPT",
+        "amount": 1,
+        "spentBefore": 1,
+        "spentAfter": 2,
+        "limit": 4
+      },
+      "ownerOrdinal": 2,
+      "fetchId": "fetch-2",
+      "attemptCorrelationId": "fetch-2:attempt-1",
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 14,
+      "elapsedRealtimeNs": 1020000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "OWNER_STARTED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 2
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": 2,
+      "fetchId": "fetch-2",
+      "attemptCorrelationId": "fetch-2:attempt-1",
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 15,
+      "elapsedRealtimeNs": 1025000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "OWNER_FINISHED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 2
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": 2,
+      "fetchId": "fetch-2",
+      "attemptCorrelationId": "fetch-2:attempt-1",
+      "ownerOutcome": "SUCCESS",
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": null
+    },
+    {
+      "sequence": 16,
+      "elapsedRealtimeNs": 1026000,
+      "sessionId": "m2-c-host-cancellation-barrier",
+      "recoveryChainId": "recovery-1",
+      "kind": "CHAIN_TERMINATED",
+      "fetchKey": "fixture:M2C/video/barrier",
+      "extentId": "m2c:video:barrier",
+      "policyId": "sponge-recovery-test-v1",
+      "limits": {
+        "REMOTE_ATTEMPT": 4
+      },
+      "spent": {
+        "REMOTE_ATTEMPT": 2
+      },
+      "effectivePriority": "PLAYBACK",
+      "consumerId": null,
+      "consumerKind": null,
+      "priorityBefore": null,
+      "charge": null,
+      "ownerOrdinal": null,
+      "fetchId": null,
+      "attemptCorrelationId": null,
+      "ownerOutcome": null,
+      "permit": null,
+      "backoff": null,
+      "failureId": null,
+      "terminalReason": "SUCCESS"
+    }
+  ]
+}

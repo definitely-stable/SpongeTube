@@ -318,13 +318,34 @@ def verify_e2(case: Case) -> dict[str, Any]:
     return {"successfulSeekMisses": len(successful)}
 
 
+def _is_reserve_owner(case: Case, row: dict[str, Any], owner: dict[str, Any]) -> bool:
+    """The joined owner was started for the harness reserve lease.
+
+    M1 runtimes registered the reserve lease itself as the broker consumer.
+    Since M2-C the RecoveryChain is the only broker consumer
+    (`recovery:<chainId>:<ordinal>`), so the lease is joined to its owner
+    through the fetchId the lease reported, recorded in case.json.
+    """
+
+    consumers = owner["consumerIds"]
+    if "harness-reserve" in consumers:
+        return True
+    reserve_fetch_id = case.case.get("reserveFetchId")
+    return (
+        reserve_fetch_id is not None
+        and reserve_fetch_id == row["fetchId"]
+        and len(consumers) == 1
+        and str(consumers[0]).startswith("recovery:")
+    )
+
+
 def verify_e3(case: Case) -> dict[str, Any]:
     joins = []
     for row in case.bridge_events("JOIN"):
         owner = case.fetch_events("OWNER_REGISTERED", row["fetchId"])
         if (
             len(owner) == 1
-            and "harness-reserve" in owner[0]["consumerIds"]
+            and _is_reserve_owner(case, row, owner[0])
             and owner[0]["effectivePriority"] == "RESERVE"
         ):
             joins.append(row)

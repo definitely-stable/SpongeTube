@@ -221,6 +221,8 @@ class M1RecoveryProvider : ContentProvider() {
                 "scenarioId" to "PROCESS_DEATH",
                 "maxAttemptsPerOwner" to MAX_ATTEMPTS_PER_OWNER,
                 "media3MaxRetries" to MEDIA3_MAX_RETRIES,
+                "recoveryPolicyId" to RECOVERY_POLICY_ID,
+                "recoveryRemoteAttemptLimit" to RECOVERY_REMOTE_ATTEMPT_LIMIT,
                 "prePublishedFetchKeys" to prePublished,
                 "pidBefore" to pidBefore,
                 "pidAfter" to pidAfter,
@@ -376,10 +378,7 @@ class M1RecoveryProvider : ContentProvider() {
                     store = store,
                     plan = plans.plan(),
                     transport = FixtureTransportSession(originBaseUrl),
-                    config = PlaybackBridgeConfig(
-                        sessionId = sessionId,
-                        maxAttemptsPerFetch = MAX_ATTEMPTS_PER_OWNER,
-                    ),
+                    config = PlaybackBridgeConfig(sessionId = sessionId),
                     bridgeEventListener = {
                         bridgeEvents += it.toArtifactMap()
                     },
@@ -511,6 +510,8 @@ class M1RecoveryProvider : ContentProvider() {
                     "scenarioId" to scenarioId,
                     "maxAttemptsPerOwner" to MAX_ATTEMPTS_PER_OWNER,
                     "media3MaxRetries" to MEDIA3_MAX_RETRIES,
+                    "recoveryPolicyId" to RECOVERY_POLICY_ID,
+                    "recoveryRemoteAttemptLimit" to RECOVERY_REMOTE_ATTEMPT_LIMIT,
                     "initialDurableReserveUs" to initialReserveUs,
                     "prePublishedFetchKeys" to JSONArray(
                         seed.map(F1FetchUnit::fetchKeyValue),
@@ -837,8 +838,14 @@ class M1RecoveryProvider : ContentProvider() {
         const val PROCESS_DEATH_SEED_US = 30_000_000L
         const val SHORT_SEED_US = 30_000_000L
         const val EXHAUST_SEED_US = 10_000_000L
-        const val MAX_ATTEMPTS_PER_OWNER = 2
-        const val MEDIA3_MAX_RETRIES = 3
+        // M2-C (ADR-0003): one FetchBroker owner is one physical attempt and
+        // Media3 never retries; the RecoveryChain (`sponge-recovery-v1`,
+        // REMOTE_ATTEMPT = 4) is the only bound on owners per work item.
+        // Recorded so the M1 verifier checks the M2-C bound, not M1's.
+        const val MAX_ATTEMPTS_PER_OWNER = 1
+        const val RECOVERY_POLICY_ID = "sponge-recovery-v1"
+        const val RECOVERY_REMOTE_ATTEMPT_LIMIT = 4
+        const val MEDIA3_MAX_RETRIES = 0
         const val PROGRESS_SAMPLE_US = 250_000L
         const val MAIN_CALL_TIMEOUT_SECONDS = 30L
     }

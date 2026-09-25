@@ -174,6 +174,31 @@ def _verify_fetch(
     media3_retries = int(case["media3MaxRetries"])
     retry_owner_ceiling = media3_retries + 1
 
+    # M2-C (ADR-0003): one owner is one attempt, Media3 never retries, and
+    # the RecoveryChain bounds owners per immutable work item. A case from an
+    # M2-C runtime declares that bound; the M1 per-owner/Media3 bounds must
+    # then be the degenerate ones, never a multiplier.
+    recovery_limit = case.get("recoveryRemoteAttemptLimit")
+    if recovery_limit is not None:
+        if (
+            not isinstance(recovery_limit, int)
+            or isinstance(recovery_limit, bool)
+            or recovery_limit < 1
+        ):
+            raise RecoveryEvidenceError(
+                "recoveryRemoteAttemptLimit must be a positive integer"
+            )
+        if max_attempts != 1 or media3_retries != 0:
+            raise RecoveryEvidenceError(
+                "an M2-C recovery case must declare maxAttemptsPerOwner=1 "
+                "and media3MaxRetries=0"
+            )
+        if not str(case.get("recoveryPolicyId") or ""):
+            raise RecoveryEvidenceError(
+                "an M2-C recovery case must declare recoveryPolicyId"
+            )
+        retry_owner_ceiling = recovery_limit
+
     active_by_key: dict[str, str] = {}
     owner_key: dict[str, str] = {}
     terminal_owners: set[str] = set()

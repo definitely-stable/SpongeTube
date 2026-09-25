@@ -293,6 +293,33 @@ class M1BridgeEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, "E3"):
             self.run_verify(evidence)
 
+    def _recovery_owned_e3(self, evidence, reserve_fetch_id):
+        for row in evidence.cases["E3"]["fetch"]:
+            row["consumerIds"] = [
+                "recovery:recovery-1:1" if consumer in ("harness-reserve",) else consumer
+                for consumer in row["consumerIds"]
+                if not consumer.startswith("bridge:")
+            ]
+        evidence.cases["E3"]["case"]["reserveFetchId"] = reserve_fetch_id
+
+    def test_accepts_m2c_recovery_owned_reserve_owner(self):
+        evidence = Evidence()
+        self._recovery_owned_e3(evidence, "fetch-1")
+        self.run_verify(evidence)
+
+    def test_rejects_recovery_owner_not_bound_to_the_reserve_lease(self):
+        evidence = Evidence()
+        self._recovery_owned_e3(evidence, "fetch-9")
+        with self.assertRaisesRegex(EvidenceError, "E3"):
+            self.run_verify(evidence)
+
+    def test_rejects_recovery_owner_without_reserve_fetch_id(self):
+        evidence = Evidence()
+        self._recovery_owned_e3(evidence, None)
+        del evidence.cases["E3"]["case"]["reserveFetchId"]
+        with self.assertRaisesRegex(EvidenceError, "E3"):
+            self.run_verify(evidence)
+
     def test_rejects_slow_release(self):
         evidence = Evidence()
         evidence.cases["E6"]["case"]["blockedReadsClosedMs"] = 1_500

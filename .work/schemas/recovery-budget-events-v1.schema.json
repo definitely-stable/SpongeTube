@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/recovery-budget-events-v1.schema.json",
+  "title": "SpongeTube M2-C Recovery Budget Events v1",
+  "description": "Ordered RecoveryChain lifecycle and ledger events (.work/milestones/M2.md section 11, M2-C). Every row carries the chain policyId, its declared limits and the ledger snapshot after the event, so an independent verifier can prove the ledger is monotonic and never reset. Work identity is FetchKey plus extentId only; the ExtentSpec is not retained. Produced by the Kotlin RecoveryCoordinator; verified by scripts/measurement/m2_recovery_oracle.py.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "policyId",
+    "clockDomain",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policyId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "ANDROID_MONOTONIC"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "elapsedRealtimeNs",
+        "sessionId",
+        "recoveryChainId",
+        "kind",
+        "fetchKey",
+        "extentId",
+        "policyId",
+        "limits",
+        "spent",
+        "effectivePriority",
+        "consumerId",
+        "consumerKind",
+        "priorityBefore",
+        "charge",
+        "ownerOrdinal",
+        "fetchId",
+        "attemptCorrelationId",
+        "ownerOutcome",
+        "permit",
+        "backoff",
+        "failureId",
+        "terminalReason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "elapsedRealtimeNs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recoveryChainId": {
+          "type": "string",
+          "pattern": "^recovery-[1-9][0-9]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "CHAIN_STARTED",
+            "CONSUMER_JOINED",
+            "CONSUMER_RELEASED",
+            "ATTEMPT_PERMIT_WAIT",
+            "ATTEMPT_PERMIT_GRANTED",
+            "CHARGE",
+            "OWNER_STARTED",
+            "OWNER_FINISHED",
+            "BACKOFF_SCHEDULED",
+            "BACKOFF_COMPLETED",
+            "PRIORITY_RAISED",
+            "CHAIN_TERMINATED"
+          ]
+        },
+        "fetchKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policyId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "spent": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "effectivePriority": {
+          "type": "string",
+          "enum": [
+            "RESERVE",
+            "PLAYBACK"
+          ]
+        },
+        "consumerId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "consumerKind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "RESERVE",
+            "PLAYBACK",
+            null
+          ]
+        },
+        "priorityBefore": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "RESERVE",
+            "PLAYBACK",
+            null
+          ]
+        },
+        "charge": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "dimension",
+            "amount",
+            "spentBefore",
+            "spentAfter",
+            "limit"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "amount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "spentBefore": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "spentAfter": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "ownerOrdinal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "fetchId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^fetch-[1-9][0-9]*$"
+        },
+        "attemptCorrelationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^fetch-[1-9][0-9]*:attempt-1$"
+        },
+        "ownerOutcome": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SUCCESS",
+            "RETRYABLE_TRANSPORT_FAILURE",
+            "TERMINAL_TRANSPORT_FAILURE",
+            "DESCRIPTOR_STALE",
+            "RANGE_REJECTED",
+            "CONTENT_INTEGRITY_REJECTED",
+            "STORAGE_NO_SPACE",
+            "STORAGE_IO",
+            "STORAGE_CONFLICT",
+            "CANCELLED_NO_CONSUMERS",
+            "CANCELLED_BROKER_SHUTDOWN",
+            "INTERNAL_FAILURE",
+            null
+          ]
+        },
+        "permit": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "routeEpoch",
+            "reason"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "routeEpoch": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "reason": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            }
+          }
+        },
+        "backoff": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "retryOrdinal",
+            "windowMs",
+            "delayMs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "retryOrdinal": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "windowMs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "delayMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "failureId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^recovery-[1-9][0-9]*:failure-[1-9][0-9]*$"
+        },
+        "terminalReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SUCCESS",
+            "TERMINAL_FAILURE",
+            "BUDGET_EXHAUSTED",
+            "NO_REMAINING_DEMAND",
+            "SESSION_TERMINATION",
+            null
+          ]
+        }
+      }
+    }
+  }
+}

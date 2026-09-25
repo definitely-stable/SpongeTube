@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-c-host-budget-exhausted-run",
+  "sessionId": "m2-c-host-budget-exhausted",
+  "policyId": "sponge-recovery-test-v1",
+  "clockDomain": "ANDROID_MONOTONIC",
+  "failures": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1012000,
+      "sessionId": "m2-c-host-budget-exhausted",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-1",
+      "fetchKey": "fixture:M2C/video/exhausted",
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "TRANSPORT",
+        "type": "TRANSPORT_IO",
+        "kind": "READ_TIMEOUT",
+        "httpStatus": null
+      },
+      "classification": "TRANSIENT_TRANSPORT",
+      "decision": {
+        "kind": "RETRY_AFTER_BACKOFF",
+        "reason": "TRANSIENT_FAILURE"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3
+      },
+      "action": {
+        "kind": "SCHEDULE_BACKOFF",
+        "delayMs": 100,
+        "retryOrdinal": 1,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 1024000,
+      "sessionId": "m2-c-host-budget-exhausted",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-2",
+      "fetchKey": "fixture:M2C/video/exhausted",
+      "fetchId": "fetch-2",
+      "attemptCorrelationId": "fetch-2:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "HTTP_RESPONSE",
+        "kind": "HTTP_STATUS",
+        "httpStatus": 503
+      },
+      "classification": "PROVIDER_TRANSIENT_RESPONSE",
+      "decision": {
+        "kind": "RETRY_AFTER_BACKOFF",
+        "reason": "PROVIDER_TRANSIENT_STATUS"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 2
+      },
+      "action": {
+        "kind": "SCHEDULE_BACKOFF",
+        "delayMs": 200,
+        "retryOrdinal": 2,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 1036000,
+      "sessionId": "m2-c-host-budget-exhausted",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-3",
+      "fetchKey": "fixture:M2C/video/exhausted",
+      "fetchId": "fetch-3",
+      "attemptCorrelationId": "fetch-3:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "TRANSPORT",
+        "type": "TRANSPORT_IO",
+        "kind": "CONNECTION_RESET",
+        "httpStatus": null
+      },
+      "classification": "TRANSIENT_TRANSPORT",
+      "decision": {
+        "kind": "RETRY_AFTER_BACKOFF",
+        "reason": "TRANSIENT_FAILURE"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 1
+      },
+      "action": {
+        "kind": "SCHEDULE_BACKOFF",
+        "delayMs": 400,
+        "retryOrdinal": 3,
+        "reconciliation": null
+      }
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 1048000,
+      "sessionId": "m2-c-host-budget-exhausted",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-4",
+      "fetchKey": "fixture:M2C/video/exhausted",
+      "fetchId": "fetch-4",
+      "attemptCorrelationId": "fetch-4:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "TRANSPORT",
+        "type": "TRANSPORT_IO",
+        "kind": "PREMATURE_EOF",
+        "httpStatus": null
+      },
+      "classification": "TRANSIENT_TRANSPORT",
+      "decision": {
+        "kind": "RETRY_AFTER_BACKOFF",
+        "reason": "TRANSIENT_FAILURE"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 0
+      },
+      "action": {
+        "kind": "TERMINATE_BUDGET_EXHAUSTED",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null
+      }
+    }
+  ]
+}

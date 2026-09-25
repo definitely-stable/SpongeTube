@@ -1,5 +1,9 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.CancellationKind
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.StorageFailureKind
+import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 
@@ -60,14 +64,6 @@ internal data class FetchRequest(
     val extentSpec: ExtentSpec,
 )
 
-internal data class FetchAttemptBudget(
-    val maxAttempts: Int,
-) {
-    init {
-        require(maxAttempts > 0) { "maxAttempts must be > 0" }
-    }
-}
-
 internal data class FetchByteAccounting(
     val networkBytes: Long,
     val uniqueRangeBytes: Long,
@@ -94,6 +90,12 @@ internal data class FetchByteAccounting(
     }
 }
 
+/**
+ * Legacy `fetch-events-v3` outcome vocabulary. Since M2-C it is a compatibility
+ * projection of the raw [FailureObservation] (see [legacyOutcomeKind]) kept so
+ * historical M1 verifiers keep their meaning. Recovery never classifies from
+ * it; the retry-flavoured names do not imply that anything retries.
+ */
 internal enum class FetchOutcomeKind {
     SUCCESS,
     RETRYABLE_TRANSPORT_FAILURE,
@@ -109,16 +111,30 @@ internal enum class FetchOutcomeKind {
     INTERNAL_FAILURE,
 }
 
+/**
+ * Terminal result of one FetchBroker owner. Since M2-C one owner is exactly
+ * one physical remote attempt: [attempts] is 0 (cancelled or refused before
+ * the request) or 1. It is an M1 compatibility field, never a budget.
+ */
 internal data class FetchOutcome(
     val kind: FetchOutcomeKind,
     val attempts: Int,
     val bytes: FetchByteAccounting,
     val committedExtent: CommittedExtent? = null,
+    val failure: FailureObservation? = null,
 ) {
     init {
-        require(attempts >= 0)
+        require(attempts in 0..1) { "one owner makes at most one attempt" }
         require((kind == FetchOutcomeKind.SUCCESS) == (committedExtent != null)) {
             "only successful fetches may expose a committed extent"
+        }
+        require((kind == FetchOutcomeKind.SUCCESS) == (failure == null)) {
+            "every non-successful owner carries exactly one raw observation"
+        }
+        if (failure != null) {
+            require(kind == failure.legacyOutcomeKind()) {
+                "legacy outcome must be the projection of the observation"
+            }
         }
     }
 
@@ -152,5 +168,62 @@ internal interface FetchHandle : AutoCloseable {
 
     suspend fun await(): FetchOutcome
 
+    /**
+     * Awaits the owner's terminal outcome without releasing this consumer.
+     * Valid after [close]: a releasing owner (RecoveryCoordinator) uses it to
+     * wait for the M1 cancellation barrier before deciding what comes next.
+     */
+    suspend fun awaitTerminal(): FetchOutcome
+
+    /**
+     * Raises the effective priority of the running owner without restarting
+     * it. Never lowers priority and never creates a physical attempt.
+     */
+    fun raisePriority(priority: FetchPriority)
+
     override fun close()
 }
+
+/**
+ * M1-compatible projection of a raw observation into `fetch-events-v3`
+ * vocabulary. It preserves the M1 meaning of each legacy value exactly (for
+ * example M1 already reported 408/429/5xx as RETRYABLE_TRANSPORT_FAILURE);
+ * it is evidence compatibility only and is never a classification input.
+ */
+internal fun FailureObservation.legacyOutcomeKind(): FetchOutcomeKind =
+    when (this) {
+        is FailureObservation.TransportIo ->
+            if (kind == TransportIoKind.TARGET_UNRESOLVED) {
+                FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE
+            } else {
+                FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE
+            }
+        is FailureObservation.HttpResponse ->
+            if (statusCode == 408 || statusCode == 429 || statusCode >= 500) {
+                FetchOutcomeKind.RETRYABLE_TRANSPORT_FAILURE
+            } else {
+                FetchOutcomeKind.TERMINAL_TRANSPORT_FAILURE
+            }
+        FailureObservation.DeliveryDescriptorStale ->
+            FetchOutcomeKind.DESCRIPTOR_STALE
+        is FailureObservation.RangeProtocolFailure ->
+            FetchOutcomeKind.RANGE_REJECTED
+        FailureObservation.ContentIntegrityFailure ->
+            FetchOutcomeKind.CONTENT_INTEGRITY_REJECTED
+        is FailureObservation.StorageFailure -> when (kind) {
+            StorageFailureKind.NO_SPACE ->
+                FetchOutcomeKind.STORAGE_NO_SPACE
+            StorageFailureKind.IO ->
+                FetchOutcomeKind.STORAGE_IO
+            StorageFailureKind.CONFLICT ->
+                FetchOutcomeKind.STORAGE_CONFLICT
+        }
+        is FailureObservation.Cancellation -> when (kind) {
+            CancellationKind.NO_CONSUMERS ->
+                FetchOutcomeKind.CANCELLED_NO_CONSUMERS
+            CancellationKind.SESSION_SHUTDOWN ->
+                FetchOutcomeKind.CANCELLED_BROKER_SHUTDOWN
+        }
+        FailureObservation.InternalFailure ->
+            FetchOutcomeKind.INTERNAL_FAILURE
+    }

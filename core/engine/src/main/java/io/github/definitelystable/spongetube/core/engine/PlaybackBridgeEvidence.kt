@@ -117,9 +117,12 @@ enum class PlaybackBridgeFailure {
 }
 
 /**
- * Typed bridge failure. [fetchOutcome] carries the FetchBroker terminal
- * outcome name for [PlaybackBridgeFailure.FETCH_FAILED]; retry decisions are
- * taken by the player-side LoadErrorHandlingPolicy, never hidden here.
+ * Typed bridge failure. For [PlaybackBridgeFailure.FETCH_FAILED],
+ * [fetchOutcome] carries the legacy outcome name of the last FetchBroker owner
+ * and [recoveryTerminalReason] the terminal reason of the RecoveryChain.
+ *
+ * Since M2-C a FETCH_FAILED is always terminal: the RecoveryCoordinator has
+ * already applied its bounded policy, so the Media3 loader must not retry it.
  */
 @SpongeBridgeApi
 class PlaybackBridgeException(
@@ -127,4 +130,5 @@ class PlaybackBridgeException(
     val fetchOutcome: String? = null,
     message: String,
     cause: Throwable? = null,
+    val recoveryTerminalReason: String? = null,
 ) : IOException(message, cause)
