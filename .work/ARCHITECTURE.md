@@ -43,7 +43,7 @@ The central metric is **Playable Reserve**: how much future playback time can co
 ║ FetchBroker + SingleFlight                  ║
 ║ DeadlineScheduler                           ║
 ║ ReserveController                           ║
-║ RouteHealthMonitor                          ║
+║ DefaultRouteMonitor + SessionRouteGuard     ║
 ║ FailureClassifier                           ║
 ║ DescriptorRefresher                         ║
 ║ RequestBudget                               ║
@@ -369,20 +369,26 @@ Dwell time is a signal. There is no architecture rule such as "after 60 seconds 
 
 ## 9. Network resilience architecture
 
-### 9.1 RouteHealthMonitor
+### 9.1 Default-route observation
 
-Use Android connectivity callbacks to observe the app's current default network and capability changes continuously.
+Route observation reports only what Android tells the app about its **default** network; it is observation, not "health".
 
-Observed facts can include:
+```text
+AndroidDefaultRouteMonitor      API 24+ registerDefaultNetworkCallback
+        │                       API 23  CONNECTIVITY_ACTION -> activeNetwork snapshot
+        ▼  RouteSignal (immutable, via one channel)
+DefaultRouteReducer             single reducer coroutine; routeEpoch; stale-event defence
+        ▼
+DefaultRouteState               INITIALIZING | UNAVAILABLE | AVAILABLE(epoch, tri-state capabilities)
 
-- validated/not validated;
-- metered/not metered;
-- VPN transport present;
-- Wi-Fi/cellular transport;
-- default network replacement;
-- captive portal indication when available.
+SessionRouteGuard               per playback session: UNRESOLVED | SYSTEM_DEFAULT_ALLOWED | VPN_CONTINUITY_REQUIRED
+        ▼
+ExternalFetchRouteDecision      ALLOW | PAUSE + reason
+```
 
-Do not rely on a one-time snapshot because network capabilities change.
+Observed capabilities: internet, validated, VPN (from `NOT_VPN`, never from transport types), metered, restricted, suspended (API 28+) and blocked (API 29+); every field is TRUE/FALSE/UNKNOWN and UNKNOWN is never FALSE. `android.net.*` types stay inside the Android adapter; the reducer sees only process-local route refs. No location-sensitive data (SSID/BSSID, owner UID) and no LinkProperties content is read.
+
+The process-global monitor knows nothing about sessions; VPN continuity is a per-session guard. `validated` and `metered` are observations, never fetch gates by themselves. M2-B provides state and decision only: wiring the decision into FetchBroker (stop opening requests, wait for route) belongs to M2-C/M2-F. Normative contract: `.work/milestones/M2.md` section 8.
 
 ### 9.2 VPN policy
 
@@ -489,7 +495,7 @@ FetchBroker
 ExtentStore
 ```
 
-Refreshing or rebinding delivery material may change only the mutable binding. Material incompatible with the immutable expected work fails closed or triggers a higher-level re-resolve; an existing ExtentSpec is never mutated. "DescriptorRefresher" in this document denotes that provider-neutral delivery-binding refresh. Route observation uses Android default-network callbacks through one serialized reducer with tri-state capabilities (API 23 support); `VALIDATED` is a route observation, not proof that a media origin is reachable. The normative contract is `.work/milestones/M2.md`.
+Refreshing or rebinding delivery material may change only the mutable binding. Material incompatible with the immutable expected work fails closed or triggers a higher-level re-resolve; an existing ExtentSpec is never mutated. "DescriptorRefresher" in this document denotes that provider-neutral delivery-binding refresh. Route observation uses Android's default-network callback (API 24+; a conservative `CONNECTIVITY_ACTION` snapshot source on API 23) through one serialized reducer with tri-state capabilities; `VALIDATED` is a route observation, not proof that a media origin is reachable. The normative contract is `.work/milestones/M2.md`.
 
 ## 10. Transport strategy
 

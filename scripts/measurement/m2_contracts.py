@@ -1082,6 +1082,13 @@ def scan_evidence_privacy(document: Any, path: str = "$") -> None:
 # Historical M0/M1 contracts are immutable (falsification item 18)
 # ---------------------------------------------------------------------------
 
+# Subsystem schemas added by M2 owning slices (M2.md section 16). They are M2
+# contracts, not historical ones; every other non-`m2-` schema is historical.
+M2_SLICE_SCHEMAS = frozenset({
+    "route-events-v1.schema.json",
+    "route-verification-summary-v1.schema.json",
+})
+
 # SHA-256 of every pre-M2 (M0/M1) schema at M2-A. M2 work must add a new
 # versioned artifact rather than rewrite these.
 HISTORICAL_SCHEMA_SHA256 = {

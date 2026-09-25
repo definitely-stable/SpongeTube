@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-b-host-api34-vpn-continuity",
+  "sessionId": "m2-b-host-api34-vpn-continuity-session",
+  "androidApi": 34,
+  "status": "PASS",
+  "eventCount": 17,
+  "policyEvaluationCount": 8,
+  "epochsObserved": 3,
+  "sourcesObserved": [
+    "BOOTSTRAP_ACTIVE_NETWORK",
+    "DEFAULT_NETWORK_CALLBACK",
+    "MONITOR_LIFECYCLE"
+  ],
+  "casesPassed": [
+    "SCHEMA",
+    "STRICT_SEQUENCE",
+    "MONOTONIC_ANDROID_CLOCK",
+    "SOURCE_API_COMPATIBILITY",
+    "MONITOR_LIFECYCLE",
+    "EPOCH_TRANSITIONS",
+    "STALE_EVENT_SUPPRESSION",
+    "REPLACEMENT_CLEARS_CAPABILITIES",
+    "CAPABILITY_API_FLOORS",
+    "RUNTIME_STATE_MATCHES_ORACLE",
+    "SESSION_GUARD",
+    "POLICY_DECISIONS",
+    "EVIDENCE_PRIVACY"
+  ],
+  "limitations": [
+    "M2-B proves route observation, reduction and session privacy-policy semantics. It does not prove that a real media fetch is paused during an Android VPN/default-route transition; that end-to-end proof belongs to M2-F.",
+    "Route evidence observes the emulator's actual default network; no VPN or default-route switch is induced in M2-B."
+  ]
+}

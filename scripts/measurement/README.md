@@ -11,6 +11,22 @@ delivery-binding immutability, clock-domain separation and evidence privacy.
 It does not simulate future production M2 runtime. Its falsification suite is
 `tests/test_m2_contracts.py`, run by `Verify`.
 
+`m2_route_oracle.py` is the independent M2-B verifier for `route-events-v1`
+(`.work/milestones/M2.md` section 8). It never imports the Kotlin reducer: it
+replays the recorded route signals with its own state machine, replays the
+session route guard through `m2_contracts.py`, and fails on any disagreement,
+API-floor violation or platform/location identity in the evidence:
+
+```bash
+python3 scripts/measurement/m2_route_oracle.py verify \
+  --input build/m2-b-route/api34-vpn-continuity/route-events.json \
+  --output build/m2-b-route/api34-vpn-continuity/route-verification-summary.json \
+  --expected-api 34
+```
+
+`scripts/ci/verify-m2-b-route-evidence.sh host|device` runs it in CI; the
+falsification suite is `tests/test_m2_route_oracle.py`.
+
 # M1 evidence kernel
 
 `m1_oracle.py` is the independent host-side verifier for M1 coverage evidence.

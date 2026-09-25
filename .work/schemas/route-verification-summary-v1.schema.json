@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/route-verification-summary-v1.schema.json",
+  "title": "SpongeTube M2-B Route Verification Summary v1",
+  "description": "Concise host-verifier result for one route-events-v1 artifact, written by scripts/measurement/m2_route_oracle.py. The full route-events-v1 artifact stays a CI artifact.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "androidApi",
+    "status",
+    "eventCount",
+    "policyEvaluationCount",
+    "epochsObserved",
+    "sourcesObserved",
+    "casesPassed",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "androidApi": {
+      "type": "integer",
+      "minimum": 23
+    },
+    "status": {
+      "type": "string",
+      "const": "PASS"
+    },
+    "eventCount": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "policyEvaluationCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "epochsObserved": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sourcesObserved": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "MONITOR_LIFECYCLE",
+          "DEFAULT_NETWORK_CALLBACK",
+          "API23_ACTIVE_NETWORK_SNAPSHOT",
+          "BOOTSTRAP_ACTIVE_NETWORK"
+        ]
+      }
+    },
+    "casesPassed": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

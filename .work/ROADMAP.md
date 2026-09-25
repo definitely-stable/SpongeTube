@@ -94,7 +94,7 @@ M2 is split into focused deliveries (an ownership map, not a frozen API):
 
 Build:
 
-- RouteHealthMonitor;
+- default-route observation (`AndroidDefaultRouteMonitor` → `DefaultRouteState`) and per-session `SessionRouteGuard` (M2-B);
 - FailureClassifier;
 - DescriptorRefresher contract;
 - provider-aware RequestBudget/retry policy;
