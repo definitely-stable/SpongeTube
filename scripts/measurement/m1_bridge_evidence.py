@@ -29,6 +29,7 @@ BRIDGE_SCHEMA_PATHS = {
 FETCH_SCHEMA_PATHS = {
     2: SCHEMAS / "fetch-events-v2.schema.json",
     3: SCHEMAS / "fetch-events-v3.schema.json",
+    4: SCHEMAS / "fetch-events-v4.schema.json",
 }
 
 REQUIRED_CASES = ("E1", "E2", "E3", "E4", "E5", "E6")
