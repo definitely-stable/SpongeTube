@@ -16,6 +16,8 @@ Read the relevant ADR/evidence records for the subsystem being changed.
 
 For Sponge Core / M1 work, `.work/milestones/M1.md` is a required normative read before implementation.
 
+For M2 network/provider resilience work, `.work/milestones/M2.md` is a required normative read before implementation.
+
 ## Scope guard
 
 Current product scope is Android phone/tablet, YouTube-oriented long-form VOD.

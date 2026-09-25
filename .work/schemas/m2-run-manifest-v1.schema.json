@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m2-run-manifest-v1.schema.json",
+  "title": "SpongeTube M2 Run Manifest v1",
+  "description": "Cross-slice M2 run identity (.work/milestones/M2.md section 16). Subsystem evidence is bound by owning slices; semantic cross-checks against m2-scenario-v1 live in scripts/measurement/m2_contracts.py.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "createdAtUtc",
+    "gitCommit",
+    "fixture",
+    "scenario",
+    "playbackMode",
+    "mediaPath",
+    "transport",
+    "faultHarnesses",
+    "policies",
+    "device",
+    "runtime",
+    "clockDomains",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "fixture": {
+      "type": "object",
+      "required": [
+        "id",
+        "manifestSha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "family",
+        "variant",
+        "primaryPlane",
+        "hash"
+      ],
+      "properties": {
+        "family": {
+          "type": "string",
+          "pattern": "^N(?:[0-9]|1[01])$"
+        },
+        "variant": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "primaryPlane": {
+          "$ref": "#/$defs/plane"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "playbackMode": {
+      "type": "string",
+      "enum": [
+        "DIRECT",
+        "STANDARD_CACHE",
+        "SPONGE"
+      ]
+    },
+    "mediaPath": {
+      "type": "string",
+      "enum": [
+        "ANDROID_DEFAULT_NETWORK",
+        "ADB_REVERSE",
+        "HOST_ONLY"
+      ]
+    },
+    "transport": {
+      "type": "object",
+      "required": [
+        "backendId",
+        "backendVersion"
+      ],
+      "properties": {
+        "backendId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "backendVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "faultHarnesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "plane",
+          "harnessId",
+          "harnessVersion"
+        ],
+        "properties": {
+          "plane": {
+            "$ref": "#/$defs/plane"
+          },
+          "harnessId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "harnessVersion": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "policies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "policyId",
+          "version"
+        ],
+        "properties": {
+          "policyId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "device": {
+      "type": "object"
+    },
+    "runtime": {
+      "type": "object"
+    },
+    "clockDomains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "ANDROID_MONOTONIC",
+          "HOST_MEDIA_LAB_MONOTONIC",
+          "HOST_FAULT_MONOTONIC",
+          "PROVIDER_WALL_CLOCK"
+        ]
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "plane": {
+      "type": "string",
+      "enum": [
+        "DELIVERY",
+        "TRANSPORT",
+        "NETWORK",
+        "PROVIDER",
+        "ROUTE",
+        "STORAGE"
+      ]
+    }
+  }
+}

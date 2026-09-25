@@ -81,6 +81,8 @@ Android uses `adb reverse` only for deterministic media-delivery tests. `adb rev
 
 Each scenario is composed from independent fault planes instead of growing an unbounded list of monolithic profile IDs.
 
+Plane ownership is normative. One injected fault has exactly one primary owning plane; a combined scenario lists each constituent fault separately under its own plane. The M2 contract (`.work/milestones/M2.md` section 6) is authoritative for plane names (`DELIVERY`, `TRANSPORT`, `NETWORK`, `PROVIDER`, `ROUTE`, `STORAGE`) and owners.
+
 ### 4.1 Delivery plane
 
 Owned by Media Lab.
@@ -150,34 +152,36 @@ These scenarios cannot be proven by host-only proxying or `adb reverse`.
 
 ### 4.6 Storage plane
 
-Owned by cache/storage harness.
+Owned by the ExtentStore fault path / storage harness.
 
 Examples:
 
-- quota pressure;
+- ENOSPC / quota pressure;
+- metadata or file I/O failure;
 - slow writes;
 - process death during commit;
-- eviction pressure;
 - recovery after incomplete temporary state.
+
+M2 owns only the interaction of storage faults with resilience decisions (N11): storage failures are never classified as provider/network failures, never trigger delivery-binding refresh, and never invalidate valid coverage. Production quota, eviction, retention and user-facing storage-pressure policy belong to M6.
 
 ## 5. Initial scenario matrix
 
-The IDs remain useful shorthand, but `plane` is normative.
+The IDs remain useful shorthand, but `plane` is normative. From M2 on, every resolved scenario carries `scenarioFamily`, `variant` and `primaryPlane`; `primaryPlane + variant + resolved parameters + seed` is the experiment identity, and the family ID alone never identifies an experiment.
 
 | ID | Plane | Scenario | Milestone |
 |---|---|---|---|
 | N0 | Delivery | CONTROL: no artificial delay, unlimited rate, no no-progress window | M0 |
 | N1 | Delivery | aggregate A/V pacing = 0.50 × committed F1 reference playback bitrate + 120 ms first-body delay | M0 |
 | N2 | Network | high latency/jitter; exact values resolved in scenario artifact | M2 |
-| N3 | Delivery/Network experiment | burst/blackout pattern; plane selected explicitly per experiment | M2 |
+| N3 | Delivery **or** Network (per variant) | burst/blackout pattern; e.g. `BURST_DELIVERY_BLACKOUT` (DELIVERY) vs `BURST_PACKET_LOSS` (NETWORK) | M2 |
 | N4 | Delivery | canonical 120 s session-wide media-body no-progress window | M0 |
 | N5 | Network | lossy/burst-loss profile with explicit seed | M2 |
-| N6 | Transport/Route | connection reset or default-network replacement; these are separate variants | M2 |
+| N6 | Transport **or** Route (per variant) | `TRANSPORT_RESET` (TRANSPORT) vs `DEFAULT_ROUTE_REPLACEMENT` (ROUTE); different experiments sharing a family label | M2 |
 | N7 | Android route | VPN-like default-route disappearance/reappearance | M2 |
 | N8 | Provider | deterministic 403 | M2 |
 | N9 | Provider | deterministic 429 + Retry-After | M2 |
 | N10 | Provider | expired descriptor/fetch mapping; refresh path exercised | M2 |
-| N11 | Storage | quota/slow-write/storage-pressure profile | M2 |
+| N11 | Storage | storage fault interacting with network recovery (ENOSPC/I/O); production quota/eviction policy is M6 | M2 (interaction) / M6 (policy) |
 
 The old shorthand "N0 = 50 Mbps / 20 ms RTT" is removed: M0 N0 is a control with no artificial network semantics.
 
@@ -211,6 +215,8 @@ Fixture identity is independent and includes the committed fixture manifest/payl
 Two runs are directly comparable only when the variables that should remain controlled have matching identities. If a scenario/fixture/transport/device state changes intentionally, the report names it as the experimental variable.
 
 Future random scenarios always persist their seed.
+
+M2 resolved scenarios use `m2-scenario-v1`: per-plane fault lists, `randomSeed` (required non-null when any fault is stochastic) and `requiresActualDefaultNetwork` (required true for any ROUTE claim). Canonical bytes and `scenarioHash` are computed by `scripts/measurement/m2_contracts.py` (sorted keys, compact UTF-8 JSON, per-plane faults ordered by `faultId`, integer-only numbers). M0/M1 scenario identities remain valid for their historical evidence.
 
 ## 7. Benchmark subjects
 
@@ -860,3 +866,44 @@ M1-G executes and publishes the already-working evidence path; it must not becom
 The M1-G run manifest binds the complete canonical seed matrix as `seedId = CANONICAL-MATRIX`; its `manifestSha256` is the SHA-256 of the generated matrix of the ten independently verified `seed-manifest-v2` artifacts. The acceptance index then binds every retained proof file by relative path, SHA-256 and size and fails unless the gate set is exactly M1-ACC-01 through M1-ACC-16 with no duplicate, missing, skipped or unknown gate.
 
 The committed evidence summary references raw CI artifacts by run identity/digest and records limitations explicitly.
+
+
+## 23. M2 acceptance framework
+
+Normative contract: `.work/milestones/M2.md`.
+
+### 23.1 Executable-gate rule
+
+The M1 lesson applies from the start of M2. An M2 gate is executable only when its owning slice provides:
+
+1. an evidence producer;
+2. an independent verifier where required;
+3. a deterministic execution path;
+4. a negative/falsification test.
+
+An artifact schema becomes canonical together with its owning producer and verifier. M2-A therefore defines only the cross-slice `m2-scenario-v1` and `m2-run-manifest-v1`; subsystem artifacts (`route-events-v1`, `failure-decision-events-v1`, `recovery-budget-events-v1`, `delivery-binding-events-v1`, `provider-fault-events-v1`, `fault-harness-events-v1`, `network-calibration-v1`) are added by their owning slices.
+
+### 23.2 Foundation gates
+
+| ID | Name | Contract |
+| --- | --- | --- |
+| M2-ACC-01 | Scenario Identity | a resolved stochastic scenario has canonical identity and a persisted seed |
+| M2-ACC-02 | Fault Attribution | each injected fault has exactly one primary fault plane |
+| M2-ACC-03 | Route Privacy | VPN disappearance never leads to automatic direct-route external fetching |
+| M2-ACC-04 | Persisted Media Independence | route or delivery-binding change never invalidates valid persisted media identity |
+| M2-ACC-05 | Failure Separation | evidence separately represents observation, classification and recovery decision/action |
+| M2-ACC-06 | Bounded Recovery Lineage | one RecoveryChain never receives implicit fresh budget across broker/Media3/route/refresh boundaries |
+| M2-ACC-07 | Mutable Binding Independence | delivery binding can be refreshed without changing stable work identity; incompatible rebinding fails closed |
+
+Later M2 slices may add gate IDs; no fixed count is reserved.
+
+M2-A defines these contracts and their host reference/falsification tests (`scripts/measurement/tests/test_m2_contracts.py`, run by `Verify`). It does not claim that Android/runtime behavior passes M2-ACC-03..07; that proof belongs to the owning slices and to the M2-H canonical aggregation.
+
+### 23.3 Additional M2 evidence rules
+
+- a stochastic NETWORK fault without a persisted seed invalidates the run;
+- route/VPN evidence requires a media path through Android's actual default network (`mediaPath = ANDROID_DEFAULT_NETWORK`); `adb reverse` and host-only paths are rejected;
+- clock domains `ANDROID_MONOTONIC`, `HOST_MEDIA_LAB_MONOTONIC`, `HOST_FAULT_MONOTONIC` and `PROVIDER_WALL_CLOCK` are never subtracted or ordered across each other;
+- portable evidence never retains signed URLs, cookies, `Authorization`, PO tokens, visitor/session secrets, VPN credentials, SSID/BSSID, or raw IPs unless a dedicated diagnostic experiment requires them;
+- a live provider is never a deterministic acceptance oracle;
+- transport comparisons follow the M2 experiment contract (only the transport backend differs); synthetic throughput alone never selects a transport.

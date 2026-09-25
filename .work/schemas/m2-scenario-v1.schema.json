@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m2-scenario-v1.schema.json",
+  "title": "SpongeTube M2 Resolved Scenario v1",
+  "description": "Cross-slice resolved scenario identity (.work/milestones/M2.md sections 6-7). scenarioHash = SHA-256 of canonical bytes computed by scripts/measurement/m2_contracts.py; cross-field rules (family/plane compatibility, seed, actual-route requirement, unique fault ownership) are enforced by that verifier.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "scenarioFamily",
+    "variant",
+    "primaryPlane",
+    "deliveryFaults",
+    "transportFaults",
+    "networkFaults",
+    "providerFaults",
+    "routeFaults",
+    "storageFaults",
+    "randomSeed",
+    "requiresActualDefaultNetwork"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "scenarioFamily": {
+      "type": "string",
+      "pattern": "^N(?:[0-9]|1[01])$"
+    },
+    "variant": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "primaryPlane": {
+      "$ref": "#/$defs/plane"
+    },
+    "deliveryFaults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/deliveryFault"
+      }
+    },
+    "transportFaults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/transportFault"
+      }
+    },
+    "networkFaults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/networkFault"
+      }
+    },
+    "providerFaults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/providerFault"
+      }
+    },
+    "routeFaults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/routeFault"
+      }
+    },
+    "storageFaults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/storageFault"
+      }
+    },
+    "randomSeed": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "requiresActualDefaultNetwork": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "plane": {
+      "type": "string",
+      "enum": [
+        "DELIVERY",
+        "TRANSPORT",
+        "NETWORK",
+        "PROVIDER",
+        "ROUTE",
+        "STORAGE"
+      ]
+    },
+    "deliveryFault": {
+      "type": "object",
+      "required": [
+        "faultId",
+        "plane",
+        "kind",
+        "stochastic",
+        "parameters"
+      ],
+      "properties": {
+        "faultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": "string",
+          "const": "DELIVERY"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "transportFault": {
+      "type": "object",
+      "required": [
+        "faultId",
+        "plane",
+        "kind",
+        "stochastic",
+        "parameters"
+      ],
+      "properties": {
+        "faultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": "string",
+          "const": "TRANSPORT"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "networkFault": {
+      "type": "object",
+      "required": [
+        "faultId",
+        "plane",
+        "kind",
+        "stochastic",
+        "parameters"
+      ],
+      "properties": {
+        "faultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": "string",
+          "const": "NETWORK"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerFault": {
+      "type": "object",
+      "required": [
+        "faultId",
+        "plane",
+        "kind",
+        "stochastic",
+        "parameters"
+      ],
+      "properties": {
+        "faultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": "string",
+          "const": "PROVIDER"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "routeFault": {
+      "type": "object",
+      "required": [
+        "faultId",
+        "plane",
+        "kind",
+        "stochastic",
+        "parameters"
+      ],
+      "properties": {
+        "faultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": "string",
+          "const": "ROUTE"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "storageFault": {
+      "type": "object",
+      "required": [
+        "faultId",
+        "plane",
+        "kind",
+        "stochastic",
+        "parameters"
+      ],
+      "properties": {
+        "faultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": "string",
+          "const": "STORAGE"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "stochastic": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

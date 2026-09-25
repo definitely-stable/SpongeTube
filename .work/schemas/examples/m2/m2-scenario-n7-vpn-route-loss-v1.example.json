@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "scenarioFamily": "N7",
+  "variant": "VPN_DEFAULT_ROUTE_LOSS",
+  "primaryPlane": "ROUTE",
+  "deliveryFaults": [
+    {
+      "faultId": "lab-control",
+      "plane": "DELIVERY",
+      "kind": "UNLIMITED_RATE",
+      "stochastic": false,
+      "parameters": {
+        "firstBodyDelayMs": 0
+      }
+    }
+  ],
+  "transportFaults": [],
+  "networkFaults": [],
+  "providerFaults": [],
+  "routeFaults": [
+    {
+      "faultId": "vpn-default-loss",
+      "plane": "ROUTE",
+      "kind": "VPN_DEFAULT_ROUTE_LOSS",
+      "stochastic": false,
+      "parameters": {
+        "afterMediaTimeUs": 30000000,
+        "restoreAfterMs": 60000,
+        "replacementDefault": "NON_VPN"
+      }
+    }
+  ],
+  "storageFaults": [],
+  "randomSeed": null,
+  "requiresActualDefaultNetwork": true
+}
