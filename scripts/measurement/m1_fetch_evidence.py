@@ -16,6 +16,7 @@ REPO_ROOT = SCRIPT_DIR.parents[1]
 FETCH_EVENTS_SCHEMAS = {
     2: REPO_ROOT / ".work" / "schemas" / "fetch-events-v2.schema.json",
     3: REPO_ROOT / ".work" / "schemas" / "fetch-events-v3.schema.json",
+    4: REPO_ROOT / ".work" / "schemas" / "fetch-events-v4.schema.json",
 }
 RESOURCE_PATH = "/fixtures/F1/segment-1-00001.m4s"
 RESOURCE_LENGTH = 81_811
