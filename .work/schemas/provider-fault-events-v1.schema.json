@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/provider-fault-events-v1.schema.json",
+  "title": "SpongeTube M2-D Provider Fault Events v1",
+  "description": "Provider-plane fault evidence produced by the deterministic provider simulator in Sponge Media Lab (never a live provider, F-13). Records only injected provider-plane faults and provider refresh operations; successful media responses are already in the origin trace. The raw Retry-After header and URLs are never retained. clockDomain and providerWallClockDomain are never subtracted or ordered across each other.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioFamily",
+    "variant",
+    "primaryPlane",
+    "scenarioHash",
+    "clockDomain",
+    "providerWallClockDomain",
+    "providerWallClockEpochMs",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarioFamily": {
+      "type": "string",
+      "enum": [
+        "N8",
+        "N9",
+        "N10"
+      ]
+    },
+    "variant": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "primaryPlane": {
+      "type": "string",
+      "const": "PROVIDER"
+    },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "HOST_MEDIA_LAB_MONOTONIC"
+    },
+    "providerWallClockDomain": {
+      "type": "string",
+      "const": "PROVIDER_WALL_CLOCK"
+    },
+    "providerWallClockEpochMs": {
+      "type": "integer",
+      "description": "Virtual provider wall clock of the simulator (PROVIDER_WALL_CLOCK)."
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "hostMonotonicNs",
+        "faultId",
+        "requestCorrelationId",
+        "requestKind",
+        "faultKind",
+        "statusCode",
+        "retryAfter",
+        "providerSignal",
+        "bindingRevision",
+        "providerBindingGeneration",
+        "providerWallClockUtcEpochMs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hostMonotonicNs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HOST_MEDIA_LAB_MONOTONIC instant."
+        },
+        "faultId": {
+          "type": "string",
+          "pattern": "^fault-[1-9][0-9]*$"
+        },
+        "requestCorrelationId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$",
+          "description": "Media Lab request id; also returned as X-Sponge-Lab-Request."
+        },
+        "requestKind": {
+          "type": "string",
+          "enum": [
+            "MEDIA",
+            "REFRESH"
+          ]
+        },
+        "faultKind": {
+          "type": "string",
+          "enum": [
+            "HTTP_403_BARE",
+            "HTTP_429",
+            "BINDING_STALE",
+            "REFRESH_SUCCEEDED",
+            "REFRESH_INCOMPATIBLE",
+            "REFRESH_FAILED"
+          ]
+        },
+        "statusCode": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "retryAfter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "rawKind",
+            "delaySeconds",
+            "notBeforeUtcEpochMs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rawKind": {
+              "type": "string",
+              "enum": [
+                "ABSENT",
+                "DELAY_SECONDS",
+                "HTTP_DATE",
+                "MALFORMED"
+              ]
+            },
+            "delaySeconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "notBeforeUtcEpochMs": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "description": "Normalized Retry-After observation; the raw header value is never retained."
+        },
+        "providerSignal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "NONE",
+            "BINDING_STALE_CONFIRMED",
+            null
+          ],
+          "description": "Provider-neutral signal; BINDING_STALE_CONFIRMED only for the lab-only explicit stale evidence."
+        },
+        "bindingRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^binding-[1-9][0-9]*$",
+          "description": "Client-declared local revision received in the lab-only X-Sponge-Binding-Revision request header."
+        },
+        "providerBindingGeneration": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^gen-[1-9][0-9]*$",
+          "description": "The simulator's own binding generation: for MEDIA the generation in the request path, for REFRESH_SUCCEEDED and REFRESH_INCOMPATIBLE the newly issued generation."
+        },
+        "providerWallClockUtcEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Provider wall-clock instant of the fault (PROVIDER_WALL_CLOCK)."
+        }
+      }
+    }
+  }
+}

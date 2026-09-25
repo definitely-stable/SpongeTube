@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/delivery-binding-events-v1.schema.json",
+  "title": "SpongeTube M2-D Delivery Binding Events v1",
+  "description": "M2-D delivery-binding lifecycle events (.work/milestones/M2.md section 12). A revision is a local opaque correlation id of mutable delivery material and is never a URL, token, URL hash or provider secret; binding material never appears in this artifact. One actual refresh operation is exactly one REFRESH_STARTED row. Produced by the Kotlin DeliveryBindingCoordinator; verified by scripts/measurement/m2_provider_oracle.py.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "clockDomain",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "ANDROID_MONOTONIC"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "elapsedRealtimeNs",
+        "recoveryChainId",
+        "failureId",
+        "fetchKey",
+        "extentId",
+        "kind",
+        "previousRevision",
+        "currentRevision",
+        "attemptCorrelationId",
+        "refreshCorrelationId",
+        "outcome"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "elapsedRealtimeNs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recoveryChainId": {
+          "type": "string",
+          "pattern": "^recovery-[1-9][0-9]*$"
+        },
+        "failureId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^recovery-[1-9][0-9]*:failure-[1-9][0-9]*$"
+        },
+        "fetchKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "BINDING_SELECTED_FOR_ATTEMPT",
+            "REFRESH_REQUESTED",
+            "REFRESH_STARTED",
+            "REFRESH_JOINED",
+            "REVISION_ALREADY_ADVANCED",
+            "REFRESH_NOT_ADMITTED",
+            "REFRESH_CLOSED",
+            "REFRESH_SUCCEEDED",
+            "REFRESH_FAILED",
+            "REFRESH_INCOMPATIBLE",
+            "REFRESH_CANCELLED"
+          ],
+          "description": "BINDING_SELECTED_FOR_ATTEMPT: previousRevision null, currentRevision is the selected revision, attemptCorrelationId set, failureId is the failure that led to this owner (null for the first owner). REFRESH_REQUESTED: previousRevision expected, currentRevision current. REFRESH_STARTED and REFRESH_JOINED: previousRevision expected, refreshCorrelationId set. REVISION_ALREADY_ADVANCED: previousRevision expected, currentRevision current. REFRESH_SUCCEEDED: previousRevision expected, currentRevision the new revision, refreshCorrelationId set, outcome SUCCEEDED. REFRESH_FAILED, REFRESH_INCOMPATIBLE and REFRESH_CANCELLED: previousRevision expected, currentRevision expected (unchanged), refreshCorrelationId set, outcome FAILED, INCOMPATIBLE or CANCELLED. REFRESH_NOT_ADMITTED and REFRESH_CLOSED: previousRevision expected, currentRevision current."
+        },
+        "previousRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^binding-[1-9][0-9]*$"
+        },
+        "currentRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^binding-[1-9][0-9]*$"
+        },
+        "attemptCorrelationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^fetch-[1-9][0-9]*:attempt-1$"
+        },
+        "refreshCorrelationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^refresh-[1-9][0-9]*$"
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SUCCEEDED",
+            "FAILED",
+            "INCOMPATIBLE",
+            "CANCELLED",
+            null
+          ]
+        }
+      }
+    }
+  }
+}

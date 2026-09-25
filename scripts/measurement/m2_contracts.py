@@ -581,6 +581,13 @@ _ASCTIME = re.compile(
     r"([0-9]{2}):([0-9]{2}):([0-9]{2}) ([0-9]{4})$"
 )
 
+_EPOCH_UTC = _datetime.datetime(1970, 1, 1, tzinfo=_datetime.timezone.utc)
+_MILLISECOND = _datetime.timedelta(milliseconds=1)
+
+# delay-seconds above this cannot be expressed in milliseconds: MALFORMED,
+# never clamped (M2.md 10.2; M2-D owns the provisional normalized shape).
+MAX_RETRY_AFTER_DELAY_SECONDS = 9223372036854775807 // 1000
+
 
 def _http_date(
     weekday: str,
@@ -622,27 +629,43 @@ def _rfc850_year(two_digits: int, reference_year: int) -> int:
     return year
 
 
+def _utc_year_from_epoch_ms(epoch_ms: int) -> int:
+    return (_EPOCH_UTC + _datetime.timedelta(milliseconds=epoch_ms)).year
+
+
 def parse_retry_after(
     raw: str | None,
     *,
     reference_year: int = 2026,
+    reference_utc_epoch_ms: int | None = None,
 ) -> dict[str, Any]:
     """Normalize a Retry-After observation (RFC 9110 10.2.3).
 
     delay-seconds is a duration with no clock domain; HTTP-date is a
     PROVIDER_WALL_CLOCK instant. A malformed value is recorded, never
-    reinterpreted into another plane or classification.
+    reinterpreted into another plane or classification. Only SP and HTAB are
+    trimmed. A delay-seconds value above ``MAX_RETRY_AFTER_DELAY_SECONDS``
+    cannot be expressed in milliseconds and is MALFORMED, never clamped. When
+    ``reference_utc_epoch_ms`` is given, the RFC 850 two-digit year is resolved
+    against the UTC year of that instant instead of ``reference_year``.
     """
 
     if raw is None:
         return {"source": "HTTP_HEADER", "rawKind": "ABSENT"}
-    value = raw.strip()
+    value = raw.strip(" \t")
     if _DELAY_SECONDS.match(value):
+        digits = value.lstrip("0") or "0"
+        if len(digits) > 16 or int(digits) > MAX_RETRY_AFTER_DELAY_SECONDS:
+            return {"source": "HTTP_HEADER", "rawKind": "MALFORMED"}
         return {
             "source": "HTTP_HEADER",
             "rawKind": "DELAY_SECONDS",
-            "delaySeconds": int(value),
+            "delaySeconds": int(digits),
         }
+
+    year_reference = reference_year
+    if reference_utc_epoch_ms is not None:
+        year_reference = _utc_year_from_epoch_ms(reference_utc_epoch_ms)
 
     parsed = None
     match = _IMF_FIXDATE.match(value)
@@ -654,7 +677,7 @@ def parse_retry_after(
         weekday, day, month, year, hour, minute, second = match.groups()
         parsed = _http_date(
             weekday, day, month,
-            _rfc850_year(int(year), reference_year),
+            _rfc850_year(int(year), year_reference),
             hour, minute, second,
         )
     match = None if parsed else _ASCTIME.match(value)
@@ -669,9 +692,53 @@ def parse_retry_after(
             "source": "HTTP_HEADER",
             "rawKind": "HTTP_DATE",
             "notBeforeUtc": parsed.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "notBeforeUtcEpochMs": (parsed - _EPOCH_UTC) // _MILLISECOND,
             "clockDomain": "PROVIDER_WALL_CLOCK",
         }
     return {"source": "HTTP_HEADER", "rawKind": "MALFORMED"}
+
+
+def provider_wait_ms(
+    retry_after: Mapping[str, Any],
+    wall_clock_now_utc_epoch_ms: int | None,
+) -> int | None:
+    """Provider-directed wait in milliseconds (M2.md sections 10.2 and 13).
+
+    ``DELAY_SECONDS`` is a duration: ``delaySeconds * 1000``. ``HTTP_DATE`` is a
+    PROVIDER_WALL_CLOCK instant: ``max(0, notBeforeUtcEpochMs - now)``, so the
+    current provider wall clock is required. ``ABSENT`` and ``MALFORMED`` carry
+    no wait. Both epoch values are PROVIDER_WALL_CLOCK and are never compared
+    with ANDROID_MONOTONIC.
+    """
+
+    kind = retry_after.get("rawKind")
+    if kind == "DELAY_SECONDS":
+        delay_seconds = retry_after.get("delaySeconds")
+        _require(
+            isinstance(delay_seconds, int)
+            and not isinstance(delay_seconds, bool)
+            and 0 <= delay_seconds <= MAX_RETRY_AFTER_DELAY_SECONDS,
+            "DELAY_SECONDS Retry-After must carry delaySeconds within the "
+            "millisecond range",
+        )
+        return delay_seconds * 1000
+    if kind == "HTTP_DATE":
+        _require(
+            isinstance(wall_clock_now_utc_epoch_ms, int)
+            and not isinstance(wall_clock_now_utc_epoch_ms, bool),
+            "HTTP_DATE Retry-After needs the provider wall clock",
+        )
+        not_before = retry_after.get("notBeforeUtcEpochMs")
+        _require(
+            isinstance(not_before, int) and not isinstance(not_before, bool),
+            "HTTP_DATE Retry-After must carry notBeforeUtcEpochMs",
+        )
+        return max(0, not_before - wall_clock_now_utc_epoch_ms)
+    _require(
+        kind in ("ABSENT", "MALFORMED"),
+        f"unknown Retry-After rawKind {kind!r}",
+    )
+    return None
 
 
 def classify_http_contract_case(
@@ -1090,20 +1157,18 @@ def scan_evidence_privacy(document: Any, path: str = "$") -> None:
 # Historical M0/M1 contracts are immutable (falsification item 18)
 # ---------------------------------------------------------------------------
 
-# Subsystem schemas added by M2 owning slices (M2.md section 16). They are M2
-# contracts, not historical ones; every other non-`m2-` schema is historical.
+# Subsystem schemas added by the current M2 owning slice (M2.md section 16).
+# M2-D owns exactly the four schemas below; every schema accepted by an
+# earlier slice is registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
 M2_SLICE_SCHEMAS = frozenset({
-    "route-events-v1.schema.json",
-    "route-verification-summary-v1.schema.json",
-    "bridge-events-v2.schema.json",
-    "fetch-events-v4.schema.json",
-    "failure-decision-events-v1.schema.json",
-    "recovery-budget-events-v1.schema.json",
-    "recovery-verification-summary-v1.schema.json",
+    "failure-decision-events-v2.schema.json",
+    "delivery-binding-events-v1.schema.json",
+    "provider-fault-events-v1.schema.json",
+    "provider-verification-summary-v1.schema.json",
 })
 
-# SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B).
-# A later slice adds a new versioned schema instead of rewriting these.
+# SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
+# M2-C). A later slice adds a new versioned schema instead of rewriting these.
 ACCEPTED_M2_SCHEMA_SHA256 = {
     "m2-run-manifest-v1.schema.json":
         "b9d034b36c845bd58e957b1332c29e885420b6e65e72aa63706ead9fe6ead9d3",
@@ -1113,6 +1178,16 @@ ACCEPTED_M2_SCHEMA_SHA256 = {
         "6ca6d7066b166acd3860e9122d09d7dfd105c0fc4d432b4e67a65194060c583e",
     "route-verification-summary-v1.schema.json":
         "d07dbb61aea5f12bd67b8dca5d63448c7bbb30fdb6617238a395f8e47c799c21",
+    "bridge-events-v2.schema.json":
+        "d5511e49ae65176405774d31f064dd6650156625b77e0ceb3fb4394a9bed4e66",
+    "fetch-events-v4.schema.json":
+        "d4d8f92b75c9a1d15ba29d1c0b7c36312695c0532dba72e0dfa533db90c81624",
+    "failure-decision-events-v1.schema.json":
+        "567edbd1ab239f4f48b786615d58808ff1330b17bef1d9500bb538db375f76cc",
+    "recovery-budget-events-v1.schema.json":
+        "682bb6418fb72663edc056533f985bfd859d63e1935f0d9903887887feac1c74",
+    "recovery-verification-summary-v1.schema.json":
+        "8e20c4c08f4885666f1a329cf46dfcd2bc628727c0e44eabf7875297c99baaff",
 }
 
 # SHA-256 of every pre-M2 (M0/M1) schema at M2-A. M2 work must add a new

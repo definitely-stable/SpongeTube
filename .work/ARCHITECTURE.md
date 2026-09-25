@@ -454,6 +454,44 @@ resume
 
 The refresh path must never discard valid persisted media merely because its source URL expired.
 
+The M2-D target flow makes the binding explicit:
+
+```text
+Provider Adapter / Deterministic Provider
+               │
+               ▼
+      DeliveryBindingCoordinator
+      current revision / refresh
+               │
+               ▼
+         RecoveryCoordinator
+  ┌────────────┼─────────────┐
+  │            │             │
+Budget     Retry-After    Binding refresh
+  │            │             │
+  └────────────┼─────────────┘
+               ▼
+           FetchBroker
+               ▼
+        physical media request
+               ▼
+           ExtentStore
+```
+
+The revision is mutable execution state: it is never part of `FetchKey`,
+`ExtentSpec`, `ExtentStore` or `CoverageIndex`, and refreshing it implies no
+storage migration. A refresh is compare-and-set against the expected revision
+with single-flight per revision
+([ADR-0004](adr/0004-separate-immutable-work-from-delivery-binding.md));
+already-advanced and joined callers pay nothing, and exactly one actual
+provider operation is charged to the chain's `DELIVERY_BINDING_REFRESH`
+dimension. Delivery material is provider-local and opaque to core; material
+incompatible with the immutable expected work fails closed and never mutates
+the expected `ExtentSpec`. A bare HTTP 403 never refines to a stale binding —
+only an explicit provider-neutral stale signal does. An HTTP-date `Retry-After`
+wait is computed in the provider wall-clock domain, never against Android
+elapsed realtime.
+
 ### 9.5 RequestBudget
 
 Retries and alternate transport attempts are bounded.
@@ -482,7 +520,7 @@ RecoveryCoordinator          one open RecoveryChain per immutable FetchKey
 RecoveryChain
  ┌────────────────┐
  │ Attempt Gate   │          wait without charge (route gate: M2-F)
- │ Budget Ledger  │          sponge-recovery-v1: REMOTE_ATTEMPT = 4
+ │ Budget Ledger  │          sponge-recovery-v2: REMOTE_ATTEMPT = 4, DELIVERY_BINDING_REFRESH = 1
  │ Classifier     │          raw observation -> classification
  │ Policy         │          classification -> decision -> executed action
  └───────┬────────┘
@@ -494,7 +532,7 @@ RecoveryChain
     ExtentStore
 ```
 
-The REMOTE_ATTEMPT charge happens inside the new broker owner immediately before the request, so every physical request has exactly one ledger charge. Transient failures retry after exponential backoff with full jitter; provider actions (wait for provider, binding refresh, re-resolve) are decided but fail closed until M2-D; Media3 never retries a Sponge-managed load.
+The REMOTE_ATTEMPT charge happens inside the new broker owner immediately before the request, so every physical request has exactly one ledger charge. Transient failures retry after exponential backoff with full jitter. Since M2-D ([ADR-0004](adr/0004-separate-immutable-work-from-delivery-binding.md)) policy `sponge-recovery-v2` executes `WAIT_PROVIDER` (valid `Retry-After`) and `REFRESH_DELIVERY_BINDING` on the same RecoveryChain and ledger; `RERESOLVE_PROVIDER` still fails closed, and Media3 never retries a Sponge-managed load.
 
 ### 9.6 M2 resilience seam
 
