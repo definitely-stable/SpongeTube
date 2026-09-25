@@ -78,7 +78,26 @@ internal class HttpRangeFetchExecutor(
         priority: StateFlow<FetchPriority>,
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition =
+        executeCorrelatedWithAdmission(
+            request = request,
+            attempt = attempt,
+            priority = priority,
+            onPhysicalAttemptStart = { },
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+        )
+
+    override suspend fun executeCorrelatedWithAdmission(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition {
+        // These checks are local preflight. They must not consume
+        // REMOTE_ATTEMPT because no socket/request exists yet.
         val target = targetFor(request)
             ?: return failure(
                 FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
@@ -108,6 +127,10 @@ internal class HttpRangeFetchExecutor(
                 setRequestProperty(FETCH_KEY_HEADER, request.fetchKey.value)
                 setRequestProperty(ATTEMPT_HEADER, attempt.toString())
             }
+            // Non-suspending admission is immediately adjacent to physical
+            // transport start. A successful preflight therefore has exactly
+            // one budget charge; failed preflight has none.
+            onPhysicalAttemptStart()
             coroutineScope {
                 // Blocking socket reads do not observe coroutine cancellation;
                 // disconnecting from the cancelled scope aborts them.
