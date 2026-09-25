@@ -2,6 +2,8 @@ package io.github.definitelystable.spongetube.core.engine.recovery
 
 import com.sun.net.httpserver.HttpServer
 import io.github.definitelystable.spongetube.core.engine.FetchBroker
+import io.github.definitelystable.spongetube.core.engine.FetchEvent
+import io.github.definitelystable.spongetube.core.engine.FetchEventListener
 import io.github.definitelystable.spongetube.core.engine.FetchEventKind
 import io.github.definitelystable.spongetube.core.engine.FetchIdentityConflictException
 import io.github.definitelystable.spongetube.core.engine.FetchPriority
@@ -19,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -612,6 +615,205 @@ class RecoveryCoordinatorTest {
             server.stop(0)
             scope.cancel()
         }
+    }
+
+    @Test
+    fun transportPreflightFailureConsumesNoRemoteAttemptBudget() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val fetchEvents = mutableListOf<FetchEvent>()
+        val evidence = RecoveryEvidenceRecorder("m2-c-preflight-run", "m2-c-preflight")
+        try {
+            val work = RecoveryHarness.work("preflight-no-target")
+            val broker = FetchBroker(
+                publisher = MemoryPublisher(),
+                executor = HttpRangeFetchExecutor(
+                    targetFor = { null },
+                    connectTimeoutMs = 5_000,
+                    readTimeoutMs = 5_000,
+                ),
+                sessionId = "m2-c-preflight",
+                eventListener = FetchEventListener { fetchEvents += it },
+                ownerScope = scope,
+                ownsScope = false,
+                monotonicClockNs = { 1L },
+            )
+            val coordinator = RecoveryCoordinator(
+                broker = broker,
+                sessionId = "m2-c-preflight",
+                evidence = evidence,
+                scope = scope,
+                ownsScope = false,
+                clockNs = { 1L },
+            )
+
+            val outcome = runBlocking {
+                coordinator.acquire(
+                    work,
+                    RecoveryConsumer(
+                        RecoveryConsumerId("playback"),
+                        RecoveryConsumerKind.PLAYBACK,
+                    ),
+                ).await()
+            }
+
+            assertEquals(RecoveryTerminalReason.TERMINAL_FAILURE, outcome.terminalReason)
+            assertTrue(
+                evidence.budgetEvents().none { it.kind == RecoveryBudgetEventKind.CHARGE },
+            )
+            assertTrue(fetchEvents.none { it.event == FetchEventKind.ATTEMPT_STARTED })
+            assertEquals(0, outcome.lastFetchOutcome?.let { 1 } ?: 0)
+            val failure = evidence.failures().single()
+            assertEquals(
+                FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
+                failure.observation,
+            )
+            runBlocking {
+                coordinator.shutdown()
+                broker.shutdown()
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun requestOutsideResourceConsumesNoRemoteAttemptBudget() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val fetchEvents = mutableListOf<FetchEvent>()
+        val evidence = RecoveryEvidenceRecorder("m2-c-range-preflight-run", "m2-c-range-preflight")
+        try {
+            val work = RecoveryHarness.work("preflight-range", length = 8)
+            val broker = FetchBroker(
+                publisher = MemoryPublisher(),
+                executor = HttpRangeFetchExecutor(
+                    targetFor = {
+                        HttpRangeTarget(
+                            URL("http://127.0.0.1:9/never-opened"),
+                            resourceLength = 4,
+                        )
+                    },
+                    connectTimeoutMs = 5_000,
+                    readTimeoutMs = 5_000,
+                    openConnection = { error("preflight must not open a connection") },
+                ),
+                sessionId = "m2-c-range-preflight",
+                eventListener = FetchEventListener { fetchEvents += it },
+                ownerScope = scope,
+                ownsScope = false,
+                monotonicClockNs = { 1L },
+            )
+            val coordinator = RecoveryCoordinator(
+                broker = broker,
+                sessionId = "m2-c-range-preflight",
+                evidence = evidence,
+                scope = scope,
+                ownsScope = false,
+                clockNs = { 1L },
+            )
+
+            val outcome = runBlocking {
+                coordinator.acquire(
+                    work,
+                    RecoveryConsumer(
+                        RecoveryConsumerId("playback"),
+                        RecoveryConsumerKind.PLAYBACK,
+                    ),
+                ).await()
+            }
+
+            assertEquals(RecoveryTerminalReason.TERMINAL_FAILURE, outcome.terminalReason)
+            assertTrue(
+                evidence.budgetEvents().none { it.kind == RecoveryBudgetEventKind.CHARGE },
+            )
+            assertTrue(fetchEvents.none { it.event == FetchEventKind.ATTEMPT_STARTED })
+            assertEquals(
+                RangeProtocolKind.REQUEST_OUTSIDE_RESOURCE,
+                (evidence.failures().single().observation as
+                    FailureObservation.RangeProtocolFailure).kind,
+            )
+            runBlocking {
+                coordinator.shutdown()
+                broker.shutdown()
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun cancelledDriverBeforeBodyStillCompletesTheChain() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val broker = FetchBroker(
+            publisher = MemoryPublisher(),
+            executor = ScriptedOrigin(),
+            sessionId = "m2-c-cancelled-driver",
+            ownerScope = scope,
+            ownsScope = false,
+        )
+        scope.cancel()
+        val coordinator = RecoveryCoordinator(
+            broker = broker,
+            sessionId = "m2-c-cancelled-driver",
+            scope = scope,
+            ownsScope = false,
+        )
+
+        val outcome = runBlocking {
+            coordinator.acquire(
+                RecoveryHarness.work("cancelled-driver"),
+                RecoveryConsumer(
+                    RecoveryConsumerId("playback"),
+                    RecoveryConsumerKind.PLAYBACK,
+                ),
+            ).await()
+        }
+
+        assertEquals(RecoveryTerminalReason.TERMINAL_FAILURE, outcome.terminalReason)
+        assertEquals(0, coordinator.activeChainCountForTest())
+        runBlocking {
+            coordinator.shutdown()
+            broker.shutdown()
+        }
+    }
+
+    @Test
+    fun concurrentShutdownCallersAwaitTheSameCleanup() {
+        val h = harness()
+        val work = RecoveryHarness.work("shutdown-join")
+        val entered = CompletableDeferred<Unit>()
+        val cleanupEntered = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        h.origin.script(work.fetchKey, { _, _, _ ->
+            entered.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                withContext(NonCancellable) {
+                    cleanupEntered.complete(Unit)
+                    releaseCleanup.await()
+                }
+            }
+            error("cancelled owner must not resume")
+        })
+
+        val handle = h.blocking { h.acquire(work, "playback") }
+        h.blocking { entered.await() }
+
+        runBlocking {
+            val first = async(Dispatchers.Default) { h.coordinator.shutdown() }
+            cleanupEntered.await()
+            val second = async(Dispatchers.Default) { h.coordinator.shutdown() }
+            Thread.sleep(20)
+            assertFalse(second.isCompleted)
+            releaseCleanup.complete(Unit)
+            first.await()
+            second.await()
+        }
+
+        assertEquals(
+            RecoveryTerminalReason.SESSION_TERMINATION,
+            h.blocking { handle.await() }.terminalReason,
+        )
     }
 
     @Test
