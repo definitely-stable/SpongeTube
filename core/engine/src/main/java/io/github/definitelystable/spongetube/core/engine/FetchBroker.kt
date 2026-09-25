@@ -298,18 +298,6 @@ internal class FetchBroker internal constructor(
     private suspend fun runOwner(shared: SharedFetch) {
         try {
             currentCoroutineContext().ensureActive()
-            shared.admission?.admit(
-                shared.fetchId,
-                attemptCorrelationId(shared.fetchId),
-            )
-            // No suspension point between an admitted charge and the attempt
-            // record: a charge always has exactly one ATTEMPT_STARTED.
-            shared.attemptsStarted = SINGLE_ATTEMPT
-            emit(
-                shared = shared,
-                event = FetchEventKind.ATTEMPT_STARTED,
-                attempt = SINGLE_ATTEMPT,
-            )
 
             when (val attemptResult = runAttempt(shared)) {
                 is AttemptRunResult.Success -> {
@@ -336,7 +324,7 @@ internal class FetchBroker internal constructor(
                     emit(
                         shared = shared,
                         event = FetchEventKind.ATTEMPT_FAILED,
-                        attempt = SINGLE_ATTEMPT,
+                        attempt = shared.attemptsStarted.takeIf { it > 0 },
                         outcome = attemptResult.observation.legacyOutcomeKind(),
                         transportCorrelationId =
                             attemptResult.transportCorrelationId,
@@ -445,15 +433,38 @@ internal class FetchBroker internal constructor(
                     expectedOffset = chunkEnd
                 }
 
+                val started = AtomicBoolean(false)
+                val startPhysicalAttempt = {
+                    check(started.compareAndSet(false, true)) {
+                        "fetch executor started the same physical attempt twice"
+                    }
+                    shared.admission?.admit(
+                        shared.fetchId,
+                        attemptCorrelationId(shared.fetchId),
+                    )
+                    // No suspension point is permitted between admission and
+                    // the executor starting physical I/O. Preflight failures
+                    // therefore consume neither REMOTE_ATTEMPT nor
+                    // ATTEMPT_STARTED evidence.
+                    shared.attemptsStarted = SINGLE_ATTEMPT
+                    emit(
+                        shared = shared,
+                        event = FetchEventKind.ATTEMPT_STARTED,
+                        attempt = SINGLE_ATTEMPT,
+                    )
+                }
+
                 disposition = if (executor is CorrelatingFetchAttemptExecutor) {
-                    executor.executeCorrelated(
+                    executor.executeCorrelatedWithAdmission(
                         request = shared.request,
                         attempt = attempt,
                         priority = shared.priority,
+                        onPhysicalAttemptStart = startPhysicalAttempt,
                         onTransportCorrelation = emitCorrelation,
                         emitChunk = emitChunk,
                     )
                 } else {
+                    startPhysicalAttempt()
                     executor.execute(
                         request = shared.request,
                         attempt = attempt,
@@ -464,6 +475,11 @@ internal class FetchBroker internal constructor(
 
                 val terminalDisposition = checkNotNull(disposition) {
                     "fetch executor returned without a disposition"
+                }
+                if (terminalDisposition is FetchAttemptDisposition.Success) {
+                    check(started.get()) {
+                        "fetch executor succeeded without starting a physical attempt"
+                    }
                 }
                 if (terminalDisposition is FetchAttemptDisposition.Failure) {
                     throw FetchAttemptAbort(terminalDisposition)
@@ -820,6 +836,31 @@ internal interface CorrelatingFetchAttemptExecutor : FetchAttemptExecutor {
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
     ): FetchAttemptDisposition
+
+    /**
+     * Admission-aware variant used by FetchBroker. The default preserves the
+     * contract for correlation-capable executors whose call itself is the
+     * physical attempt. Executors with local preflight (HttpRangeFetchExecutor)
+     * override this and invoke [onPhysicalAttemptStart] only after preflight
+     * succeeds and immediately before physical I/O.
+     */
+    suspend fun executeCorrelatedWithAdmission(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition {
+        onPhysicalAttemptStart()
+        return executeCorrelated(
+            request = request,
+            attempt = attempt,
+            priority = priority,
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+        )
+    }
 }
 
 internal interface FetchPublishSink {
