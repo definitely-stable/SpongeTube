@@ -317,7 +317,6 @@ class PlaybackReadSession internal constructor(
         }
 
         val acquiredFetchId = recovery.fetchIdAtAcquire?.value
-            ?: recovery.recoveryChainId.value
         val acquireEvent = when (recovery.acquireDisposition) {
             RecoveryAcquireDisposition.NEW_CHAIN ->
                 PlaybackBridgeEventKind.MISS
@@ -329,6 +328,8 @@ class PlaybackReadSession internal constructor(
         emit(
             event = acquireEvent,
             extentId = unit.extentId,
+            recoveryChainId = recovery.recoveryChainId.value,
+            recoveryDisposition = recovery.acquireDisposition.name,
             fetchId = acquiredFetchId,
         )
         val outcome = try {
@@ -339,6 +340,8 @@ class PlaybackReadSession internal constructor(
         emit(
             event = PlaybackBridgeEventKind.FETCH_WAIT_END,
             extentId = unit.extentId,
+            recoveryChainId = recovery.recoveryChainId.value,
+            recoveryDisposition = recovery.acquireDisposition.name,
             fetchId = outcome.lastFetchId?.value ?: acquiredFetchId,
             fetchOutcome = outcome.lastFetchOutcome?.name
                 ?: outcome.terminalReason.name,
