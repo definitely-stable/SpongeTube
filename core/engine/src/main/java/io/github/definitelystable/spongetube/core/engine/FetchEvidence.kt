@@ -1,5 +1,8 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.toArtifactMap
+
 internal enum class FetchEventKind {
     OWNER_REGISTERED,
     CONSUMER_JOINED,
@@ -37,6 +40,7 @@ internal data class FetchEvent(
     val rejectedOrUnmappedBytes: Long,
     val singleFlightJoined: Boolean,
     val outcome: FetchOutcomeKind?,
+    val observation: FailureObservation? = null,
 ) {
     init {
         require(eventSequence >= 0)
@@ -63,7 +67,7 @@ internal data class FetchEvent(
     }
 
     fun toArtifactMap(): Map<String, Any?> = linkedMapOf(
-        "schemaVersion" to 3,
+        "schemaVersion" to 4,
         "eventSequence" to eventSequence,
         "eventElapsedRealtimeNs" to eventElapsedRealtimeNs,
         "sessionId" to sessionId,
@@ -85,6 +89,7 @@ internal data class FetchEvent(
         "rejectedOrUnmappedBytes" to rejectedOrUnmappedBytes,
         "singleFlightJoined" to singleFlightJoined,
         "outcome" to outcome?.name,
+        "observation" to observation?.toArtifactMap(),
     )
 }
 
