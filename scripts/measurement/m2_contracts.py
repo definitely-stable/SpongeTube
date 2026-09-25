@@ -1095,6 +1095,8 @@ def scan_evidence_privacy(document: Any, path: str = "$") -> None:
 M2_SLICE_SCHEMAS = frozenset({
     "route-events-v1.schema.json",
     "route-verification-summary-v1.schema.json",
+    "bridge-events-v2.schema.json",
+    "fetch-events-v4.schema.json",
     "failure-decision-events-v1.schema.json",
     "recovery-budget-events-v1.schema.json",
     "recovery-verification-summary-v1.schema.json",
