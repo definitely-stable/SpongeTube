@@ -140,10 +140,11 @@ Option D, implemented in `io.github.definitelystable.spongetube.core.engine.reco
   **RecoveryPolicy** (`sponge-recovery-v1`) decides; the coordinator executes
   and records the executed action separately.
 - **RecoveryBudget** is an open dimension vector. `sponge-recovery-v1`
-  declares `REMOTE_ATTEMPT = 4` (1 initial + at most 3 retries). The charge
-  happens inside the new broker owner immediately before the request
-  (`FetchAttemptAdmission`), so a charge exists if and only if a physical
-  attempt is made. The ledger is never reset.
+  declares `REMOTE_ATTEMPT = 4` (1 initial + at most 3 retries). Transport
+  preflight (target/range validation) occurs before admission. The charge and
+  `ATTEMPT_STARTED` happen only after preflight succeeds and immediately
+  before physical I/O, so a local preflight failure consumes zero remote
+  budget. The ledger is never reset.
 - **Backoff**: exponential with full jitter, `window = min(5000, 500 *
   2^(n-1))`, `delay = uniform(0, window)`; no delay before the first request;
   cancellable `delay()`; jitter and sleeper injectable.
@@ -201,11 +202,15 @@ M1 evidence re-read (M1 invariants unchanged):
   `recoveryRemoteAttemptLimit`) whose inner bounds are the degenerate ones
   (`maxAttemptsPerOwner = 1`, `media3MaxRetries = 0`) and bounds owners per
   work item by the chain limit;
-- `fetch-events-v3` remains the physical-owner ledger. Its legacy outcome is a
-  projection of the observation that keeps the exact M1 meaning (including the
-  M1 reporting of 408/429/5xx as `RETRYABLE_TRANSPORT_FAILURE`); M2-C semantics
-  are proven by `failure-decision-events-v1` / `recovery-budget-events-v1`, so
-  no `fetch-events-v4` is introduced.
+- historical `fetch-events-v3` remains immutable and keeps the exact M1
+  outcome vocabulary. New M2-C runtime evidence uses `fetch-events-v4`,
+  which adds the raw typed observation alongside the compatibility outcome;
+  this prevents a new 429 row from being semantically interpreted as a
+  transport failure while retained M1 v3 evidence remains readable.
+- historical `bridge-events-v1` remains immutable with its RUNNING-owner JOIN
+  meaning. New M2-C runtime evidence uses `bridge-events-v2`, carries
+  `recoveryChainId` / recovery disposition explicitly, and never substitutes
+  a RecoveryChain id into `fetchId`.
 
 ## Verification
 
