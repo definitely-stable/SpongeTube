@@ -218,8 +218,14 @@ internal class HttpRangeFetchExecutor(
                 correlation,
             )
         }
-        val contentLength = connection.contentLengthLong
-        if (contentLength >= 0 && contentLength != endExclusive - start) {
+        val rawContentLength = connection.getHeaderField("Content-Length")
+        val contentLength = rawContentLength?.trim()?.toLongOrNull()
+        if (
+            rawContentLength != null &&
+            (contentLength == null ||
+                contentLength < 0 ||
+                contentLength != endExclusive - start)
+        ) {
             return rangeFailure(
                 RangeProtocolKind.RESPONSE_LENGTH_MISMATCH,
                 correlation,
