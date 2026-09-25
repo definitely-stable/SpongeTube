@@ -102,7 +102,6 @@ internal class RecoveryCoordinator(
                 chain.consumers[consumer.id] = consumer
                 val job = scope.launch(start = CoroutineStart.LAZY) { drive(chain) }
                 chain.job = job
-                job.invokeOnCompletion { onDriverCompleted(chain) }
                 activeChains[request.fetchKey] = chain
                 created = chain
                 disposition = RecoveryAcquireDisposition.NEW_CHAIN
@@ -113,6 +112,12 @@ internal class RecoveryCoordinator(
                     consumerId = consumer.id.value,
                     consumerKind = consumer.kind,
                 )
+                // Register only after the chain and its start evidence are
+                // published. If the parent scope was already cancelled,
+                // invokeOnCompletion may run synchronously here; the monitor
+                // is re-entrant and onDriverCompleted can then remove the
+                // correctly-published chain without creating an orphan.
+                job.invokeOnCompletion { onDriverCompleted(chain) }
             } else {
                 if (!existing.request.extentSpec.isSameWorkAs(request.extentSpec)) {
                     throw FetchIdentityConflictException(
