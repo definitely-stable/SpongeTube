@@ -19,11 +19,15 @@ from m2_contracts import (
     PLANE_FAULT_FIELDS,
     M2ContractError,
     canonicalize_scenario,
+    ROUTE_CAPABILITIES,
+    check_capability_api_floor,
     check_clock_relation,
     check_route_capability_claim,
     classify_http_contract_case,
+    evaluate_external_fetch_route,
     known_true,
     parse_retry_after,
+    resolve_session_route_guard,
     scan_evidence_privacy,
     scenario_sha256,
     validate_delivery_rebinding,
@@ -104,14 +108,26 @@ def fault(fault_id, plane, kind, *, stochastic=False, **parameters):
     }
 
 
-def route(phase="OBSERVED", *, vpn="FALSE", validated="TRUE"):
-    return {
-        "routeEpoch": 2,
-        "phase": phase,
-        "vpn": vpn,
+def route(state="AVAILABLE", *, vpn="FALSE", validated="TRUE", received=True,
+          **capabilities):
+    available = state == "AVAILABLE"
+    value = {
+        "state": state,
+        "routeEpoch": 2 if available else None,
+        "capabilitiesReceived": available and received,
+        "internet": "TRUE",
         "validated": validated,
+        "vpn": vpn,
         "metered": "UNKNOWN",
+        "restricted": "FALSE",
+        "blocked": "UNKNOWN",
+        "suspended": "UNKNOWN",
     }
+    if not value["capabilitiesReceived"]:
+        for name in ROUTE_CAPABILITIES:
+            value[name] = "UNKNOWN"
+    value.update(capabilities)
+    return value
 
 
 class M2SchemaContractTest(unittest.TestCase):
@@ -388,6 +404,55 @@ class M2ScenarioIdentityTest(unittest.TestCase):
 
 
 class M2RoutePrivacyTest(unittest.TestCase):
+    def decide(self, guard, target, override=False):
+        return evaluate_external_fetch_route(
+            guard, target, explicit_direct_override=override
+        )
+
+    def test_guard_resolves_from_observed_vpn_only(self):
+        self.assertEqual(
+            "VPN_CONTINUITY_REQUIRED",
+            resolve_session_route_guard("UNRESOLVED", route(vpn="TRUE")),
+        )
+        self.assertEqual(
+            "SYSTEM_DEFAULT_ALLOWED",
+            resolve_session_route_guard("UNRESOLVED", route(vpn="FALSE")),
+        )
+        for unresolved in (
+            route("INITIALIZING"),
+            route("UNAVAILABLE"),
+            route(received=False),
+            route(vpn="UNKNOWN"),
+        ):
+            with self.subTest(route=unresolved):
+                self.assertEqual(
+                    "UNRESOLVED",
+                    resolve_session_route_guard("UNRESOLVED", unresolved),
+                )
+
+    def test_unresolved_guard_pauses(self):
+        # checklist 23
+        guard, decision, reason = self.decide("UNRESOLVED", route(vpn="UNKNOWN"))
+        self.assertEqual(("UNRESOLVED", "PAUSE"), (guard, decision))
+        self.assertEqual("SESSION_ROUTE_UNRESOLVED", reason)
+        with self.assertRaises(M2ContractError):
+            validate_route_privacy_transition(
+                guard="UNRESOLVED",
+                new_route=route(vpn="UNKNOWN"),
+                external_fetch_decision="ALLOW",
+            )
+
+    def test_initializing_is_not_unavailable(self):
+        # checklist 21
+        self.assertEqual(
+            "INITIALIZING", self.decide("UNRESOLVED", route("INITIALIZING"))[2]
+        )
+        self.assertEqual(
+            "NO_USABLE_DEFAULT", self.decide("UNRESOLVED", route("UNAVAILABLE"))[2]
+        )
+        with self.assertRaises(M2ContractError):
+            known_true({"state": "NO_DEFAULT", "vpn": "UNKNOWN"}, "vpn")
+
     def test_vpn_to_same_or_other_vpn_remains_policy_eligible(self):
         for epoch in (1, 2):
             with self.subTest(routeEpoch=epoch):
@@ -396,27 +461,27 @@ class M2RoutePrivacyTest(unittest.TestCase):
                 self.assertEqual(
                     "ELIGIBLE",
                     validate_route_privacy_transition(
-                        session_previously_on_vpn=True,
+                        guard="VPN_CONTINUITY_REQUIRED",
                         new_route=target,
                         external_fetch_decision="ALLOW",
                     ),
                 )
 
     def test_vpn_to_no_default_pauses(self):
-        for phase in ("NO_DEFAULT", "LOST"):
-            with self.subTest(phase=phase):
-                gone = route(phase, vpn="UNKNOWN", validated="UNKNOWN")
+        for state in ("INITIALIZING", "UNAVAILABLE"):
+            with self.subTest(state=state):
+                gone = route(state)
                 self.assertEqual(
                     "PAUSED",
                     validate_route_privacy_transition(
-                        session_previously_on_vpn=True,
+                        guard="VPN_CONTINUITY_REQUIRED",
                         new_route=gone,
                         external_fetch_decision="PAUSE",
                     ),
                 )
                 with self.assertRaises(M2ContractError):
                     validate_route_privacy_transition(
-                        session_previously_on_vpn=True,
+                        guard="VPN_CONTINUITY_REQUIRED",
                         new_route=gone,
                         external_fetch_decision="ALLOW",
                     )
@@ -425,63 +490,129 @@ class M2RoutePrivacyTest(unittest.TestCase):
         # checklist 6
         with self.assertRaises(M2ContractError):
             validate_route_privacy_transition(
-                session_previously_on_vpn=True,
+                guard="VPN_CONTINUITY_REQUIRED",
                 new_route=route(vpn="FALSE"),
                 external_fetch_decision="ALLOW",
             )
         self.assertEqual(
             "PAUSED",
             validate_route_privacy_transition(
-                session_previously_on_vpn=True,
+                guard="VPN_CONTINUITY_REQUIRED",
                 new_route=route(vpn="FALSE"),
                 external_fetch_decision="PAUSE",
             ),
+        )
+        self.assertEqual(
+            ("VPN_CONTINUITY_REQUIRED", "PAUSE", "VPN_CONTINUITY_REQUIRED"),
+            self.decide("VPN_CONTINUITY_REQUIRED", route(vpn="FALSE")),
         )
 
     def test_vpn_to_pending_capabilities_is_not_assumed_vpn(self):
         with self.assertRaises(M2ContractError):
             validate_route_privacy_transition(
-                session_previously_on_vpn=True,
-                new_route=route(
-                    "AVAILABLE_PENDING_CAPABILITIES",
-                    vpn="UNKNOWN",
-                    validated="UNKNOWN",
-                ),
+                guard="VPN_CONTINUITY_REQUIRED",
+                new_route=route(received=False),
                 external_fetch_decision="ALLOW",
             )
 
-    def test_explicit_user_policy_is_required_for_direct_continuation(self):
+    def test_explicit_override_lifts_only_vpn_continuity(self):
+        # checklist 20
         self.assertEqual(
             "ELIGIBLE",
             validate_route_privacy_transition(
-                session_previously_on_vpn=True,
+                guard="VPN_CONTINUITY_REQUIRED",
                 new_route=route(vpn="FALSE"),
-                external_fetch_decision="ALLOW_BY_EXPLICIT_USER_POLICY",
-                explicit_user_direct_policy=True,
+                external_fetch_decision="ALLOW",
+                explicit_direct_override=True,
             ),
+        )
+        self.assertEqual(
+            "EXPLICIT_DIRECT_OVERRIDE",
+            self.decide("VPN_CONTINUITY_REQUIRED", route(vpn="FALSE"), True)[2],
         )
         with self.assertRaises(M2ContractError):
             validate_route_privacy_transition(
-                session_previously_on_vpn=True,
+                guard="VPN_CONTINUITY_REQUIRED",
                 new_route=route(vpn="FALSE"),
-                external_fetch_decision="ALLOW_BY_EXPLICIT_USER_POLICY",
+                external_fetch_decision="ALLOW",
             )
+        for target, reason in (
+            (route("UNAVAILABLE"), "NO_USABLE_DEFAULT"),
+            (route(received=False), "CAPABILITIES_PENDING"),
+            (route(vpn="FALSE", blocked="TRUE"), "NETWORK_BLOCKED"),
+            (route(vpn="FALSE", suspended="TRUE"), "NETWORK_SUSPENDED"),
+            (route(vpn="FALSE", restricted="TRUE"), "NETWORK_RESTRICTED"),
+            (route(vpn="FALSE", internet="FALSE"), "NO_INTERNET_CAPABILITY"),
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual(
+                    ("PAUSE", reason),
+                    self.decide("VPN_CONTINUITY_REQUIRED", target, True)[1:],
+                )
+                with self.assertRaises(M2ContractError):
+                    validate_route_privacy_transition(
+                        guard="VPN_CONTINUITY_REQUIRED",
+                        new_route=target,
+                        external_fetch_decision="ALLOW",
+                        explicit_direct_override=True,
+                    )
+
+    def test_direct_start_is_not_escalated_by_transient_vpn(self):
+        # checklist 19: direct -> VPN -> direct must not become VPN-required.
+        guard = "UNRESOLVED"
+        for target in (route(vpn="FALSE"), route(vpn="TRUE"), route(vpn="FALSE")):
+            guard, decision, reason = self.decide(guard, target)
+            self.assertEqual("SYSTEM_DEFAULT_ALLOWED", guard)
+            self.assertEqual(("ALLOW", "ROUTE_READY"), (decision, reason))
+        self.assertEqual(
+            "ELIGIBLE",
+            validate_route_privacy_transition(
+                guard=guard,
+                new_route=route(vpn="FALSE"),
+                external_fetch_decision="ALLOW",
+            ),
+        )
+
+    def test_metered_and_unvalidated_do_not_pause(self):
+        for target in (
+            route(metered="TRUE"),
+            route(validated="FALSE"),
+            route(validated="UNKNOWN"),
+        ):
+            with self.subTest(route=target):
+                self.assertEqual(
+                    "ALLOW", self.decide("SYSTEM_DEFAULT_ALLOWED", target)[1]
+                )
 
     def test_non_vpn_to_non_vpn_not_privacy_blocked(self):
         self.assertEqual(
             "ELIGIBLE",
             validate_route_privacy_transition(
-                session_previously_on_vpn=False,
+                guard="SYSTEM_DEFAULT_ALLOWED",
                 new_route=route(vpn="FALSE"),
                 external_fetch_decision="ALLOW",
             ),
         )
 
+    def test_capability_api_floors(self):
+        # checklist 22
+        check_capability_api_floor(23, "validated", "TRUE")
+        check_capability_api_floor(23, "suspended", "UNKNOWN")
+        check_capability_api_floor(28, "suspended", "FALSE")
+        check_capability_api_floor(29, "blocked", "FALSE")
+        for api, capability, value in (
+            (23, "suspended", "FALSE"),
+            (27, "suspended", "TRUE"),
+            (23, "blocked", "FALSE"),
+            (28, "blocked", "FALSE"),
+        ):
+            with self.subTest(api=api, capability=capability):
+                with self.assertRaises(M2ContractError):
+                    check_capability_api_floor(api, capability, value)
+
     def test_unknown_validated_is_not_true(self):
         # checklist 5
-        pending = route(
-            "AVAILABLE_PENDING_CAPABILITIES", vpn="UNKNOWN", validated="UNKNOWN"
-        )
+        pending = route(received=False)
         self.assertFalse(known_true(pending, "validated"))
         with self.assertRaises(M2ContractError):
             check_route_capability_claim(pending, "validated", True)

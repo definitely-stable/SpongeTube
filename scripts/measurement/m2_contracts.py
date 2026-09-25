@@ -3,7 +3,7 @@
 Normative source: `.work/milestones/M2.md`.
 
 This module checks only contract semantics that M2-A freezes. It is not a
-simulation of the future production RouteHealthMonitor, FailureClassifier,
+simulation of the production route monitor, FailureClassifier,
 RecoveryBudget or DeliveryBinding runtime; owning slices (M2-B..M2-H) provide
 those producers and their own verifiers. Every check fails closed by raising
 `M2ContractError`.
@@ -226,11 +226,51 @@ def validate_run_manifest_semantics(
 # ---------------------------------------------------------------------------
 
 TRI_STATE = ("TRUE", "FALSE", "UNKNOWN")
-ROUTE_PHASES = ("NO_DEFAULT", "AVAILABLE_PENDING_CAPABILITIES", "OBSERVED", "LOST")
-EXTERNAL_FETCH_DECISIONS = (
-    "ALLOW",
-    "PAUSE",
-    "ALLOW_BY_EXPLICIT_USER_POLICY",
+
+# DefaultRouteState (M2.md section 8.2). LOST is an event, not a state.
+ROUTE_STATES = ("INITIALIZING", "UNAVAILABLE", "AVAILABLE")
+
+ROUTE_CAPABILITIES = (
+    "internet",
+    "validated",
+    "vpn",
+    "metered",
+    "restricted",
+    "blocked",
+    "suspended",
+)
+
+# Lowest Android API on which the platform can report each field (M2.md 8.1).
+# Below the floor the value is UNKNOWN; absence of a callback is never FALSE.
+CAPABILITY_API_FLOORS = {
+    "internet": 21,
+    "metered": 21,
+    "vpn": 21,
+    "restricted": 21,
+    "validated": 23,
+    "suspended": 28,
+    "blocked": 29,
+}
+
+SESSION_ROUTE_GUARDS = (
+    "UNRESOLVED",
+    "SYSTEM_DEFAULT_ALLOWED",
+    "VPN_CONTINUITY_REQUIRED",
+)
+
+EXTERNAL_FETCH_DECISIONS = ("ALLOW", "PAUSE")
+
+ALLOW_REASONS = ("ROUTE_READY", "EXPLICIT_DIRECT_OVERRIDE")
+PAUSE_REASONS = (
+    "INITIALIZING",
+    "NO_USABLE_DEFAULT",
+    "CAPABILITIES_PENDING",
+    "SESSION_ROUTE_UNRESOLVED",
+    "VPN_CONTINUITY_REQUIRED",
+    "NETWORK_BLOCKED",
+    "NETWORK_SUSPENDED",
+    "NETWORK_RESTRICTED",
+    "NO_INTERNET_CAPABILITY",
 )
 
 
@@ -239,13 +279,26 @@ def _tri(value: Any, name: str) -> str:
     return value
 
 
+def _route_state(route: Mapping[str, Any]) -> str:
+    state = route.get("state")
+    _require(state in ROUTE_STATES, f"unknown route state {state!r}")
+    return state
+
+
+def _capability(route: Mapping[str, Any], capability: str) -> str:
+    _require(
+        capability in ROUTE_CAPABILITIES,
+        f"unknown route capability {capability!r}",
+    )
+    return _tri(route.get(capability, "UNKNOWN"), capability)
+
+
 def known_true(route: Mapping[str, Any], capability: str) -> bool:
     """True only for an explicitly observed TRUE capability; UNKNOWN is not TRUE."""
 
-    phase = route.get("phase")
-    _require(phase in ROUTE_PHASES, f"unknown route phase {phase!r}")
-    value = _tri(route.get(capability), capability)
-    return phase == "OBSERVED" and value == "TRUE"
+    state = _route_state(route)
+    value = _capability(route, capability)
+    return state == "AVAILABLE" and value == "TRUE"
 
 
 def check_route_capability_claim(
@@ -258,57 +311,142 @@ def check_route_capability_claim(
     if claimed:
         _require(
             known_true(route, capability),
-            f"{capability}={route.get(capability)} in phase {route.get('phase')} "
+            f"{capability}={route.get(capability)} in state {route.get('state')} "
             "must not be interpreted as TRUE",
         )
 
 
-def _has_default(route: Mapping[str, Any]) -> bool:
-    phase = route.get("phase")
-    _require(phase in ROUTE_PHASES, f"unknown route phase {phase!r}")
-    return phase in ("AVAILABLE_PENDING_CAPABILITIES", "OBSERVED")
+def check_capability_api_floor(
+    android_api: int,
+    capability: str,
+    value: Any,
+) -> None:
+    """A capability below its platform API floor can only be UNKNOWN."""
+
+    _require(
+        isinstance(android_api, int) and not isinstance(android_api, bool)
+        and android_api >= 23,
+        f"androidApi must be an integer >= 23, got {android_api!r}",
+    )
+    _require(
+        capability in CAPABILITY_API_FLOORS,
+        f"unknown route capability {capability!r}",
+    )
+    _tri(value, capability)
+    if android_api < CAPABILITY_API_FLOORS[capability]:
+        _require(
+            value == "UNKNOWN",
+            f"API {android_api} cannot observe {capability} "
+            f"(floor API {CAPABILITY_API_FLOORS[capability]}); got {value}",
+        )
+
+
+def _vpn_known(route: Mapping[str, Any]) -> str:
+    """Observed vpn value usable for guard resolution, else UNKNOWN."""
+
+    if _route_state(route) != "AVAILABLE" or route.get("capabilitiesReceived") is not True:
+        return "UNKNOWN"
+    return _capability(route, "vpn")
+
+
+def resolve_session_route_guard(guard: str, route: Mapping[str, Any]) -> str:
+    """SessionRouteGuard resolution (M2.md section 8.6).
+
+    Only UNRESOLVED can change, and only from an observation with known vpn.
+    A resolved guard is sticky: SYSTEM_DEFAULT_ALLOWED never escalates because a
+    VPN appeared later; VPN_CONTINUITY_REQUIRED never clears on its own.
+    """
+
+    _require(guard in SESSION_ROUTE_GUARDS, f"unknown session route guard {guard!r}")
+    if guard != "UNRESOLVED":
+        return guard
+    vpn = _vpn_known(route)
+    if vpn == "TRUE":
+        return "VPN_CONTINUITY_REQUIRED"
+    if vpn == "FALSE":
+        return "SYSTEM_DEFAULT_ALLOWED"
+    return "UNRESOLVED"
+
+
+def evaluate_external_fetch_route(
+    guard: str,
+    route: Mapping[str, Any],
+    *,
+    explicit_direct_override: bool = False,
+) -> tuple[str, str, str]:
+    """Reference ExternalFetchRouteDecision: (guardAfter, decision, reason).
+
+    Evaluation order is normative (M2.md 8.6). The explicit direct override
+    lifts only the VPN-continuity requirement. `metered` and `validated` never
+    pause by themselves.
+    """
+
+    _require(
+        isinstance(explicit_direct_override, bool),
+        "explicitDirectOverride must be boolean",
+    )
+    state = _route_state(route)
+    guard_after = resolve_session_route_guard(guard, route)
+    if state == "INITIALIZING":
+        return guard_after, "PAUSE", "INITIALIZING"
+    if state == "UNAVAILABLE":
+        return guard_after, "PAUSE", "NO_USABLE_DEFAULT"
+    if route.get("capabilitiesReceived") is not True:
+        return guard_after, "PAUSE", "CAPABILITIES_PENDING"
+    if guard_after == "UNRESOLVED":
+        return guard_after, "PAUSE", "SESSION_ROUTE_UNRESOLVED"
+    override_used = False
+    if guard_after == "VPN_CONTINUITY_REQUIRED" and _capability(route, "vpn") != "TRUE":
+        if not explicit_direct_override:
+            return guard_after, "PAUSE", "VPN_CONTINUITY_REQUIRED"
+        override_used = True
+    if _capability(route, "blocked") == "TRUE":
+        return guard_after, "PAUSE", "NETWORK_BLOCKED"
+    if _capability(route, "suspended") == "TRUE":
+        return guard_after, "PAUSE", "NETWORK_SUSPENDED"
+    if _capability(route, "restricted") == "TRUE":
+        return guard_after, "PAUSE", "NETWORK_RESTRICTED"
+    if _capability(route, "internet") == "FALSE":
+        return guard_after, "PAUSE", "NO_INTERNET_CAPABILITY"
+    return (
+        guard_after,
+        "ALLOW",
+        "EXPLICIT_DIRECT_OVERRIDE" if override_used else "ROUTE_READY",
+    )
 
 
 def validate_route_privacy_transition(
     *,
-    session_previously_on_vpn: bool,
+    guard: str,
     new_route: Mapping[str, Any],
     external_fetch_decision: str,
-    explicit_user_direct_policy: bool = False,
+    explicit_direct_override: bool = False,
 ) -> str:
     """Pure oracle for the FROZEN VPN privacy invariant (PRODUCT, M2.md 8/F-03).
 
-    Returns `ELIGIBLE` when the decision is consistent with the invariant, or
-    `PAUSED` when external fetching is (correctly) paused. Raises when the
-    decision would violate the invariant. Persisted/local playback is outside
-    this check: it always continues.
+    `guard` is the session route guard before this evaluation. Returns
+    `ELIGIBLE` when an ALLOW decision is consistent with the contract, or
+    `PAUSED` when external fetching is (correctly) paused. Pausing never
+    violates privacy. Raises when an ALLOW would violate the contract.
+    Persisted/local playback is outside this check: it always continues.
     """
 
     _require(
         external_fetch_decision in EXTERNAL_FETCH_DECISIONS,
         f"unknown external fetch decision {external_fetch_decision!r}",
     )
+    _, expected, reason = evaluate_external_fetch_route(
+        guard,
+        new_route,
+        explicit_direct_override=explicit_direct_override,
+    )
     if external_fetch_decision == "PAUSE":
         return "PAUSED"
-
     _require(
-        _has_default(new_route),
-        "no default route: external fetching must pause",
+        expected == "ALLOW",
+        f"external fetch must pause ({reason}) for guard {guard} on route "
+        f"state={new_route.get('state')} vpn={new_route.get('vpn')}",
     )
-
-    if external_fetch_decision == "ALLOW_BY_EXPLICIT_USER_POLICY":
-        _require(
-            explicit_user_direct_policy,
-            "explicit-user-policy continuation claimed without that user policy",
-        )
-        return "ELIGIBLE"
-
-    if session_previously_on_vpn:
-        _require(
-            known_true(new_route, "vpn"),
-            "VPN session moved to a route not observed as VPN "
-            f"(vpn={new_route.get('vpn')}); automatic external fetch is forbidden",
-        )
     return "ELIGIBLE"
 
 
@@ -371,7 +509,7 @@ OBSERVATION_PLANES = {
     "HTTP_STATUS": "PROVIDER",
     "ROUTE_EPOCH_CHANGED": "ROUTE",
     "VALIDATED_CAPABILITY_LOST": "ROUTE",
-    "NO_DEFAULT_ROUTE": "ROUTE",
+    "DEFAULT_ROUTE_UNAVAILABLE": "ROUTE",
     "STORAGE_ENOSPC": "STORAGE",
     "STORAGE_IO": "STORAGE",
 }
