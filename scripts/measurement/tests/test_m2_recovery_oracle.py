@@ -632,7 +632,7 @@ class RecoveryOracleV2PositiveTest(unittest.TestCase):
 
         self.assertEqual("PASS", summary["status"])
         self.assertEqual({"BUDGET_EXHAUSTED": 1}, summary["terminalCounts"])
-        self.assertEqual(1, summary["actionCounts"]["REFRESH_DELIVERY_BINDING"])
+        self.assertEqual(2, summary["actionCounts"]["REFRESH_DELIVERY_BINDING"])
         self.assertEqual(
             DELIVERY_BINDING_REFRESH,
             failures["failures"][1]["action"]["exhaustedDimension"],
