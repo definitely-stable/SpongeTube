@@ -118,6 +118,18 @@ record ResolvedScenario(
                     null,
                     null,
                     null);
+            case N8, N9, N10 -> new ResolvedScenario(
+                    1,
+                    config.profile().name() + "-" + config.providerVariant().name(),
+                    config.profile(),
+                    0,
+                    null,
+                    null,
+                    null,
+                    config.writeQuantumBytes(),
+                    null,
+                    null,
+                    null);
         };
     }
 

@@ -46,7 +46,9 @@ final class CliArguments {
                         "control-workers",
                         "reference-playback-bitrate-bps",
                         "no-progress-start-after-ms",
-                        "write-quantum-bytes" -> true;
+                        "write-quantum-bytes",
+                        "provider-variant",
+                        "provider-wall-clock-epoch-ms" -> true;
                 default -> false;
             }) {
                 throw new IllegalArgumentException("Unknown option: --" + key);
@@ -70,6 +72,8 @@ final class CliArguments {
 
         Long referenceBitrate = optionalLong(values, "reference-playback-bitrate-bps");
         Long noProgressStartAfterMs = optionalLong(values, "no-progress-start-after-ms");
+        ProviderVariant providerVariant = ProviderVariant.parse(values.get("provider-variant"));
+        Long providerWallClockEpochMs = optionalLong(values, "provider-wall-clock-epoch-ms");
 
         return new MediaLabConfig(
                 Path.of(fixtureRoot),
@@ -82,7 +86,9 @@ final class CliArguments {
                 controlWorkers,
                 referenceBitrate,
                 noProgressStartAfterMs,
-                writeQuantumBytes);
+                writeQuantumBytes,
+                providerVariant,
+                providerWallClockEpochMs);
     }
 
     static String usage() {
@@ -92,14 +98,16 @@ final class CliArguments {
                     --fixture-root=<path> \
                     --trace=<path> \
                     --session-id=<id> \
-                    [--profile=N0|N1|N4|N4R] \
+                    [--profile=N0|N1|N4|N4R|N8|N9|N10] \
                     [--data-port=0] \
                     [--data-workers=8] \
                     [--control-port=0] \
                     [--control-workers=2] \
                     [--write-quantum-bytes=8192] \
                     [--reference-playback-bitrate-bps=<bps>] \
-                    [--no-progress-start-after-ms=<ms>]
+                    [--no-progress-start-after-ms=<ms>] \
+                    [--provider-variant=<VARIANT>] \
+                    [--provider-wall-clock-epoch-ms=<ms>]
 
                   media-lab summarize \
                     --trace=<requests.jsonl> \
@@ -111,6 +119,14 @@ final class CliArguments {
                 N1 requires --reference-playback-bitrate-bps.
                 N4 requires --no-progress-start-after-ms; canonical duration is 120000 ms.
                 N4R uses the manual media-body gate under /__lab/gate/media/*.
+                N8/N9/N10 require --provider-variant and reject N1/N4 parameters:
+                  N8: HTTP_403_BARE
+                  N9: HTTP_429_RETRY_AFTER_DELAY_SECONDS | HTTP_429_RETRY_AFTER_HTTP_DATE |
+                      HTTP_429_RETRY_AFTER_ABSENT | HTTP_429_RETRY_AFTER_MALFORMED
+                  N10: BINDING_EXPIRY_REFRESH | BINDING_REFRESH_INCOMPATIBLE | BINDING_REFRESH_FAILED
+                Provider profiles use a fixed virtual provider wall clock
+                (--provider-wall-clock-epoch-ms, default 1790337600000) and serve provider
+                fault evidence at /__lab/provider/events.
                 Request trace, session events and calibration summary share the --trace basename.
                 summarize accepts request trace schema v2 and rejects mixed data-plane session/scenario identity.
                 Expected identity options make zero-network cache hits explicit while still validating non-empty traces.

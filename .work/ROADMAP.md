@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A, M2-B and M2-C complete; M2-D in progress (#81)**
+Status: **Active — M2-A, M2-B, M2-C and M2-D complete; M2-E next**
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -84,7 +84,7 @@ M2 is split into focused deliveries (an ownership map, not a frozen API):
 - **M2-A — Contract & Evidence Foundation** (#75, complete): contract/evidence only — FROZEN/PROVISIONAL/DEFERRED decisions, fault-plane ownership, route/privacy contract, RecoveryChain and budget invariants, stable identity vs mutable delivery binding, `m2-scenario-v1` / `m2-run-manifest-v1`, host falsification suite. No runtime change.
 - **M2-B — Route Observation & Privacy Policy** (complete, `.work/evidence/2026-09-25-m2-b-route-observation.md`): Android default-route observation (API 24+ `registerDefaultNetworkCallback`, API 23 `CONNECTIVITY_ACTION` snapshot fallback), one serialized reducer, `DefaultRouteState`, per-session `SessionRouteGuard` and `ExternalFetchRouteDecision`, `route-events-v1`; API 23 and API 34/36 tested. No FetchBroker wiring (M2-C/M2-F).
 - **M2-C — Recovery Chain, Failure Classification & Request Budget** (#79, complete, `.work/evidence/2026-09-25-m2-c-recovery-chain.md`, ADR-0003): `RecoveryCoordinator` as the only logical retry owner, RecoveryChain identity, typed `FailureObservation` + conservative `FailureClassifier`, `sponge-recovery-v1` (`REMOTE_ATTEMPT = 4`, exponential backoff with full jitter), `RecoveryAttemptGate` seam, one FetchBroker owner = one attempt, no Media3 retry; `failure-decision-events-v1`, `recovery-budget-events-v1`; M2-ACC-05/06 executable. Provider actions fail closed until M2-D; route gate wiring is M2-F.
-- **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery** (#81, in progress, ADR-0004): delivery binding revision, CAS/single-flight refresh, `sponge-recovery-v2`, `Retry-After`, N8/N9/N10 deterministic provider simulator, M2-ACC-07/08; #50 review recorded; production stale-binding signal unresolved.
+- **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery** (#81, complete, `.work/evidence/2026-09-26-m2-d-provider-recovery.md`, ADR-0004): delivery binding revision, CAS/single-flight refresh, `sponge-recovery-v2`, `Retry-After`, N8/N9/N10 deterministic provider simulator, M2-ACC-07/08; #50 review recorded; production stale-binding signal unresolved.
 - **M2-E — Transport / Packet Fault Harness**: external transport and scoped network fault infrastructure with seeded stochastic profiles.
 - **M2-F — Android Route/VPN Recovery Integration**: end-to-end VPN/default-route recovery on Android's actual selected network.
 - **M2-G — Transport Evidence Evaluation**: transport comparison under the controlled experiment contract.

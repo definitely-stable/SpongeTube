@@ -632,12 +632,32 @@ class RecoveryOracleV2PositiveTest(unittest.TestCase):
 
         self.assertEqual("PASS", summary["status"])
         self.assertEqual({"BUDGET_EXHAUSTED": 1}, summary["terminalCounts"])
-        self.assertEqual(1, summary["actionCounts"]["TERMINATE_BUDGET_EXHAUSTED"])
+        self.assertEqual(1, summary["actionCounts"]["REFRESH_DELIVERY_BINDING"])
         self.assertEqual(
             DELIVERY_BINDING_REFRESH,
             failures["failures"][1]["action"]["exhaustedDimension"],
         )
+        self.assertEqual(
+            "NOT_ADMITTED",
+            failures["failures"][1]["action"]["deliveryBinding"]["result"],
+        )
         self.assertEqual(2, summary["chargedAttemptCount"])
+
+    def test_early_refresh_budget_termination_is_rejected(self):
+        failures, budget, fetch = v2.refresh_then_exhausted_run()
+        row = failures["failures"][1]
+        row["action"] = {
+            "kind": "TERMINATE_BUDGET_EXHAUSTED",
+            "delayMs": None,
+            "retryOrdinal": None,
+            "reconciliation": None,
+            "exhaustedDimension": DELIVERY_BINDING_REFRESH,
+            "providerWait": None,
+            "deliveryBinding": None,
+        }
+
+        with self.assertRaisesRegex(RecoveryOracleError, "action"):
+            verify_recovery(failures, budget, fetch)
 
     def test_remote_attempt_exhaustion_terminates_budget_exhausted(self):
         failures, budget, fetch = v2.remote_exhausted_run()
@@ -679,8 +699,19 @@ class RecoveryOracleV2PositiveTest(unittest.TestCase):
 
         self.assertEqual("PASS", summary["status"])
         self.assertEqual({"BUDGET_EXHAUSTED": 1}, summary["terminalCounts"])
-        self.assertEqual(1, summary["chargedAttemptCount"])
-        self.assertEqual([], v2.events(budget, "CHARGE")[1:])
+        self.assertEqual(2, summary["chargedAttemptCount"])
+        self.assertEqual(
+            [DELIVERY_BINDING_REFRESH],
+            [
+                event["charge"]["dimension"]
+                for event in v2.events(budget, "CHARGE")
+                if event["charge"]["dimension"] == DELIVERY_BINDING_REFRESH
+            ],
+        )
+        self.assertEqual(
+            "NOT_ADMITTED",
+            failures["failures"][-1]["action"]["deliveryBinding"]["result"],
+        )
 
     def test_charged_incompatible_or_failed_refresh_fails_closed(self):
         for result in ("INCOMPATIBLE", "FAILED"):

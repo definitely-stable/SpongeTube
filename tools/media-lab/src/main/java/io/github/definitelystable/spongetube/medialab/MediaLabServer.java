@@ -16,8 +16,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 final class MediaLabServer implements AutoCloseable {
+
+    private static final Pattern PROVIDER_MEDIA_PATH =
+            Pattern.compile("^/provider/(gen-[1-9][0-9]*)(/fixtures/.*)$");
 
     private final MediaLabConfig config;
     private final ResolvedScenario scenario;
@@ -30,6 +35,8 @@ final class MediaLabServer implements AutoCloseable {
     private final SessionCalibration calibration;
     private final SessionEventRecorder events;
     private final FixtureBodyWriter fixtureBodyWriter;
+    private final ProviderSimulator providerSimulator;
+    private final ProviderFaultRecorder providerFaultRecorder;
     private final HttpServer dataServer;
     private final HttpServer controlServer;
     private final ExecutorService dataExecutor;
@@ -49,6 +56,8 @@ final class MediaLabServer implements AutoCloseable {
             SessionCalibration calibration,
             SessionEventRecorder events,
             FixtureBodyWriter fixtureBodyWriter,
+            ProviderSimulator providerSimulator,
+            ProviderFaultRecorder providerFaultRecorder,
             HttpServer dataServer,
             HttpServer controlServer,
             ExecutorService dataExecutor,
@@ -64,6 +73,8 @@ final class MediaLabServer implements AutoCloseable {
         this.calibration = calibration;
         this.events = events;
         this.fixtureBodyWriter = fixtureBodyWriter;
+        this.providerSimulator = providerSimulator;
+        this.providerFaultRecorder = providerFaultRecorder;
         this.dataServer = dataServer;
         this.controlServer = controlServer;
         this.dataExecutor = dataExecutor;
@@ -89,6 +100,8 @@ final class MediaLabServer implements AutoCloseable {
         JsonLineTraceWriter requestTraceWriter = null;
         JsonLineTraceWriter eventTraceWriter = null;
         JsonLineTraceWriter gateEventTraceWriter = null;
+        ProviderFaultRecorder providerFaultRecorder = null;
+        ProviderSimulator providerSimulator = null;
 
         try {
             ensureArtifactsAbsent(config);
@@ -108,6 +121,20 @@ final class MediaLabServer implements AutoCloseable {
             if (config.profile() == MediaLabProfile.N4R) {
                 gateEventTraceWriter =
                         new JsonLineTraceWriter(config.gateTracePath());
+            }
+            if (config.profile().isProviderFamily()) {
+                providerFaultRecorder = new ProviderFaultRecorder(
+                        config.providerFaultsPath(),
+                        config.sessionId(),
+                        config.sessionId(),
+                        config.profile().name(),
+                        config.providerVariant().name(),
+                        scenario.scenarioHash(),
+                        config.providerWallClockEpochMs());
+                providerSimulator = new ProviderSimulator(
+                        config.providerVariant(),
+                        config.providerWallClockEpochMs(),
+                        ProviderSimulator.catalogLengths(catalog));
             }
 
             SessionCalibration calibration = new SessionCalibration();
@@ -138,6 +165,8 @@ final class MediaLabServer implements AutoCloseable {
                     calibration,
                     events,
                     fixtureBodyWriter,
+                    providerSimulator,
+                    providerFaultRecorder,
                     dataServer,
                     controlServer,
                     dataExecutor,
@@ -166,6 +195,7 @@ final class MediaLabServer implements AutoCloseable {
             boolean requestTraceCreated = requestTraceWriter != null;
             boolean eventTraceCreated = eventTraceWriter != null;
             boolean gateTraceCreated = gateEventTraceWriter != null;
+            boolean providerFaultsCreated = providerFaultRecorder != null;
             closeQuietly(requestTraceWriter);
             closeQuietly(eventTraceWriter);
             closeQuietly(gateEventTraceWriter);
@@ -177,6 +207,9 @@ final class MediaLabServer implements AutoCloseable {
             }
             if (gateTraceCreated) {
                 deleteQuietly(config.gateTracePath());
+            }
+            if (providerFaultsCreated) {
+                deleteQuietly(config.providerFaultsPath());
             }
             throw exception;
         }
@@ -223,6 +256,21 @@ final class MediaLabServer implements AutoCloseable {
                 + (manualBodyProgressGate == null
                         ? "null"
                         : Json.quote(config.gateTracePath().toString()))
+                + ","
+                + Json.quote("providerVariant") + ":"
+                + (config.providerVariant() == null
+                        ? "null"
+                        : Json.quote(config.providerVariant().name()))
+                + ","
+                + Json.quote("providerWallClockEpochMs") + ":"
+                + (config.providerWallClockEpochMs() == null
+                        ? "null"
+                        : config.providerWallClockEpochMs())
+                + ","
+                + Json.quote("providerFaults") + ":"
+                + (providerFaultRecorder == null
+                        ? "null"
+                        : Json.quote(config.providerFaultsPath().toString()))
                 + "}";
     }
 
@@ -238,6 +286,21 @@ final class MediaLabServer implements AutoCloseable {
                 + Json.quote("controlWorkers") + ":" + config.controlWorkers() + ","
                 + Json.quote("catalogResources") + ":" + catalog.size() + ","
                 + Json.quote("scenario") + ":" + scenario.toJson()
+                + ","
+                + Json.quote("providerVariant") + ":"
+                + (config.providerVariant() == null
+                        ? "null"
+                        : Json.quote(config.providerVariant().name()))
+                + ","
+                + Json.quote("providerWallClockEpochMs") + ":"
+                + (config.providerWallClockEpochMs() == null
+                        ? "null"
+                        : config.providerWallClockEpochMs())
+                + ","
+                + Json.quote("providerFaults") + ":"
+                + (providerFaultRecorder == null
+                        ? "null"
+                        : Json.quote(config.providerFaultsPath().toString()))
                 + "}";
     }
 
@@ -324,6 +387,19 @@ final class MediaLabServer implements AutoCloseable {
             return;
         }
 
+        if ("/__lab/provider/events".equals(rawPath)) {
+            if (!"GET".equals(method)) {
+                sendMethodNotAllowed(exchange, trace, "GET");
+                return;
+            }
+            if (providerFaultRecorder == null) {
+                sendNotFound(exchange, trace);
+                return;
+            }
+            sendJson(exchange, trace, 200, providerFaultRecorder.json());
+            return;
+        }
+
         if (rawPath.startsWith("/__lab/gate/media")) {
             if (manualBodyProgressGate == null) {
                 sendErrorJson(exchange, trace, 409, "manual_gate_unavailable");
@@ -374,6 +450,11 @@ final class MediaLabServer implements AutoCloseable {
             String method,
             String rangeHeader) throws IOException {
 
+        if (rawPath.startsWith("/provider/")) {
+            routeProvider(exchange, trace, rawPath, method, rangeHeader);
+            return;
+        }
+
         if (!rawPath.startsWith("/fixtures/")) {
             sendNotFound(exchange, trace);
             return;
@@ -392,6 +473,116 @@ final class MediaLabServer implements AutoCloseable {
             sendMethodNotAllowed(exchange, trace, "GET, HEAD");
             return;
         }
+
+        serveFixture(exchange, trace, resource, method, rangeHeader);
+    }
+
+    private void routeProvider(
+            HttpExchange exchange,
+            RequestTraceAccumulator trace,
+            String rawPath,
+            String method,
+            String rangeHeader) throws IOException {
+
+        if (providerSimulator == null) {
+            sendNotFound(exchange, trace);
+            return;
+        }
+
+        if ("/provider/refresh".equals(rawPath)) {
+            routeProviderRefresh(exchange, trace, method);
+            return;
+        }
+
+        Matcher media = PROVIDER_MEDIA_PATH.matcher(rawPath);
+        if (!media.matches()) {
+            sendNotFound(exchange, trace);
+            return;
+        }
+
+        String generation = media.group(1);
+        String catalogPath = media.group(2);
+
+        if (!"GET".equals(method) && !"HEAD".equals(method)) {
+            sendMethodNotAllowed(exchange, trace, "GET, HEAD");
+            return;
+        }
+
+        if (!providerSimulator.isIssuedGeneration(generation)) {
+            sendNotFound(exchange, trace);
+            return;
+        }
+
+        FixtureResource resource = catalog.findRawPath(catalogPath);
+        if (resource == null) {
+            sendNotFound(exchange, trace);
+            return;
+        }
+
+        trace.fixtureId = resource.fixtureId();
+        trace.resourceId = resource.resourceId();
+
+        if ("HEAD".equals(method)) {
+            serveFixture(exchange, trace, resource, method, rangeHeader);
+            return;
+        }
+
+        ProviderSimulator.MediaDecision decision = providerSimulator.mediaGet(
+                trace.requestId(),
+                generation,
+                exchange.getRequestHeaders().getFirst("X-Sponge-Binding-Revision"),
+                clock.nowNanos());
+
+        if (!decision.isFault()) {
+            serveFixture(exchange, trace, resource, method, rangeHeader);
+            return;
+        }
+
+        providerFaultRecorder.append(decision.faultEvent());
+        if (decision.retryAfterHeader() != null) {
+            exchange.getResponseHeaders().set("Retry-After", decision.retryAfterHeader());
+        }
+        if (decision.staleBindingHeader()) {
+            exchange.getResponseHeaders().set("X-Sponge-Provider-Binding", "STALE");
+        }
+        sendErrorJson(exchange, trace, decision.statusCode(), decision.errorCode());
+        trace.outcome = TraceOutcome.PROVIDER_FAULT;
+    }
+
+    private void routeProviderRefresh(
+            HttpExchange exchange,
+            RequestTraceAccumulator trace,
+            String method) throws IOException {
+
+        if (providerSimulator == null || !providerSimulator.supportsRefresh()) {
+            sendNotFound(exchange, trace);
+            return;
+        }
+
+        if (!"POST".equals(method)) {
+            sendMethodNotAllowed(exchange, trace, "POST");
+            return;
+        }
+
+        ProviderSimulator.RefreshDecision decision = providerSimulator.refresh(
+                trace.requestId(),
+                exchange.getRequestHeaders().getFirst("X-Sponge-Provider-Generation"),
+                exchange.getRequestHeaders().getFirst("X-Sponge-Binding-Revision"),
+                clock.nowNanos());
+
+        providerFaultRecorder.append(decision.faultEvent());
+        sendJson(exchange, trace, decision.statusCode(), decision.bodyJson());
+        if (!decision.successful()) {
+            trace.outcome = TraceOutcome.PROVIDER_FAULT;
+        }
+    }
+
+    private void serveFixture(
+            HttpExchange exchange,
+            RequestTraceAccumulator trace,
+            FixtureResource resource,
+            String method,
+            String rangeHeader) throws IOException {
 
         Headers headers = exchange.getResponseHeaders();
         headers.set("Accept-Ranges", "bytes");
@@ -634,7 +825,8 @@ final class MediaLabServer implements AutoCloseable {
                 config.tracePath(),
                 config.sessionTracePath(),
                 config.calibrationPath(),
-                config.gateTracePath()
+                config.gateTracePath(),
+                config.providerFaultsPath()
         }) {
             if (Files.exists(path)) {
                 throw new IOException("Evidence artifact already exists: " + path);

@@ -3,6 +3,7 @@ package io.github.definitelystable.spongetube.medialab;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -175,5 +176,132 @@ class CliArgumentsTest {
                         "--session-id=n4",
                         "--profile=N4"
                 }));
+    }
+
+    @Test
+    void parsesProviderVariantWithDefaultWallClock() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("provider-fixtures"));
+
+        MediaLabConfig config = CliArguments.parse(new String[] {
+                "serve",
+                "--fixture-root=" + fixtureRoot,
+                "--trace=" + temp.resolve("provider.jsonl"),
+                "--session-id=provider-1",
+                "--profile=N9",
+                "--provider-variant=HTTP_429_RETRY_AFTER_DELAY_SECONDS"
+        });
+
+        assertEquals(MediaLabProfile.N9, config.profile());
+        assertEquals(
+                ProviderVariant.HTTP_429_RETRY_AFTER_DELAY_SECONDS,
+                config.providerVariant());
+        assertEquals(
+                ProviderSimulator.DEFAULT_PROVIDER_WALL_CLOCK_EPOCH_MS,
+                config.providerWallClockEpochMs());
+        assertEquals(
+                "N9-HTTP_429_RETRY_AFTER_DELAY_SECONDS",
+                config.resolvedScenario().scenarioId());
+        assertEquals(temp.resolve("provider.provider-faults.json"), config.providerFaultsPath());
+    }
+
+    @Test
+    void parsesProviderWallClockEpoch() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("provider-epoch-fixtures"));
+
+        MediaLabConfig config = CliArguments.parse(new String[] {
+                "serve",
+                "--fixture-root=" + fixtureRoot,
+                "--trace=" + temp.resolve("provider-epoch.jsonl"),
+                "--session-id=provider-epoch",
+                "--profile=N10",
+                "--provider-variant=BINDING_EXPIRY_REFRESH",
+                "--provider-wall-clock-epoch-ms=1800000000000"
+        });
+
+        assertEquals(1_800_000_000_000L, config.providerWallClockEpochMs());
+    }
+
+    @Test
+    void rejectsProviderProfileWithoutVariant() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("missing-provider-variant"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CliArguments.parse(new String[] {
+                        "serve",
+                        "--fixture-root=" + fixtureRoot,
+                        "--trace=" + temp.resolve("missing-provider-variant.jsonl"),
+                        "--session-id=provider",
+                        "--profile=N8"
+                }));
+    }
+
+    @Test
+    void rejectsProviderVariantOfAnotherFamily() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("provider-family-mismatch"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CliArguments.parse(new String[] {
+                        "serve",
+                        "--fixture-root=" + fixtureRoot,
+                        "--trace=" + temp.resolve("provider-family-mismatch.jsonl"),
+                        "--session-id=provider",
+                        "--profile=N8",
+                        "--provider-variant=HTTP_429_RETRY_AFTER_ABSENT"
+                }));
+    }
+
+    @Test
+    void rejectsUnknownProviderVariant() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("unknown-provider-variant"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CliArguments.parse(new String[] {
+                        "serve",
+                        "--fixture-root=" + fixtureRoot,
+                        "--trace=" + temp.resolve("unknown-provider-variant.jsonl"),
+                        "--session-id=provider",
+                        "--profile=N8",
+                        "--provider-variant=HTTP_418"
+                }));
+    }
+
+    @Test
+    void rejectsProviderOptionsOnNonProviderProfiles() throws Exception {
+        Path fixtureRoot = Files.createDirectory(temp.resolve("provider-options-n0"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CliArguments.parse(new String[] {
+                        "serve",
+                        "--fixture-root=" + fixtureRoot,
+                        "--trace=" + temp.resolve("provider-options-n0.jsonl"),
+                        "--session-id=n0",
+                        "--profile=N0",
+                        "--provider-variant=HTTP_403_BARE"
+                }));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CliArguments.parse(new String[] {
+                        "serve",
+                        "--fixture-root=" + fixtureRoot,
+                        "--trace=" + temp.resolve("provider-options-n4r.jsonl"),
+                        "--session-id=n4r",
+                        "--profile=N4R",
+                        "--provider-wall-clock-epoch-ms=1790337600000"
+                }));
+    }
+
+    @Test
+    void usageDocumentsProviderOptions() {
+        String usage = CliArguments.usage();
+
+        assertTrue(usage.contains("--provider-variant=<VARIANT>"));
+        assertTrue(usage.contains("--provider-wall-clock-epoch-ms=<ms>"));
+        assertTrue(usage.contains("HTTP_403_BARE"));
+        assertTrue(usage.contains("BINDING_EXPIRY_REFRESH"));
     }
 }
