@@ -11,10 +11,11 @@ LAB_CIDR="192.0.2.2/30"
 LAB_ADDR="192.0.2.2"
 MEDIA_PORT="18081"
 SEED="424242"
+TC_BIN="${M2_TC_BIN:-tc}"
 
 require_tools() {
   command -v ip >/dev/null
-  command -v tc >/dev/null
+  command -v "$TC_BIN" >/dev/null
   command -v sudo >/dev/null
   command -v python3 >/dev/null
   sudo -n true
@@ -83,29 +84,29 @@ apply_probe() {
   # Root netem proves this runner accepts an explicit random seed. It is
   # attached only to the dedicated namespace veth, never lo/eth0/ADB.
   sudo -n ip netns exec "$NS" \
-    tc qdisc replace dev "$LAB_IF" root netem loss random 1% seed "$SEED"
+    "$TC_BIN" qdisc replace dev "$LAB_IF" root netem loss random 1% seed "$SEED"
 
   # clsact + flower proves machine-readable traffic classification is present.
   # The filter matches only responses from the dedicated media port.
-  sudo -n ip netns exec "$NS" tc qdisc add dev "$LAB_IF" clsact
+  sudo -n ip netns exec "$NS" "$TC_BIN" qdisc add dev "$LAB_IF" clsact
   sudo -n ip netns exec "$NS" \
-    tc filter replace dev "$LAB_IF" egress protocol ip pref 10 flower \
+    "$TC_BIN" filter replace dev "$LAB_IF" egress protocol ip pref 10 flower \
     ip_proto tcp src_port "$MEDIA_PORT" action pass
 }
 
 remove_probe() {
   if namespace_exists; then
-    sudo -n ip netns exec "$NS" tc qdisc del dev "$LAB_IF" clsact 2>/dev/null || true
-    sudo -n ip netns exec "$NS" tc qdisc del dev "$LAB_IF" root 2>/dev/null || true
+    sudo -n ip netns exec "$NS" "$TC_BIN" qdisc del dev "$LAB_IF" clsact 2>/dev/null || true
+    sudo -n ip netns exec "$NS" "$TC_BIN" qdisc del dev "$LAB_IF" root 2>/dev/null || true
   fi
 }
 
 inspect_qdisc() {
-  sudo -n ip netns exec "$NS" tc -s -j qdisc show dev "$LAB_IF"
+  sudo -n ip netns exec "$NS" "$TC_BIN" -s -j qdisc show dev "$LAB_IF"
 }
 
 inspect_filter() {
-  sudo -n ip netns exec "$NS" tc -j filter show dev "$LAB_IF" egress
+  sudo -n ip netns exec "$NS" "$TC_BIN" -j filter show dev "$LAB_IF" egress
 }
 
 assert_probe_readback() {
