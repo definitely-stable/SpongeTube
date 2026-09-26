@@ -291,6 +291,7 @@ internal class DeliveryBindingCoordinator(
         data object Incompatible : RefreshCompletion
         data object Failed : RefreshCompletion
         data object Cancelled : RefreshCompletion
+        data class Fatal(val error: Error) : RefreshCompletion
     }
 
     /**
@@ -319,10 +320,15 @@ internal class DeliveryBindingCoordinator(
             completion = RefreshCompletion.Cancelled
             throw cancelled
         } catch (_: Exception) {
-            // Any other provider exception is one failed operation, never a
-            // retry. A fatal Error still reaches the finally below, so the
-            // slot can never stay dirty.
+            // An ordinary provider exception is one failed operation, never
+            // an internal retry.
             completion = RefreshCompletion.Failed
+        } catch (fatal: Error) {
+            // Preserve the same fatal-error contract as FetchBroker: settle
+            // every waiter and clear ownership first, then let the fatal
+            // error escape instead of normalizing it to a provider failure.
+            completion = RefreshCompletion.Fatal(fatal)
+            throw fatal
         } finally {
             withContext(NonCancellable) { finishOperation(operation, completion) }
         }
@@ -391,6 +397,19 @@ internal class DeliveryBindingCoordinator(
                         outcome = DeliveryBindingOperationOutcome.CANCELLED,
                     )
                     operation.result.complete(DeliveryBindingOperationOutcome.CANCELLED)
+                }
+                is RefreshCompletion.Fatal -> {
+                    // The operation is terminal for ownership purposes, but
+                    // callers must observe the original fatal error.
+                    emitLocked(
+                        caller = operation.caller,
+                        kind = DeliveryBindingEventKind.REFRESH_FAILED,
+                        previousRevision = operation.expected,
+                        currentRevision = operation.expected,
+                        refreshCorrelationId = operation.refreshCorrelationId,
+                        outcome = DeliveryBindingOperationOutcome.FAILED,
+                    )
+                    operation.result.completeExceptionally(completion.error)
                 }
             }
         }
