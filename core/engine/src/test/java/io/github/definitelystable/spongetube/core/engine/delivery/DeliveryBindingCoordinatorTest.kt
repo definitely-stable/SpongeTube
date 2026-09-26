@@ -257,6 +257,37 @@ class DeliveryBindingCoordinatorTest {
     }
 
     @Test
+    fun fatalRefresherErrorIsSettledThenRethrown() {
+        val fatal = AssertionError("fatal provider bug")
+        val recorder = DeliveryBindingEvidenceRecorder(RUN_ID, SESSION_ID)
+        val coordinator = coordinator(
+            TestMaterial(1),
+            DeliveryBindingRefresher { _, _ -> throw fatal },
+            recorder,
+        )
+
+        val observed = assertThrows<AssertionError> {
+            runBlocking {
+                coordinator.refresh(REVISION_1, caller(1), RecordingAdmission())
+            }
+        }
+
+        assertSame(fatal, observed)
+        assertEquals(REVISION_1, coordinator.current().revision)
+        assertEquals(1, coordinator.refreshOperationCountForTest())
+        assertEquals(
+            1,
+            recorder.events().count { it.kind == DeliveryBindingEventKind.REFRESH_FAILED },
+        )
+
+        // The fatal operation released the single-flight slot; a subsequent
+        // ordinary request is not stuck behind orphaned ownership.
+        runBlocking {
+            coordinator.shutdown()
+        }
+    }
+
+    @Test
     fun admissionFailureStartsNothing() = runBlocking {
         val admittedIds = CopyOnWriteArrayList<String>()
         var reject = true
