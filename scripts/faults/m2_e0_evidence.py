@@ -10,6 +10,8 @@ from typing import Any
 TOXIPROXY_VERSION = "2.12.0"
 TOXIPROXY_ASSET = "toxiproxy-server-linux-amd64"
 TOXIPROXY_SHA256 = "556d891134a3c582dc1e1a3f7335fd55142e5965769855a00b944e13e48302fc"
+LAB_TC_VERSION = "6.6.0"
+LAB_TC_SOURCE_SHA256 = "8738c804afd09f0bf756937f0c3de23117832a98d8cbbf50386cf5005cd613ce"
 
 IPV4 = re.compile(r"(?<![0-9.])(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?![0-9.])")
 URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
@@ -47,10 +49,22 @@ def host(args: argparse.Namespace) -> None:
 
     version_text = pathlib.Path(args.toxiproxy_version).read_text(encoding="utf-8").strip()
     digest = pathlib.Path(args.toxiproxy_sha).read_text(encoding="utf-8").strip()
+    system_tc_version = pathlib.Path(args.system_tc_version).read_text(encoding="utf-8").strip()
+    lab_tc_version = pathlib.Path(args.lab_tc_version).read_text(encoding="utf-8").strip()
+    lab_tc_source_sha = pathlib.Path(args.lab_tc_source_sha).read_text(encoding="utf-8").strip()
+    kernel_release = pathlib.Path(args.kernel_release).read_text(encoding="utf-8").strip()
     if version_text != f"toxiproxy-server version {TOXIPROXY_VERSION}":
         raise SystemExit(f"unexpected Toxiproxy version: {version_text!r}")
     if digest != TOXIPROXY_SHA256:
         raise SystemExit("Toxiproxy digest does not match the pinned value")
+    if not system_tc_version.startswith("tc utility, iproute2-"):
+        raise SystemExit(f"unexpected system tc version: {system_tc_version!r}")
+    if not lab_tc_version.startswith(f"tc utility, iproute2-{LAB_TC_VERSION}"):
+        raise SystemExit(f"unexpected lab tc version: {lab_tc_version!r}")
+    if lab_tc_source_sha != LAB_TC_SOURCE_SHA256:
+        raise SystemExit("lab tc source digest does not match the pinned value")
+    if not kernel_release:
+        raise SystemExit("missing kernel release")
     if "netem" not in qdisc_kinds or "clsact" not in qdisc_kinds:
         raise SystemExit("qdisc readback does not contain netem + clsact")
     if "flower" not in filter_kinds:
@@ -79,8 +93,12 @@ def host(args: argparse.Namespace) -> None:
                     "unexpectedToxics": 0,
                 },
                 "netem": {
-                    "source": "system-iproute2",
+                    "systemTcVersion": system_tc_version,
+                    "labTcVersion": LAB_TC_VERSION,
+                    "labTcSourceSha256": LAB_TC_SOURCE_SHA256,
+                    "kernelRelease": kernel_release,
                     "seedCommandAccepted": True,
+                    "seedReadback": True,
                     "qdiscReadback": True,
                     "classifierReadback": True,
                 },
@@ -169,6 +187,10 @@ def parse() -> argparse.Namespace:
     p_host.add_argument("--filter-json", required=True)
     p_host.add_argument("--toxiproxy-version", required=True)
     p_host.add_argument("--toxiproxy-sha", required=True)
+    p_host.add_argument("--system-tc-version", required=True)
+    p_host.add_argument("--lab-tc-version", required=True)
+    p_host.add_argument("--lab-tc-source-sha", required=True)
+    p_host.add_argument("--kernel-release", required=True)
     p_host.add_argument("--seed-accepted", required=True)
     p_host.add_argument("--clean", required=True)
     p_host.add_argument("--toxiproxy-clean", required=True)
