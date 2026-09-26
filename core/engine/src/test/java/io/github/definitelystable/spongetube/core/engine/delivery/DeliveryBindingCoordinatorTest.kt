@@ -272,7 +272,11 @@ class DeliveryBindingCoordinatorTest {
             }
         }
 
-        assertSame(fatal, observed)
+        // kotlinx.coroutines stack-trace recovery may reconstruct a Throwable
+        // instance while preserving its fatal type/message. Object identity is
+        // therefore not part of the contract; normalization to a provider
+        // failure would instead make assertThrows fail entirely.
+        assertEquals(fatal.message, observed.message)
         assertEquals(REVISION_1, coordinator.current().revision)
         assertEquals(1, coordinator.refreshOperationCountForTest())
         assertEquals(
