@@ -68,7 +68,7 @@ test -d "$SOURCE_DIR"
 
 (
   cd "$SOURCE_DIR"
-  make -s -j2 SUBDIRS="lib tc"
+  make -s -j2 SUBDIRS="lib tc" >&2
 )
 
 install -m 0755 "$SOURCE_DIR/tc/tc" "$BIN"
