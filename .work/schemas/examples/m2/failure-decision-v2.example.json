@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "runId": "m2-d-example",
+  "sessionId": "m2-d-example-session",
+  "policyId": "sponge-recovery-v2",
+  "clockDomain": "ANDROID_MONOTONIC",
+  "failures": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 1012000,
+      "sessionId": "m2-d-example-session",
+      "recoveryChainId": "recovery-1",
+      "failureId": "recovery-1:failure-1",
+      "fetchKey": "fixture:F1/audio-main/f1-audio-1/segment-1-00001",
+      "fetchId": "fetch-1",
+      "attemptCorrelationId": "fetch-1:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "HTTP_RESPONSE",
+        "kind": "HTTP_STATUS",
+        "httpStatus": 403,
+        "retryAfter": {
+          "rawKind": "ABSENT",
+          "delaySeconds": null,
+          "notBeforeUtcEpochMs": null,
+          "clockDomain": null
+        },
+        "providerSignal": "BINDING_STALE_CONFIRMED",
+        "deliveryBindingRevision": "binding-1"
+      },
+      "classification": "DELIVERY_BINDING_STALE",
+      "decision": {
+        "kind": "REFRESH_DELIVERY_BINDING",
+        "reason": "STALE_BINDING_SIGNAL"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3,
+        "deliveryBindingRefreshesRemaining": 1
+      },
+      "action": {
+        "kind": "REFRESH_DELIVERY_BINDING",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null,
+        "exhaustedDimension": null,
+        "providerWait": null,
+        "deliveryBinding": {
+          "expectedRevision": "binding-1",
+          "result": "REFRESHED",
+          "currentRevision": "binding-2",
+          "refreshCorrelationId": "refresh-1",
+          "charged": true
+        }
+      }
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 4012000,
+      "sessionId": "m2-d-example-session",
+      "recoveryChainId": "recovery-2",
+      "failureId": "recovery-2:failure-1",
+      "fetchKey": "fixture:F1/audio-main/f1-audio-1/segment-1-00002",
+      "fetchId": "fetch-3",
+      "attemptCorrelationId": "fetch-3:attempt-1",
+      "routeEpoch": null,
+      "observation": {
+        "plane": "PROVIDER",
+        "type": "HTTP_RESPONSE",
+        "kind": "HTTP_STATUS",
+        "httpStatus": 429,
+        "retryAfter": {
+          "rawKind": "DELAY_SECONDS",
+          "delaySeconds": 2,
+          "notBeforeUtcEpochMs": null,
+          "clockDomain": null
+        },
+        "providerSignal": "NONE",
+        "deliveryBindingRevision": "binding-2"
+      },
+      "classification": "PROVIDER_RATE_LIMITED",
+      "decision": {
+        "kind": "WAIT_UNTIL_PROVIDER",
+        "reason": "PROVIDER_THROTTLED"
+      },
+      "context": {
+        "demandPresent": true,
+        "sessionClosing": false,
+        "remoteAttemptsRemaining": 3,
+        "deliveryBindingRefreshesRemaining": 1
+      },
+      "action": {
+        "kind": "WAIT_PROVIDER",
+        "delayMs": null,
+        "retryOrdinal": null,
+        "reconciliation": null,
+        "exhaustedDimension": null,
+        "providerWait": {
+          "rawKind": "DELAY_SECONDS",
+          "waitMs": 2000,
+          "notBeforeUtcEpochMs": null,
+          "wallClockNowUtcEpochMs": null,
+          "wallClockDomain": null
+        },
+        "deliveryBinding": null
+      }
+    }
+  ]
+}

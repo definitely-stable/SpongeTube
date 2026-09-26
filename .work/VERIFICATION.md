@@ -137,6 +137,8 @@ Examples:
 
 Provider wall-clock semantics use a separate virtual wall clock where needed. They do not reuse the monotonic clock used for durations/deadlines.
 
+M2-D implements these examples as the deterministic Media Lab provider variants (`HTTP_403_BARE`, `HTTP_429_RETRY_AFTER_DELAY_SECONDS`, `HTTP_429_RETRY_AFTER_HTTP_DATE`, `HTTP_429_RETRY_AFTER_ABSENT`, `HTTP_429_RETRY_AFTER_MALFORMED`, `BINDING_EXPIRY_REFRESH`, `BINDING_REFRESH_INCOMPATIBLE`, `BINDING_REFRESH_FAILED`; `.work/milestones/M2.md` section 20, M2-D), including the lab-only stale-signal header and the virtual provider wall clock; these are simulator semantics, not YouTube semantics.
+
 ### 4.5 Android route plane
 
 Owned by Android integration tests.
@@ -901,6 +903,7 @@ An artifact schema becomes canonical together with its owning producer and verif
 | M2-ACC-05 | Failure Separation | evidence separately represents observation, classification and recovery decision/action |
 | M2-ACC-06 | Bounded Recovery Lineage | one RecoveryChain never receives implicit fresh budget across broker/Media3/route/refresh boundaries |
 | M2-ACC-07 | Mutable Binding Independence | delivery binding can be refreshed without changing stable work identity; incompatible rebinding fails closed |
+| M2-ACC-08 | Deterministic Provider Recovery | N8/N9/N10 deterministic provider scenarios have independently verified provider attribution, bounded recovery, Retry-After handling and binding refresh without immutable identity mutation |
 
 Later M2 slices may add gate IDs; no fixed count is reserved.
 
@@ -922,6 +925,41 @@ The oracle never imports the production coordinator. It re-derives every classif
 `ATTEMPT_STARTED` in versioned fetch evidence (v4 for M2-C) and, with a
 Media Lab trace, to exactly one origin request. Target/range preflight failures
 must have zero charge, zero `ATTEMPT_STARTED` and zero origin request. M2-ACC-05 passes when at least one real/synthetic owner failure has independently verified observation, classification, decision and executed action; M2-ACC-06 passes when at least one chain spans several owner lifetimes on one ledger with an exact physical request count and no implicit reset. `Verify` runs the Kotlin tests, `scripts/ci/verify-m2-c-recovery-evidence.sh host` (seven scripted cases; both gates must pass in at least one case) and the falsification suite; Android Smoke (API 36) runs `RecoveryOriginAndroidTest` against Media Lab N4R and verifies the exported artifacts against the origin trace (`verify-m2-c-recovery-evidence.sh device`, both gates required). M1 Recovery remains a mandatory regression gate for the retry-ownership change. M2-C does not prove provider delivery-binding refresh, `Retry-After` behavior, real VPN/default-route fetch suppression, packet/network fault attribution, or transport superiority.
+
+M2-D adds the delivery-binding artifacts and makes **M2-ACC-07** and
+**M2-ACC-08** runtime-executable:
+
+| Artifact | Producer | Independent verifier | Owning slice |
+| --- | --- | --- | --- |
+| `failure-decision-events-v2` | Kotlin `RecoveryCoordinator` via `RecoveryEvidenceRecorder` | `scripts/measurement/m2_recovery_oracle.py` (lineage) and `scripts/measurement/m2_provider_oracle.py` | M2-D |
+| `delivery-binding-events-v1` | Kotlin `DeliveryBindingCoordinator` | `m2_provider_oracle.py` | M2-D |
+| `provider-fault-events-v1` | Media Lab provider simulator | `m2_provider_oracle.py` | M2-D |
+| `provider-verification-summary-v1` | `m2_provider_oracle.py` | schema + `test_m2_provider_oracle.py` | M2-D |
+
+`recovery-budget-events-v1`, `fetch-events-v4`, `bridge-events-v2` and
+`failure-decision-events-v1` stay byte-stable. Executable status: `Verify` runs
+the Kotlin tests and the scripted host cases through
+`scripts/ci/verify-m2-d-provider-evidence.sh host`; Android Smoke (API 36) runs
+the canonical scenarios `N8_BARE_403`, `N9_429_DELAY_SECONDS`,
+`N9_429_HTTP_DATE` and `N10_BINDING_EXPIRED_REFRESH` against Media Lab and
+verifies the exported artifacts (`... device`); Android Compatibility
+(API 23/34) runs the compatibility subset, including the API 23
+Retry-After/HTTP-date parser. The oracle never imports the production
+coordinator. It re-derives every classification, decision, `Retry-After` wait,
+refresh result, budget charge and revision transition from its own tables and
+requires: immutable identity is constant across revisions; a revision changes
+only by refresh success (R1 -> R2, never R1 -> R1); a bare 403 never becomes
+stale and triggers zero refreshes; 429 stays a provider-plane observation; a
+valid `Retry-After` produces a provider wait with no request and no broker
+owner before the wait completes; a malformed `Retry-After` never produces an
+immediate retry; one actual refresh is exactly one charge while
+ALREADY_ADVANCED and JOINED_REFRESH are free; a refresh never resets
+`REMOTE_ATTEMPT` or the chain; the next owner uses the new revision; an
+incompatible binding starts no owner; no persisted extent is removed; the
+privacy scan passes; no cross-clock subtraction occurs; and no chain-scoped
+event follows the chain's terminal. A live provider is never the oracle (F-13).
+Executable status lands with the M2-D evidence PR; until then the contract is
+defined.
 
 ### 23.3 Additional M2 evidence rules
 

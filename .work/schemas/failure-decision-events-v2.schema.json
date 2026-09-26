@@ -1,0 +1,522 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/failure-decision-events-v2.schema.json",
+  "title": "SpongeTube M2-D Failure Decision Events v2",
+  "description": "One row per failed FetchBroker owner of a RecoveryChain, with observation, classification, decision and executed action as four separate layers joined by failureId (.work/milestones/M2.md sections 9, 10 and 20, M2-D). M2-D successor of failure-decision-events-v1, produced by the Kotlin RecoveryCoordinator under policy sponge-recovery-v2; v1 stays immutable for historical artifacts. The new fields carry the Retry-After observation, the provider signal, the delivery binding revision, the refresh budget context and the executed provider action. Never contains exception text, stack traces, URLs, headers or credentials. Verified by scripts/measurement/m2_recovery_oracle.py and scripts/measurement/m2_provider_oracle.py.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "policyId",
+    "clockDomain",
+    "failures"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policyId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "ANDROID_MONOTONIC"
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/failure"
+      }
+    }
+  },
+  "$defs": {
+    "failure": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "elapsedRealtimeNs",
+        "sessionId",
+        "recoveryChainId",
+        "failureId",
+        "fetchKey",
+        "fetchId",
+        "attemptCorrelationId",
+        "routeEpoch",
+        "observation",
+        "classification",
+        "decision",
+        "context",
+        "action"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "elapsedRealtimeNs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recoveryChainId": {
+          "type": "string",
+          "pattern": "^recovery-[1-9][0-9]*$"
+        },
+        "failureId": {
+          "type": "string",
+          "pattern": "^recovery-[1-9][0-9]*:failure-[1-9][0-9]*$"
+        },
+        "fetchKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fetchId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^fetch-[1-9][0-9]*$"
+        },
+        "attemptCorrelationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^fetch-[1-9][0-9]*:attempt-1$"
+        },
+        "routeEpoch": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "observation": {
+          "$ref": "#/$defs/observation"
+        },
+        "classification": {
+          "type": "string",
+          "enum": [
+            "TRANSIENT_TRANSPORT",
+            "TERMINAL_TRANSPORT",
+            "PROVIDER_TRANSIENT_RESPONSE",
+            "PROVIDER_RATE_LIMITED",
+            "PROVIDER_REJECTED",
+            "DELIVERY_BINDING_STALE",
+            "RANGE_REJECTED",
+            "CONTENT_INTEGRITY",
+            "STORAGE_FAILURE",
+            "PUBLICATION_CONFLICT",
+            "CANCELLED",
+            "INTERNAL",
+            "UNKNOWN"
+          ]
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "context": {
+          "$ref": "#/$defs/context"
+        },
+        "action": {
+          "$ref": "#/$defs/action"
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "required": [
+        "plane",
+        "type",
+        "kind",
+        "httpStatus",
+        "retryAfter",
+        "providerSignal",
+        "deliveryBindingRevision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "plane": {
+          "type": "string",
+          "enum": [
+            "TRANSPORT",
+            "PROVIDER",
+            "RESPONSE_CONTRACT",
+            "STORAGE",
+            "LOCAL"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "TRANSPORT_IO",
+            "HTTP_RESPONSE",
+            "DELIVERY_DESCRIPTOR",
+            "RANGE_PROTOCOL",
+            "CONTENT_INTEGRITY",
+            "STORAGE",
+            "CANCELLATION",
+            "INTERNAL"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "CONNECT_TIMEOUT",
+            "READ_TIMEOUT",
+            "CONNECTION_RESET",
+            "PREMATURE_EOF",
+            "IO",
+            "TARGET_UNRESOLVED",
+            "HTTP_STATUS",
+            "DESCRIPTOR_STALE",
+            "FULL_BODY_FOR_RANGE_REQUEST",
+            "CONTENT_RANGE_MISSING",
+            "CONTENT_RANGE_MISMATCH",
+            "RESPONSE_LENGTH_MISMATCH",
+            "RESPONSE_BYTES_OUTSIDE_RANGE",
+            "REQUEST_OUTSIDE_RESOURCE",
+            "DIGEST_OR_LENGTH_MISMATCH",
+            "NO_SPACE",
+            "CONFLICT",
+            "NO_CONSUMERS",
+            "SESSION_SHUTDOWN",
+            "INTERNAL_FAILURE"
+          ]
+        },
+        "httpStatus": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "retryAfter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "rawKind",
+            "delaySeconds",
+            "notBeforeUtcEpochMs",
+            "clockDomain"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rawKind": {
+              "type": "string",
+              "enum": [
+                "ABSENT",
+                "DELAY_SECONDS",
+                "HTTP_DATE",
+                "MALFORMED"
+              ]
+            },
+            "delaySeconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "notBeforeUtcEpochMs": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "clockDomain": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PROVIDER_WALL_CLOCK",
+                null
+              ]
+            }
+          },
+          "description": "Normalized Retry-After observation, never the raw header value. delaySeconds is a duration with no clock domain. notBeforeUtcEpochMs is a PROVIDER_WALL_CLOCK instant (clockDomain PROVIDER_WALL_CLOCK for HTTP_DATE, else null) and is never compared with ANDROID_MONOTONIC."
+        },
+        "providerSignal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "NONE",
+            "BINDING_STALE_CONFIRMED",
+            null
+          ],
+          "description": "Provider-neutral explicit signal from the provider adapter. BINDING_STALE_CONFIRMED only when the adapter has explicit evidence of a stale binding; a bare HTTP 403 carries NONE."
+        },
+        "deliveryBindingRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^binding-[1-9][0-9]*$",
+          "description": "Revision of the mutable delivery material selected for the failed owner; null when no binding was selected."
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "RETRY_AFTER_BACKOFF",
+            "WAIT_FOR_ROUTE",
+            "WAIT_UNTIL_PROVIDER",
+            "REFRESH_DELIVERY_BINDING",
+            "RERESOLVE_PROVIDER",
+            "FAIL_TERMINAL",
+            "COMPLETE_NO_DEMAND",
+            "COMPLETE_SESSION",
+            "CONTINUE_FOR_DEMAND",
+            "RECONCILE_LOCAL_COVERAGE"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "TRANSIENT_FAILURE",
+            "PROVIDER_TRANSIENT_STATUS",
+            "PROVIDER_THROTTLED",
+            "STALE_BINDING_SIGNAL",
+            "NON_RETRYABLE_CLASSIFICATION",
+            "UNKNOWN_FAILS_CLOSED",
+            "DEMAND_RELEASED",
+            "SESSION_SHUTDOWN",
+            "DEMAND_PRESENT_AFTER_CANCELLATION",
+            "LOCAL_PUBLICATION_CONFLICT",
+            "RETRY_AFTER_ABSENT",
+            "RETRY_AFTER_MALFORMED"
+          ]
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "demandPresent",
+        "sessionClosing",
+        "remoteAttemptsRemaining",
+        "deliveryBindingRefreshesRemaining"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "demandPresent": {
+          "type": "boolean"
+        },
+        "sessionClosing": {
+          "type": "boolean"
+        },
+        "remoteAttemptsRemaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deliveryBindingRefreshesRemaining": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Remaining DELIVERY_BINDING_REFRESH charges of this chain at decision time; 0 when the policy does not declare the dimension."
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": [
+        "kind",
+        "delayMs",
+        "retryOrdinal",
+        "reconciliation",
+        "exhaustedDimension",
+        "providerWait",
+        "deliveryBinding"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SCHEDULE_BACKOFF",
+            "START_NEXT_OWNER",
+            "TERMINATE_FAILURE",
+            "TERMINATE_BUDGET_EXHAUSTED",
+            "TERMINATE_NO_DEMAND",
+            "TERMINATE_SESSION",
+            "FAIL_CLOSED_ACTION_UNAVAILABLE",
+            "LOCAL_COVERAGE_READY",
+            "FAIL_CLOSED_IDENTITY_CONFLICT",
+            "WAIT_PROVIDER",
+            "REFRESH_DELIVERY_BINDING"
+          ]
+        },
+        "delayMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "retryOrdinal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "reconciliation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "COVERAGE_PRESENT",
+            "IDENTITY_CONFLICT",
+            "ABSENT",
+            "FAILED",
+            null
+          ]
+        },
+        "exhaustedDimension": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "REMOTE_ATTEMPT",
+            "DELIVERY_BINDING_REFRESH",
+            null
+          ],
+          "description": "Budget dimension whose exhaustion terminated the chain, or null when no dimension was exhausted."
+        },
+        "providerWait": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "rawKind",
+            "waitMs",
+            "notBeforeUtcEpochMs",
+            "wallClockNowUtcEpochMs",
+            "wallClockDomain"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rawKind": {
+              "type": "string",
+              "enum": [
+                "DELAY_SECONDS",
+                "HTTP_DATE"
+              ]
+            },
+            "waitMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "notBeforeUtcEpochMs": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "wallClockNowUtcEpochMs": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "wallClockDomain": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PROVIDER_WALL_CLOCK",
+                null
+              ]
+            }
+          },
+          "description": "Executed provider-directed wait. waitMs is a duration; notBeforeUtcEpochMs and wallClockNowUtcEpochMs are PROVIDER_WALL_CLOCK instants (wallClockDomain PROVIDER_WALL_CLOCK for HTTP_DATE, else null) and are never compared with ANDROID_MONOTONIC."
+        },
+        "deliveryBinding": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "expectedRevision",
+            "result",
+            "currentRevision",
+            "refreshCorrelationId",
+            "charged"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "expectedRevision": {
+              "type": "string",
+              "pattern": "^binding-[1-9][0-9]*$"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "REFRESHED",
+                "ALREADY_ADVANCED",
+                "JOINED_REFRESH",
+                "INCOMPATIBLE",
+                "FAILED",
+                "NOT_ADMITTED",
+                "CLOSED",
+                "ABANDONED"
+              ]
+            },
+            "currentRevision": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^binding-[1-9][0-9]*$"
+            },
+            "refreshCorrelationId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^refresh-[1-9][0-9]*$"
+            },
+            "charged": {
+              "type": "boolean"
+            }
+          },
+          "description": "Result of the executed delivery-binding refresh; charged is true only when this chain paid a DELIVERY_BINDING_REFRESH charge."
+        }
+      }
+    }
+  }
+}

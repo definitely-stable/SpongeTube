@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/provider-verification-summary-v1.schema.json",
+  "title": "SpongeTube M2-D Provider Verification Summary v1",
+  "description": "Concise result of scripts/measurement/m2_provider_oracle.py over one case's failure-decision-events-v2, delivery-binding-events-v1 and provider-fault-events-v1 artifacts. The full artifacts stay CI artifacts.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "caseId",
+    "runId",
+    "sessionId",
+    "policyId",
+    "status",
+    "evidenceSource",
+    "scenarioFamily",
+    "variant",
+    "chainCount",
+    "physicalAttemptCount",
+    "remoteAttemptChargeCount",
+    "originRequestCount",
+    "refreshOperationCount",
+    "refreshChargeCount",
+    "joinedRefreshCount",
+    "alreadyAdvancedCount",
+    "providerWaitCount",
+    "bindingRevisions",
+    "gates",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "caseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policyId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "status": {
+      "type": "string",
+      "const": "PASS"
+    },
+    "evidenceSource": {
+      "type": "string",
+      "enum": [
+        "HOST_SCRIPTED",
+        "ANDROID_MEDIA_LAB"
+      ]
+    },
+    "scenarioFamily": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "N8",
+        "N9",
+        "N10",
+        null
+      ]
+    },
+    "variant": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "chainCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "physicalAttemptCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "remoteAttemptChargeCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "originRequestCount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "refreshOperationCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "refreshChargeCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "joinedRefreshCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "alreadyAdvancedCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "providerWaitCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bindingRevisions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^binding-[1-9][0-9]*$"
+      },
+      "description": "Ordered revisions observed across physical attempts."
+    },
+    "gates": {
+      "type": "object",
+      "required": [
+        "M2-ACC-05",
+        "M2-ACC-06",
+        "M2-ACC-07",
+        "M2-ACC-08"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "M2-ACC-05": {
+          "$ref": "#/$defs/gate"
+        },
+        "M2-ACC-06": {
+          "$ref": "#/$defs/gate"
+        },
+        "M2-ACC-07": {
+          "$ref": "#/$defs/gate"
+        },
+        "M2-ACC-08": {
+          "$ref": "#/$defs/gate"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "required": [
+        "status",
+        "checks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "NOT_EXERCISED"
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "caseId": "n10-binding-expiry-refresh",
+  "runId": "m2-d-example",
+  "sessionId": "m2-d-example-session",
+  "policyId": "sponge-recovery-v2",
+  "status": "PASS",
+  "evidenceSource": "ANDROID_MEDIA_LAB",
+  "scenarioFamily": "N10",
+  "variant": "BINDING_EXPIRY_REFRESH",
+  "chainCount": 1,
+  "physicalAttemptCount": 2,
+  "remoteAttemptChargeCount": 2,
+  "originRequestCount": 3,
+  "refreshOperationCount": 1,
+  "refreshChargeCount": 1,
+  "joinedRefreshCount": 0,
+  "alreadyAdvancedCount": 0,
+  "providerWaitCount": 0,
+  "bindingRevisions": [
+    "binding-1",
+    "binding-2"
+  ],
+  "gates": {
+    "M2-ACC-05": {
+      "status": "PASS",
+      "checks": [
+        "2 failure rows with independently re-derived classification, decision and executed action",
+        "observation layer carries typed fields only; Retry-After normalized, no raw header, URL or free text"
+      ]
+    },
+    "M2-ACC-06": {
+      "status": "PASS",
+      "checks": [
+        "one RecoveryChain ledger per failed owner; refresh and provider wait spend no REMOTE_ATTEMPT",
+        "2 REMOTE_ATTEMPT charges == 2 physical attempts; 3 origin requests accounted"
+      ]
+    },
+    "M2-ACC-07": {
+      "status": "PASS",
+      "checks": [
+        "binding-1 replaced by binding-2 for the same immutable FetchKey and extent identity",
+        "one refresh operation, one refresh charge; no revision reused or derived from material"
+      ]
+    },
+    "M2-ACC-08": {
+      "status": "PASS",
+      "checks": [
+        "provider-directed Retry-After used as-is: 2000 ms wait, no extra backoff",
+        "deterministic provider simulator fault attribution: one stale-binding signal, one refresh success"
+      ]
+    }
+  },
+  "limitations": [
+    "M2-D proves provider-neutral delivery-binding replacement, Retry-After handling and deterministic provider recovery.",
+    "It does not by itself prove that a live YouTube HTTP 403 means an expired binding, does not select a production YouTube client/profile, does not implement SABR/PO-token/challenge handling, and does not select the production transport."
+  ]
+}

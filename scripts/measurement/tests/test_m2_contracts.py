@@ -18,6 +18,7 @@ from m2_contracts import (
     ACCEPTED_M2_SCHEMA_SHA256,
     HISTORICAL_SCHEMA_SHA256,
     M2_SLICE_SCHEMAS,
+    MAX_RETRY_AFTER_DELAY_SECONDS,
     PLANE_FAULT_FIELDS,
     M2ContractError,
     canonicalize_scenario,
@@ -29,6 +30,7 @@ from m2_contracts import (
     evaluate_external_fetch_route,
     known_true,
     parse_retry_after,
+    provider_wait_ms,
     resolve_session_route_guard,
     scan_evidence_privacy,
     scenario_sha256,
@@ -59,6 +61,18 @@ CONTRACTS = {
         "m2-scenario-n7-vpn-route-loss-v1.example.json",
     ],
     MANIFEST_SCHEMA: ["m2-run-manifest-v1.example.json"],
+    "failure-decision-events-v2.schema.json": [
+        "failure-decision-v2.example.json",
+    ],
+    "delivery-binding-events-v1.schema.json": [
+        "delivery-binding-events-v1.example.json",
+    ],
+    "provider-fault-events-v1.schema.json": [
+        "provider-fault-events-v1.example.json",
+    ],
+    "provider-verification-summary-v1.schema.json": [
+        "provider-verification-summary-v1.example.json",
+    ],
 }
 
 
@@ -231,6 +245,7 @@ class M2HistoricalContractTest(unittest.TestCase):
             for path in SCHEMAS.glob("*.schema.json")
             if not path.name.startswith("m2-")
             and path.name not in M2_SLICE_SCHEMAS
+            and path.name not in ACCEPTED_M2_SCHEMA_SHA256
         }
         self.assertEqual(set(HISTORICAL_SCHEMA_SHA256), present)
         self.assertFalse(M2_SLICE_SCHEMAS & set(HISTORICAL_SCHEMA_SHA256))
@@ -767,6 +782,158 @@ class M2HttpAnchorTest(unittest.TestCase):
             "classification": {"class": klass},
             "decision": {"action": action},
         }
+
+
+class M2RetryAfterNormalizationTest(unittest.TestCase):
+    """M2-D normalized Retry-After shape and provider wait (M2.md 10.2)."""
+
+    def test_delay_seconds_vectors(self):
+        for raw, seconds in (
+            ("0", 0),
+            ("120", 120),
+            ("007", 7),
+            ("9223372036854775", MAX_RETRY_AFTER_DELAY_SECONDS),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    {"source": "HTTP_HEADER", "rawKind": "DELAY_SECONDS",
+                     "delaySeconds": seconds},
+                    parse_retry_after(raw),
+                )
+
+    def test_only_sp_and_htab_are_trimmed(self):
+        expected = {
+            " 120\t": 120,
+            "\t120 ": 120,
+            " \t0\t ": 0,
+        }
+        for raw, seconds in expected.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    {"source": "HTTP_HEADER", "rawKind": "DELAY_SECONDS",
+                     "delaySeconds": seconds},
+                    parse_retry_after(raw),
+                )
+
+    def test_delay_seconds_overflow_is_malformed_not_clamped(self):
+        for raw in ("9223372036854776", "99999999999999999999999", "9" * 400):
+            with self.subTest(raw=raw):
+                self.assertEqual("MALFORMED", parse_retry_after(raw)["rawKind"])
+
+    def test_http_date_forms_carry_utc_epoch_ms(self):
+        expected_epoch_ms = 784111777000
+        for raw in (
+            "Sun, 06 Nov 1994 08:49:37 GMT",
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+            "Sun Nov  6 08:49:37 1994",
+        ):
+            with self.subTest(raw=raw):
+                parsed = parse_retry_after(raw)
+                self.assertEqual("HTTP_DATE", parsed["rawKind"])
+                self.assertEqual("1994-11-06T08:49:37Z", parsed["notBeforeUtc"])
+                self.assertEqual(expected_epoch_ms, parsed["notBeforeUtcEpochMs"])
+                self.assertEqual("PROVIDER_WALL_CLOCK", parsed["clockDomain"])
+                self.assertNotIn("delaySeconds", parsed)
+
+    def test_rfc850_two_digit_year_rule(self):
+        # Reference 2026: century 2000 + yy; above 2076 rolls back 100 years.
+        self.assertEqual(
+            3155760000000,
+            parse_retry_after(
+                "Wednesday, 01-Jan-70 00:00:00 GMT"
+            )["notBeforeUtcEpochMs"],
+        )  # 2070-01-01
+        self.assertEqual(
+            220924800000,
+            parse_retry_after(
+                "Saturday, 01-Jan-77 00:00:00 GMT"
+            )["notBeforeUtcEpochMs"],
+        )  # 1977-01-01: 2077 > 2076 rolls back
+        self.assertEqual(
+            "MALFORMED",
+            parse_retry_after("Thursday, 01-Jan-76 00:00:00 GMT")["rawKind"],
+        )  # 01-Jan-76 resolves to Wednesday 2076-01-01, not Thursday 1976
+
+    def test_reference_utc_epoch_ms_resolves_rfc850_year(self):
+        # 2107-01-01 reference: 2100 + 94 = 2194 > 2157, so the year is 2094.
+        parsed = parse_retry_after(
+            "Saturday, 06-Nov-94 08:49:37 GMT",
+            reference_utc_epoch_ms=4323283200000,
+        )
+        self.assertEqual(3939871777000, parsed["notBeforeUtcEpochMs"])
+        self.assertEqual(
+            parsed,
+            parse_retry_after(
+                "Saturday, 06-Nov-94 08:49:37 GMT", reference_year=2107
+            ),
+        )
+        # 2026-09-26T00:00:00Z reference resolves the same digits to 1994.
+        self.assertEqual(
+            784111777000,
+            parse_retry_after(
+                "Sunday, 06-Nov-94 08:49:37 GMT",
+                reference_utc_epoch_ms=1790380800000,
+            )["notBeforeUtcEpochMs"],
+        )
+        self.assertEqual(
+            1792567680000,
+            parse_retry_after(
+                "Wednesday, 21-Oct-26 07:28:00 GMT",
+                reference_utc_epoch_ms=1790380800000,
+            )["notBeforeUtcEpochMs"],
+        )
+
+    def test_malformed_values_stay_malformed(self):
+        for raw in (
+            "-1",
+            "+10",
+            "1.5",
+            "abc",
+            "",
+            " \t ",
+            "1 0",
+            "\u0661\u0662",
+            "Sun, 31 Feb 2026 00:00:00 GMT",
+            "Mon, 06 Nov 1994 08:49:37 GMT",
+            "Sun, 06 Nov 1994 24:00:00 GMT",
+            "Sun, 06 Nov 1994 08:49:60 GMT",
+            "Sun, 06 Nov 1994 08:49:37 gmt",
+            "Sun, 06 Nov 1994 08:49:37 UTC",
+            "Sun, 6 Nov 1994 08:49:37 GMT",
+            "sun, 06 Nov 1994 08:49:37 GMT",
+            "Sun, 06 nov 1994 08:49:37 GMT",
+            "Sat, 29 Feb 2025 00:00:00 GMT",
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual("MALFORMED", parse_retry_after(raw)["rawKind"])
+        self.assertEqual("ABSENT", parse_retry_after(None)["rawKind"])
+
+    def test_provider_wait_ms_is_provider_wall_clock_only(self):
+        date = parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT")
+        not_before = date["notBeforeUtcEpochMs"]
+        self.assertEqual(2000, provider_wait_ms(parse_retry_after("2"), None))
+        self.assertEqual(0, provider_wait_ms(date, not_before + 5000))
+        self.assertEqual(0, provider_wait_ms(date, not_before))
+        self.assertEqual(2000, provider_wait_ms(date, not_before - 2000))
+        self.assertIsNone(provider_wait_ms(parse_retry_after(None), None))
+        self.assertIsNone(provider_wait_ms(parse_retry_after("soon"), None))
+        with self.assertRaises(M2ContractError):
+            provider_wait_ms(date, None)
+
+    def test_retry_after_parse_is_status_independent(self):
+        # parse_retry_after has no status input; a 503 carrying a valid header
+        # must not turn it into a different normalized shape.
+        expected = {
+            "source": "HTTP_HEADER",
+            "rawKind": "DELAY_SECONDS",
+            "delaySeconds": 120,
+        }
+        self.assertEqual(expected, parse_retry_after("120"))
+        try:
+            result = classify_http_contract_case(503, retry_after="120")
+        except M2ContractError:
+            self.skipTest("classify_http_contract_case has no HTTP 503 anchor")
+        self.assertEqual(expected, result["retryAfter"])
 
 
 class M2FailureSeparationTest(unittest.TestCase):

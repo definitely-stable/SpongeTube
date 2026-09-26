@@ -4,6 +4,15 @@ ADRs record durable technical decisions with meaningful alternatives or reversal
 
 Canonical product/architecture truth remains in `.work/PRODUCT.md` and `.work/ARCHITECTURE.md`. An ADR explains a decision; it does not replace updating those documents when the canonical architecture changes.
 
+## Index
+
+| ADR | Title | Status |
+| --- | --- | --- |
+| [0001](0001-select-m1-metadata-persistence.md) | Select Room 3 for M1 metadata persistence | Accepted |
+| [0002](0002-playback-bridge-media3-seam.md) | PlaybackBridge Media3 seam | Accepted (superseded in part by ADR-0003) |
+| [0003](0003-centralize-recovery-ownership.md) | Centralize recovery ownership in RecoveryCoordinator | Accepted |
+| [0004](0004-separate-immutable-work-from-delivery-binding.md) | Separate immutable media work from mutable delivery binding | Accepted |
+
 ## Naming
 
 ```text

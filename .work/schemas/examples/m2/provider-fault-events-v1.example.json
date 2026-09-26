@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-d-example",
+  "sessionId": "m2-d-example-session",
+  "scenarioFamily": "N10",
+  "variant": "BINDING_EXPIRY_REFRESH",
+  "primaryPlane": "PROVIDER",
+  "scenarioHash": "7f1c8a5d3e9b2a4c6d0f8e1b3a5c7e9d0f2a4c6e8b0d1f3a5c7e9b0d2f4a6c8e",
+  "clockDomain": "HOST_MEDIA_LAB_MONOTONIC",
+  "providerWallClockDomain": "PROVIDER_WALL_CLOCK",
+  "providerWallClockEpochMs": 1790337600000,
+  "events": [
+    {
+      "sequence": 1,
+      "hostMonotonicNs": 5000000,
+      "faultId": "fault-1",
+      "requestCorrelationId": "1",
+      "requestKind": "MEDIA",
+      "faultKind": "BINDING_STALE",
+      "statusCode": 403,
+      "retryAfter": null,
+      "providerSignal": "BINDING_STALE_CONFIRMED",
+      "bindingRevision": "binding-1",
+      "providerBindingGeneration": "gen-1",
+      "providerWallClockUtcEpochMs": 1790337600000
+    },
+    {
+      "sequence": 2,
+      "hostMonotonicNs": 5100000,
+      "faultId": "fault-2",
+      "requestCorrelationId": "2",
+      "requestKind": "REFRESH",
+      "faultKind": "REFRESH_SUCCEEDED",
+      "statusCode": 200,
+      "retryAfter": null,
+      "providerSignal": "NONE",
+      "bindingRevision": null,
+      "providerBindingGeneration": "gen-2",
+      "providerWallClockUtcEpochMs": 1790337600000
+    }
+  ]
+}
