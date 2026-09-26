@@ -124,7 +124,8 @@ netem = next(
     (entry for entry in qdiscs if isinstance(entry, dict) and entry.get("kind") == "netem"),
     None,
 )
-if netem is None or int(netem.get("seed", -1)) != 424242:
+options = netem.get("options", {}) if isinstance(netem, dict) else {}
+if not isinstance(options, dict) or int(options.get("seed", -1)) != 424242:
     raise SystemExit(f"netem seed readback mismatch: {netem!r}")
 if not any(isinstance(entry, dict) and entry.get("kind") == "flower" for entry in filters):
     raise SystemExit("missing flower classifier readback")
