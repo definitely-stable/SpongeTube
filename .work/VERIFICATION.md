@@ -958,8 +958,11 @@ ALREADY_ADVANCED and JOINED_REFRESH are free; a refresh never resets
 incompatible binding starts no owner; no persisted extent is removed; the
 privacy scan passes; no cross-clock subtraction occurs; and no chain-scoped
 event follows the chain's terminal. A live provider is never the oracle (F-13).
-Executable status lands with the M2-D evidence PR; until then the contract is
-defined.
+M2-D makes M2-ACC-07 and M2-ACC-08 runtime-executable on that path: the
+fourteen scripted host cases make M2-ACC-07 and M2-ACC-08 each pass in at
+least one case (`n10-binding-expired-refresh` passes all four gates) and
+M2-ACC-05/06 keep passing under `sponge-recovery-v2`; the results are recorded
+in `.work/evidence/2026-09-26-m2-d-provider-recovery.md`.
 
 ### 23.3 Additional M2 evidence rules
 

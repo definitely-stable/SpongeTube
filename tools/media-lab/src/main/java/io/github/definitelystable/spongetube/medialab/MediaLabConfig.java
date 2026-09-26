@@ -16,11 +16,41 @@ record MediaLabConfig(
         int controlWorkers,
         Long referencePlaybackBitrateBps,
         Long noProgressStartAfterMs,
-        int writeQuantumBytes) {
+        int writeQuantumBytes,
+        ProviderVariant providerVariant,
+        Long providerWallClockEpochMs) {
 
     static final int DEFAULT_WRITE_QUANTUM_BYTES = 8 * 1024;
 
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
+
+    MediaLabConfig(
+            Path fixtureRoot,
+            Path tracePath,
+            String sessionId,
+            MediaLabProfile profile,
+            int dataPort,
+            int dataWorkers,
+            int controlPort,
+            int controlWorkers,
+            Long referencePlaybackBitrateBps,
+            Long noProgressStartAfterMs,
+            int writeQuantumBytes) {
+        this(
+                fixtureRoot,
+                tracePath,
+                sessionId,
+                profile,
+                dataPort,
+                dataWorkers,
+                controlPort,
+                controlWorkers,
+                referencePlaybackBitrateBps,
+                noProgressStartAfterMs,
+                writeQuantumBytes,
+                null,
+                null);
+    }
 
     MediaLabConfig {
         fixtureRoot = Objects.requireNonNull(fixtureRoot, "fixtureRoot").toAbsolutePath().normalize();
@@ -57,6 +87,7 @@ record MediaLabConfig(
                     throw new IllegalArgumentException(
                             "N0 does not accept N1/N4-specific scenario parameters");
                 }
+                rejectProviderOptions(profile, providerVariant, providerWallClockEpochMs);
             }
             case N1 -> {
                 if (referencePlaybackBitrateBps == null || referencePlaybackBitrateBps <= 0) {
@@ -67,6 +98,7 @@ record MediaLabConfig(
                     throw new IllegalArgumentException(
                             "N1 does not accept --no-progress-start-after-ms");
                 }
+                rejectProviderOptions(profile, providerVariant, providerWallClockEpochMs);
             }
             case N4 -> {
                 if (noProgressStartAfterMs == null || noProgressStartAfterMs < 0) {
@@ -77,11 +109,32 @@ record MediaLabConfig(
                     throw new IllegalArgumentException(
                             "N4 does not accept --reference-playback-bitrate-bps");
                 }
+                rejectProviderOptions(profile, providerVariant, providerWallClockEpochMs);
             }
             case N4R -> {
                 if (referencePlaybackBitrateBps != null || noProgressStartAfterMs != null) {
                     throw new IllegalArgumentException(
                             "N4R uses a manual media-body gate and accepts no N1/N4 parameters");
+                }
+                rejectProviderOptions(profile, providerVariant, providerWallClockEpochMs);
+            }
+            case N8, N9, N10 -> {
+                if (referencePlaybackBitrateBps != null || noProgressStartAfterMs != null) {
+                    throw new IllegalArgumentException(
+                            profile + " does not accept N1/N4-specific scenario parameters");
+                }
+                if (providerVariant == null) {
+                    throw new IllegalArgumentException(
+                            profile + " requires --provider-variant");
+                }
+                if (providerVariant.family() != profile) {
+                    throw new IllegalArgumentException(
+                            "Provider variant " + providerVariant.name() + " belongs to "
+                                    + providerVariant.family().name() + ", not " + profile.name());
+                }
+                if (providerWallClockEpochMs == null) {
+                    providerWallClockEpochMs =
+                            ProviderSimulator.DEFAULT_PROVIDER_WALL_CLOCK_EPOCH_MS;
                 }
             }
         }
@@ -97,6 +150,14 @@ record MediaLabConfig(
 
     Path gateTracePath() {
         return siblingArtifact(".gate");
+    }
+
+    /** Sibling document holding provider-fault-events-v1 for N8/N9/N10 sessions. */
+    Path providerFaultsPath() {
+        String fileName = tracePath.getFileName().toString();
+        int extension = fileName.lastIndexOf('.');
+        String stem = extension > 0 ? fileName.substring(0, extension) : fileName;
+        return tracePath.resolveSibling(stem + ".provider-faults.json");
     }
 
     ResolvedScenario resolvedScenario() {
@@ -120,6 +181,20 @@ record MediaLabConfig(
     private static void validateWorkers(int value, String name) {
         if (value < 1 || value > 128) {
             throw new IllegalArgumentException(name + " must be between 1 and 128");
+        }
+    }
+
+    private static void rejectProviderOptions(
+            MediaLabProfile profile,
+            ProviderVariant providerVariant,
+            Long providerWallClockEpochMs) {
+        if (providerVariant != null) {
+            throw new IllegalArgumentException(
+                    profile.name() + " does not accept --provider-variant");
+        }
+        if (providerWallClockEpochMs != null) {
+            throw new IllegalArgumentException(
+                    profile.name() + " does not accept --provider-wall-clock-epoch-ms");
         }
     }
 }

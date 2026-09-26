@@ -27,6 +27,34 @@ python3 scripts/measurement/m2_route_oracle.py verify \
 `scripts/ci/verify-m2-b-route-evidence.sh host|device` runs it in CI; the
 falsification suite is `tests/test_m2_route_oracle.py`.
 
+`m2_provider_oracle.py` is the independent M2-D verifier for
+`failure-decision-events-v2`, `delivery-binding-events-v1`,
+`provider-fault-events-v1`, `provider-verification-summary-v1` and the Media
+Lab origin trace (`.work/milestones/M2.md`, M2-D; `.work/VERIFICATION.md`
+section 23.2). It never imports the Kotlin coordinator: it re-derives the
+provider decision table through `m2_recovery_oracle.py` (lineage), replays the
+delivery binding revisions, the single-flight refresh lifecycle, every
+Retry-After wait and every provider fault attribution, and writes the
+`provider-verification-summary-v1` gates for M2-ACC-05..08:
+
+```bash
+python3 scripts/measurement/m2_provider_oracle.py verify \
+  --failures build/m2-d-provider/<case>/failure-decision-events.json \
+  --budget build/m2-d-provider/<case>/recovery-budget-events.json \
+  --delivery build/m2-d-provider/<case>/delivery-binding-events.json \
+  --fetch build/m2-d-provider/<case>/fetch-events.jsonl \
+  --case build/m2-d-provider/<case>/case.json \
+  --output build/m2-d-provider/<case>/provider-verification-summary.json \
+  [--provider-faults provider-faults.json] [--origin requests.jsonl] \
+  [--require-gate M2-ACC-07]
+```
+
+`scripts/ci/verify-m2-d-provider-evidence.sh host|device` runs it in CI; the
+falsification suite is `tests/test_m2_provider_oracle.py`. The M2-C lineage
+oracle runs on the unchanged documents and accepts the single charged refresh
+of a terminal refresh result; the provider oracle additionally joins that
+charge to its one REFRESH_STARTED and its one charged failure row.
+
 # M1 evidence kernel
 
 `m1_oracle.py` is the independent host-side verifier for M1 coverage evidence.

@@ -374,10 +374,10 @@ def expected_action_v2(
     limits: Mapping[str, int],
     reconciliation: str | None,
 ) -> tuple[str, str | None]:
-    """`sponge-recovery-v2` executed action and exhausted dimension.
-
-    Only a TERMINATE_BUDGET_EXHAUSTED action names the dimension whose
-    exhaustion ended the chain; every other action carries null.
+    """`sponge-recovery-v2` policy-selected action and pre-action exhausted
+    dimension. A refresh that reaches its admission and returns NOT_ADMITTED
+    is handled after this table because that terminal fact belongs to action
+    execution, not policy selection.
     """
 
     remaining = context["remoteAttemptsRemaining"]
@@ -403,8 +403,9 @@ def expected_action_v2(
             or DELIVERY_BINDING_REFRESH not in limits
         ):
             return "FAIL_CLOSED_ACTION_UNAVAILABLE", None
-        if context["deliveryBindingRefreshesRemaining"] == 0:
-            return "TERMINATE_BUDGET_EXHAUSTED", DELIVERY_BINDING_REFRESH
+        # Refresh budget is enforced at actual-operation admission, not before
+        # the binding coordinator is consulted. An exhausted chain may still
+        # take ALREADY_ADVANCED or JOINED_REFRESH for zero cost.
         return "REFRESH_DELIVERY_BINDING", None
     if decision == "RERESOLVE_PROVIDER":
         return "FAIL_CLOSED_ACTION_UNAVAILABLE", None
@@ -1059,6 +1060,16 @@ def _verify_failures(
                 action["kind"] == expected,
                 f"{where}: action {action['kind']} != oracle {expected} for {decision}",
             )
+            if (
+                action["kind"] == "REFRESH_DELIVERY_BINDING"
+                and action.get("deliveryBinding") is not None
+                and action["deliveryBinding"].get("result") == "NOT_ADMITTED"
+            ):
+                _require(
+                    row["context"]["deliveryBindingRefreshesRemaining"] == 0,
+                    f"{where}: NOT_ADMITTED refresh without exhausted refresh budget",
+                )
+                exhausted = DELIVERY_BINDING_REFRESH
             _require(
                 action["exhaustedDimension"] == exhausted,
                 f"{where}: exhaustedDimension {action['exhaustedDimension']} != oracle {exhausted}",

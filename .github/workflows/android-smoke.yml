@@ -256,6 +256,101 @@ jobs:
             build/android-smoke/m2-c-evidence \
             "$trace"
 
+      - name: Run M2-D deterministic provider recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="build/android-smoke/m2-d-provider"
+          rm -rf "$root"
+          mkdir -p "$root"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+
+          SCENARIOS=(
+            "N8_BARE_403:N8:HTTP_403_BARE"
+            "N9_429_DELAY_SECONDS:N9:HTTP_429_RETRY_AFTER_DELAY_SECONDS"
+            "N9_429_HTTP_DATE:N9:HTTP_429_RETRY_AFTER_HTTP_DATE"
+            "N10_BINDING_EXPIRED_REFRESH:N10:BINDING_EXPIRY_REFRESH"
+          )
+
+          for entry in "${SCENARIOS[@]}"; do
+            IFS=':' read -r scenario profile variant <<< "$entry"
+            lower="$(printf '%s' "$scenario" | tr '[:upper:]' '[:lower:]')"
+            server_root="$root/server/$scenario"
+            trace="$PWD/$server_root/requests.jsonl"
+            mkdir -p "$server_root"
+
+            "$LAB_BIN" serve \
+              "--fixture-root=$PWD/test-fixtures/media" \
+              "--trace=$trace" \
+              "--session-id=m2-d-$lower" \
+              "--profile=$profile" \
+              "--provider-variant=$variant" \
+              --data-port=18081 \
+              --control-port=18082 \
+              > "$server_root/media-lab.out" \
+              2> "$server_root/media-lab.err" &
+            lab_pid=$!
+
+            cleanup_m2d_lab() {
+              if kill -0 "$lab_pid" 2>/dev/null; then
+                kill "$lab_pid" || true
+                for _ in {1..40}; do
+                  kill -0 "$lab_pid" 2>/dev/null || break
+                  sleep 0.25
+                done
+              fi
+            }
+            trap cleanup_m2d_lab EXIT
+
+            for attempt in {1..30}; do
+              if curl --fail --silent \
+                http://127.0.0.1:18082/__lab/config \
+                > "$server_root/scenario.json"; then
+                break
+              fi
+              if [[ "$attempt" -eq 30 ]]; then
+                cat "$server_root/media-lab.out" || true
+                cat "$server_root/media-lab.err" || true
+                exit 1
+              fi
+              sleep 1
+            done
+
+            jq -e --arg profile "$profile" --arg variant "$variant" \
+              '.profileId == $profile and .providerVariant == $variant' \
+              "$server_root/scenario.json"
+
+            adb reverse tcp:18080 tcp:18081
+            adb reverse tcp:18082 tcp:18082
+
+            ./gradlew --dependency-verification=strict \
+              :core:engine:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.ProviderRecoveryAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2d.originBaseUrl=http://127.0.0.1:18080 \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2d.controlBaseUrl=http://127.0.0.1:18082 \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2d.scenario="$scenario"
+
+            curl --fail --silent \
+              http://127.0.0.1:18082/__lab/provider/events \
+              > "$server_root/provider-faults.json"
+
+            cleanup_m2d_lab
+            trap - EXIT
+            adb reverse --remove tcp:18082 || true
+
+            test -s "$trace"
+
+            bash scripts/ci/verify-m2-d-provider-evidence.sh device \
+              "build/android-smoke/m2-d-provider/$scenario" \
+              "$scenario" \
+              "$trace" \
+              "$server_root/provider-faults.json" \
+              36
+          done
+
       - name: Run M1 PlaybackBridge acceptance
         shell: bash
         run: |

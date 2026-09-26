@@ -92,6 +92,88 @@ jobs:
             "build/android-compat/api-${{ matrix.api }}/m2-b-route" \
             "${{ matrix.api }}"
 
+      - name: Run M2-D provider recovery compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ROOT="build/android-compat/api-${{ matrix.api }}/m2-d-provider"
+          SERVER_ROOT="$ROOT/server/N9_429_HTTP_DATE"
+          TRACE="$PWD/$SERVER_ROOT/requests.jsonl"
+          rm -rf "$ROOT"
+          mkdir -p "$SERVER_ROOT"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+
+          "$LAB_BIN" serve \
+            --fixture-root="$PWD/test-fixtures/media" \
+            --trace="$TRACE" \
+            --session-id=m2-d-n9-429-http-date \
+            --profile=N9 \
+            --provider-variant=HTTP_429_RETRY_AFTER_HTTP_DATE \
+            --data-port=18081 \
+            --control-port=18082 \
+            > "$SERVER_ROOT/media-lab.out" \
+            2> "$SERVER_ROOT/media-lab.err" &
+          LAB_PID=$!
+
+          cleanup() {
+            if kill -0 "$LAB_PID" 2>/dev/null; then
+              kill "$LAB_PID" || true
+              for _ in {1..40}; do
+                kill -0 "$LAB_PID" 2>/dev/null || break
+                sleep 0.25
+              done
+            fi
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://127.0.0.1:18082/__lab/config \
+              > "$SERVER_ROOT/scenario.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$SERVER_ROOT/media-lab.out" || true
+              cat "$SERVER_ROOT/media-lab.err" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          jq -e \
+            '.profileId == "N9" and .providerVariant == "HTTP_429_RETRY_AFTER_HTTP_DATE"' \
+            "$SERVER_ROOT/scenario.json"
+
+          adb reverse tcp:18080 tcp:18081
+          adb reverse tcp:18082 tcp:18082
+
+          ./gradlew --dependency-verification=strict \
+            :core:engine:connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.ProviderRecoveryAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2d.originBaseUrl=http://127.0.0.1:18080 \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2d.controlBaseUrl=http://127.0.0.1:18082 \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2d.scenario=N9_429_HTTP_DATE
+
+          curl --fail --silent \
+            http://127.0.0.1:18082/__lab/provider/events \
+            > "$SERVER_ROOT/provider-faults.json"
+
+          cleanup
+          trap - EXIT
+          adb reverse --remove tcp:18082 || true
+
+          test -s "$TRACE"
+
+          bash scripts/ci/verify-m2-d-provider-evidence.sh device \
+            "$ROOT/N9_429_HTTP_DATE" \
+            N9_429_HTTP_DATE \
+            "$TRACE" \
+            "$SERVER_ROOT/provider-faults.json" \
+            "${{ matrix.api }}"
+
       - name: Run N0 compatibility smoke
         shell: bash
         run: |

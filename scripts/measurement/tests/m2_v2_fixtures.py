@@ -604,7 +604,17 @@ def refresh_then_exhausted_run() -> tuple[dict[str, Any], dict[str, Any], list[d
         "DELIVERY_BINDING_STALE",
         "REFRESH_DELIVERY_BINDING",
         "STALE_BINDING_SIGNAL",
-        {"kind": "TERMINATE_BUDGET_EXHAUSTED", "exhaustedDimension": DELIVERY_BINDING_REFRESH},
+        {
+            "kind": "REFRESH_DELIVERY_BINDING",
+            "exhaustedDimension": DELIVERY_BINDING_REFRESH,
+            "deliveryBinding": {
+                "expectedRevision": "binding-2",
+                "result": "NOT_ADMITTED",
+                "currentRevision": None,
+                "refreshCorrelationId": None,
+                "charged": False,
+            },
+        },
     )
     run.terminate("BUDGET_EXHAUSTED", exhausted["failureId"])
     return run.documents()
@@ -787,9 +797,10 @@ def charged_terminal_refresh_run(
 
 
 def not_admitted_run() -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-    """403 stale -> refresh NOT_ADMITTED -> BUDGET_EXHAUSTED, no charge."""
+    """A second stale owner reaches refresh admission after the chain already
+    spent its one refresh charge -> NOT_ADMITTED / BUDGET_EXHAUSTED."""
 
-    return _refresh_result_run("NOT_ADMITTED", "BUDGET_EXHAUSTED")
+    return refresh_then_exhausted_run()
 
 
 def closed_run() -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
