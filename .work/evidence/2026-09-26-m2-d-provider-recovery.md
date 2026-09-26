@@ -39,9 +39,9 @@ deterministic provider recovery that an independent oracle re-derives
 ## Build
 
 - PRs: #82 (contract), #83 (runtime), #84 (evidence and CI)
-- Verified implementation head: `851bf8721cedf1d49fbab5822a10b94346ad9fc5`
+- Verified implementation head: `365d74eb9cf021626c93064bea2f90a558e117e1`
 - Branch: `test/81-m2-d-provider-recovery`
-- `main` base: `d07b10e4c41fb1ce69920a39e7da69960f4d0cd8` (M2-C, #80)
+- `main` base: `63dd3a8b798f77476deb921988e651b247d0160f` (M2-D runtime, #83)
 - Decision record: `.work/adr/0004-separate-immutable-work-from-delivery-binding.md`
 - Policy: `sponge-recovery-v2`, `REMOTE_ATTEMPT = 4`,
   `DELIVERY_BINDING_REFRESH = 1`, backoff
@@ -117,11 +117,11 @@ that could distinguish a stale binding from a generic provider rejection.
 
 | Check | Result |
 | --- | --- |
-| `:core:engine:testDebugUnitTest` (20 test classes) | 248 / 248 PASS; 0 failures, 0 errors, 0 skipped |
+| `:core:engine:testDebugUnitTest` | PASS on final-head Verify; targeted review regressions for zero-charge shared refresh paths and fatal refresh errors are included |
 | M2-C host cases under `sponge-recovery-test-v2` | 7 / 7 cases PASS; M2-ACC-05 in 7, M2-ACC-06 in 5 |
 | M2-D host provider cases | 14 / 14 cases PASS; M2-ACC-05 in 14, M2-ACC-06 in 7, M2-ACC-07 in 5, M2-ACC-08 in 10 |
 | `:tools:media-lab:test` (provider simulator) | 86 tests, 0 failures, 0 errors, 1 skipped (Windows symlink assumption) |
-| Python measurement suite | `Ran 376 tests`; the M2 suites are green: `test_m2_*.py` 252 OK (1 skip), provider oracle 56 OK, recovery oracle 89 OK, contracts 81 OK (1 skip) |
+| Python measurement suite | `Ran 377 tests`; OK, 2 skipped, including the M2-D admission-exhaustion falsification added during final review |
 | Python suite, pre-existing Windows-only errors | 22 `test_m1_evidence_kernel` teardown errors (`PermissionError: [WinError 32]` on the temp SQLite file); they do not occur on Linux CI |
 | Historical schema bytes | unchanged; M2-D adds only new versioned schema files |
 
@@ -184,11 +184,11 @@ refresh -> `SESSION_TERMINATION`; a cancelled provider wait ->
 
 | Check | Run | Result |
 | --- | --- | --- |
-| Verify (incl. `verify-m2-c-recovery-evidence.sh host` and `verify-m2-d-provider-evidence.sh host`) | 36227722985 | PASS |
-| Windows verify | 36227722985 | PASS |
-| Android Smoke API 36 (M2-C `RecoveryOriginAndroidTest` under v2, four canonical provider scenarios + `... device`) | 36227722883 | PASS |
-| Android Compatibility API 23 / 34 (`RetryAfterAndroidTest` in the full suite; `N9_429_HTTP_DATE`: exported evidence on API 34, instrumentation + provider-side proof on API 23) | 36227727151 | PASS |
-| M1 Recovery | 36227729284 | PASS |
+| Verify (incl. `verify-m2-c-recovery-evidence.sh host` and `verify-m2-d-provider-evidence.sh host`) | 36247598901 | PASS |
+| Windows verify | 36247598901 | PASS |
+| Android Smoke API 36 (M2-C `RecoveryOriginAndroidTest` under v2, four canonical provider scenarios + `... device`) | 36247598891 | PASS |
+| Android Compatibility API 23 / 34 (`RetryAfterAndroidTest` in the full suite; `N9_429_HTTP_DATE`: exported evidence on API 34, instrumentation + provider-side proof on API 23) | 36247598826 | PASS |
+| M1 Recovery | 36247598892 | PASS |
 
 ### #50 conclusions used
 
@@ -271,6 +271,24 @@ revision and revisions are never reused or derived from material. N10
   from the API 23 image (`File name too long`); like M2-B, API 23 is
   instrumentation-only for evidence export, with an independent provider-side
   check of the origin trace and provider fault events.
+- **Refresh budget was enforced too early.** Final review found that checking
+  `DELIVERY_BINDING_REFRESH` before entering `DeliveryBindingCoordinator`
+  incorrectly blocked zero-charge `ALREADY_ADVANCED` and `JOINED_REFRESH`
+  paths. The budget is now enforced only at actual refresh admission; a second
+  physical refresh at limit 1 returns zero-charge `NOT_ADMITTED` and
+  terminates `BUDGET_EXHAUSTED`. Targeted runtime and independent-oracle
+  falsification tests cover all three paths.
+- **Fatal refresher errors were normalized.** A fatal `Error` from
+  `DeliveryBindingRefresher` could previously settle shared waiters as an
+  ordinary provider failure. The coordinator now clears single-flight
+  ownership, completes waiters exceptionally and rethrows the fatal error;
+  the regression test accounts for coroutine stack-trace recovery semantics.
+- **Oracle action count after admission hardening.** The first clean stacked
+  rebase exposed a stale positive-test assertion that expected one
+  `REFRESH_DELIVERY_BINDING` action in the exhausted case. There are
+  correctly two logical refresh actions: `REFRESHED` followed by
+  `NOT_ADMITTED`. The assertion was corrected; final-head Python suite is
+  green.
 
 ## Gates
 
