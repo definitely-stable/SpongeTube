@@ -2,6 +2,9 @@ package io.github.definitelystable.spongetube.core.engine
 
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
 import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingSnapshot
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
@@ -16,6 +19,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -706,6 +710,76 @@ class FetchBrokerTest {
         assertEquals(0, committed)
     }
 
+    @Test
+    fun deliveryBindingIsPassedToTheBoundExecutorAndAJoinNeverChangesIt() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val executor = BoundExecutor(release)
+        val broker = FetchBroker(
+            publisher = FakePublisher(),
+            executor = executor,
+            sessionId = "test-session",
+            ownerScope = backgroundScope,
+            ownsScope = false,
+        )
+        val initial = DeliveryBindingSnapshot(
+            DeliveryBindingRevision("binding-1"),
+            TestDeliveryMaterial(),
+        )
+        val other = DeliveryBindingSnapshot(
+            DeliveryBindingRevision("binding-2"),
+            TestDeliveryMaterial(),
+        )
+
+        val owner = broker.acquire(
+            REQUEST,
+            consumer("bound-owner", FetchConsumerKind.RESERVE),
+            deliveryBinding = initial,
+        )
+        executor.entered.await()
+        val joiner = broker.acquire(
+            REQUEST,
+            consumer("bound-joiner", FetchConsumerKind.PLAYBACK),
+            deliveryBinding = other,
+        )
+
+        assertEquals(FetchAcquireDisposition.JOINED_RUNNING, joiner.acquireDisposition)
+        release.complete(Unit)
+
+        assertEquals(FetchOutcomeKind.SUCCESS, owner.await().kind)
+        assertEquals(FetchOutcomeKind.SUCCESS, joiner.await().kind)
+        assertEquals(1, executor.executions)
+        assertEquals(1, executor.admissions)
+        assertEquals(listOf(DeliveryBindingRevision("binding-1")), executor.bindingRevisions)
+    }
+
+    @Test
+    fun ownerWithBindingAndNonBoundExecutorFailsClosedWithZeroAttempts() = runTest {
+        var executed = false
+        var admissions = 0
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, _ ->
+                executed = true
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val outcome = broker.acquire(
+            REQUEST,
+            consumer("unbound-capability", FetchConsumerKind.RESERVE),
+            admission = FetchAttemptAdmission { _, _ -> admissions += 1 },
+            deliveryBinding = DeliveryBindingSnapshot(
+                DeliveryBindingRevision("binding-1"),
+                TestDeliveryMaterial(),
+            ),
+        ).await()
+
+        assertFalse(executed)
+        assertEquals(0, admissions)
+        assertEquals(0, outcome.attempts)
+        assertEquals(FetchOutcomeKind.INTERNAL_FAILURE, outcome.kind)
+        assertEquals(FailureObservation.InternalFailure, outcome.failure)
+    }
+
     private fun TestScope.broker(
         executor: FetchAttemptExecutor,
         events: MutableList<FetchEvent> = mutableListOf(),
@@ -726,8 +800,7 @@ class FetchBrokerTest {
 
     private class FakePublisher(
         private val onCommit: () -> Unit = {},
-    ) : FetchPublisher {
-        override suspend fun publish(
+    ) : FetchPublisher {        override suspend fun publish(
             spec: ExtentSpec,
             producer: suspend (FetchPublishSink) -> Unit,
         ): CommittedExtent {
@@ -744,6 +817,56 @@ class FetchBrokerTest {
             return committed(spec)
         }
     }
+
+    /**
+     * Delivery-bound executor fake: records the binding of every execution
+     * and the number of physical admissions. The unbound and correlated paths
+     * must never be used for a bound owner.
+     */
+    private class BoundExecutor(
+        private val gate: CompletableDeferred<Unit>? = null,
+    ) : DeliveryBoundFetchAttemptExecutor {
+        val bindingRevisions = mutableListOf<DeliveryBindingRevision>()
+        var executions = 0
+        var admissions = 0
+        val entered = CompletableDeferred<Unit>()
+
+        override suspend fun execute(
+            request: FetchRequest,
+            attempt: Int,
+            priority: StateFlow<FetchPriority>,
+            emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        ): FetchAttemptDisposition = error("a bound owner must use the bound path")
+
+        override suspend fun executeCorrelated(
+            request: FetchRequest,
+            attempt: Int,
+            priority: StateFlow<FetchPriority>,
+            onTransportCorrelation: suspend (String) -> Unit,
+            emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        ): FetchAttemptDisposition = error("a bound owner must use the bound path")
+
+        override suspend fun executeWithDeliveryBinding(
+            request: FetchRequest,
+            attempt: Int,
+            priority: StateFlow<FetchPriority>,
+            deliveryBinding: DeliveryBindingSnapshot,
+            onPhysicalAttemptStart: () -> Unit,
+            onTransportCorrelation: suspend (String) -> Unit,
+            emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        ): FetchAttemptDisposition {
+            executions += 1
+            bindingRevisions += deliveryBinding.revision
+            admissions += 1
+            onPhysicalAttemptStart()
+            entered.complete(Unit)
+            gate?.await()
+            emitChunk(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+            return FetchAttemptDisposition.Success()
+        }
+    }
+
+    private class TestDeliveryMaterial : DeliveryMaterial
 
     private companion object {
         fun committed(spec: ExtentSpec): CommittedExtent =

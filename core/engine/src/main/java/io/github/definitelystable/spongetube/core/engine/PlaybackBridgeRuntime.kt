@@ -23,8 +23,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Provisional bridge runtime parameters; recorded in evidence.
  *
- * Recovery is not configurable here: since M2-C the internal
- * RecoveryCoordinator applies the versioned `sponge-recovery-v1` policy.
+ * Recovery is not configurable here: since M2-D the internal
+ * RecoveryCoordinator applies the versioned `sponge-recovery-v2` policy.
  */
 @SpongeBridgeApi
 class PlaybackBridgeConfig(

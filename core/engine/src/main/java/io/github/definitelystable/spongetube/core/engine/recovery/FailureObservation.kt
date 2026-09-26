@@ -1,5 +1,9 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterKind
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterObservation
+
 /**
  * Where a raw failure observation originated (M2.md sections 6 and 9).
  *
@@ -66,6 +70,17 @@ internal enum class CancellationKind {
 }
 
 /**
+ * Provider-neutral explicit signal from the provider adapter (M2.md 20, M2-D).
+ * [BINDING_STALE_CONFIRMED] is present only when the adapter has explicit
+ * evidence that the delivery binding is stale; it refines an otherwise
+ * non-retryable rejection and never replaces the raw status.
+ */
+internal enum class ProviderSignal {
+    NONE,
+    BINDING_STALE_CONFIRMED,
+}
+
+/**
  * Raw observation of one failed physical owner (M2-C). It records only what
  * was observed: no classification, no retryability, no exception text, URL or
  * header value. [FailureClassifier] interprets it; [RecoveryPolicy] decides.
@@ -80,9 +95,19 @@ internal sealed interface FailureObservation {
             get() = ObservationPlane.TRANSPORT
     }
 
-    /** An HTTP response was received with a non-success status. */
+    /**
+     * An HTTP response was received with a non-success status.
+     *
+     * The raw fact ([statusCode]) is always retained; [providerSignal] never
+     * replaces it. [retryAfter] is the normalized header observation (never
+     * the raw header value) and [deliveryBindingRevision] is the mutable
+     * delivery material selected for the failed owner, when one was selected.
+     */
     data class HttpResponse(
         val statusCode: Int,
+        val retryAfter: RetryAfterObservation = RetryAfterObservation.ABSENT,
+        val providerSignal: ProviderSignal = ProviderSignal.NONE,
+        val deliveryBindingRevision: DeliveryBindingRevision? = null,
     ) : FailureObservation {
         init {
             require(statusCode in 100..599) { "invalid HTTP status $statusCode" }
@@ -177,3 +202,40 @@ internal fun FailureObservation.toArtifactMap(): Map<String, Any?> {
         "httpStatus" to httpStatus,
     )
 }
+
+/**
+ * `failure-decision-events-v2` projection: the [toArtifactMap] row plus the
+ * normalized `Retry-After` observation, the provider signal and the selected
+ * delivery binding revision. The three extra keys are null for a non-HTTP
+ * observation; the raw status remains the v1 `httpStatus` field.
+ */
+internal fun FailureObservation.toArtifactMapV2(): Map<String, Any?> {
+    val v1 = toArtifactMap()
+    val http = this as? FailureObservation.HttpResponse
+    return linkedMapOf(
+        "plane" to v1.getValue("plane"),
+        "type" to v1.getValue("type"),
+        "kind" to v1.getValue("kind"),
+        "httpStatus" to v1.getValue("httpStatus"),
+        "retryAfter" to http?.retryAfter?.toRetryAfterArtifactMap(),
+        "providerSignal" to http?.providerSignal?.name,
+        "deliveryBindingRevision" to http?.deliveryBindingRevision?.value,
+    )
+}
+
+/**
+ * Normalized `Retry-After` evidence form; never the raw header value.
+ * `delaySeconds` is a duration without a clock domain, `notBeforeUtcEpochMs`
+ * is a PROVIDER_WALL_CLOCK instant only for [RetryAfterKind.HTTP_DATE].
+ */
+private fun RetryAfterObservation.toRetryAfterArtifactMap(): Map<String, Any?> =
+    linkedMapOf(
+        "rawKind" to rawKind.name,
+        "delaySeconds" to delaySeconds,
+        "notBeforeUtcEpochMs" to notBeforeUtcEpochMs,
+        "clockDomain" to if (rawKind == RetryAfterKind.HTTP_DATE) {
+            "PROVIDER_WALL_CLOCK"
+        } else {
+            null
+        },
+    )

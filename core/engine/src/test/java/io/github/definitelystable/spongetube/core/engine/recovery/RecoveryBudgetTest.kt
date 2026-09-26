@@ -33,7 +33,7 @@ class RecoveryBudgetTest {
     @Test
     fun undeclaredDimensionFailsClosed() {
         val ledger = RecoveryBudgetLedger(policy)
-        val refresh = RecoveryBudgetDimension("DELIVERY_BINDING_REFRESH")
+        val refresh = RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH
 
         assertThrows<UndeclaredBudgetDimensionException> { ledger.charge(refresh) }
         assertThrows<UndeclaredBudgetDimensionException> { ledger.canCharge(refresh) }
@@ -45,7 +45,7 @@ class RecoveryBudgetTest {
 
     @Test
     fun openDimensionsAreDeclaredByThePolicyAndNeverDisappear() {
-        val refresh = RecoveryBudgetDimension("DELIVERY_BINDING_REFRESH")
+        val refresh = RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH
         val ledger = RecoveryBudgetLedger(
             RecoveryBudgetPolicy(
                 policyId = "budget-test-v2",
@@ -57,6 +57,35 @@ class RecoveryBudgetTest {
 
         assertEquals(
             mapOf(RecoveryBudgetDimension.REMOTE_ATTEMPT to 0, refresh to 1),
+            ledger.snapshot(),
+        )
+    }
+
+    @Test
+    fun refreshAndRemoteAttemptDimensionsNeverChangeEachOther() {
+        val refresh = RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH
+        val remote = RecoveryBudgetDimension.REMOTE_ATTEMPT
+        val ledger = RecoveryBudgetLedger(
+            RecoveryBudgetPolicy(
+                policyId = "budget-test-v3",
+                limits = mapOf(remote to 4, refresh to 1),
+            ),
+        )
+
+        assertEquals(1, ledger.remaining(refresh))
+        ledger.charge(refresh)
+
+        assertEquals(1, ledger.spent(refresh))
+        assertEquals(0, ledger.spent(remote))
+        assertEquals(4, ledger.remaining(remote))
+        assertFalse(ledger.canCharge(refresh))
+
+        ledger.charge(remote)
+
+        assertEquals(1, ledger.spent(refresh))
+        assertEquals(1, ledger.spent(remote))
+        assertEquals(
+            mapOf(remote to 1, refresh to 1),
             ledger.snapshot(),
         )
     }
@@ -94,12 +123,15 @@ class RecoveryBudgetTest {
     }
 
     @Test
-    fun productionPolicyIsSpongeRecoveryV1WithFourRemoteAttempts() {
+    fun productionPolicyIsSpongeRecoveryV2WithRefreshDimension() {
         val policy = RecoveryPolicy.DEFAULT
 
-        assertEquals("sponge-recovery-v1", policy.policyId)
+        assertEquals("sponge-recovery-v2", policy.policyId)
         assertEquals(
-            mapOf(RecoveryBudgetDimension.REMOTE_ATTEMPT to 4),
+            mapOf(
+                RecoveryBudgetDimension.REMOTE_ATTEMPT to 4,
+                RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH to 1,
+            ),
             policy.budget.limits,
         )
         assertEquals(RecoveryBackoff(baseMs = 500, capMs = 5_000), policy.backoff)

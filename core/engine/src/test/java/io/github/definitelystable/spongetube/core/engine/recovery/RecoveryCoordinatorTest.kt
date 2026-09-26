@@ -9,6 +9,8 @@ import io.github.definitelystable.spongetube.core.engine.FetchIdentityConflictEx
 import io.github.definitelystable.spongetube.core.engine.FetchPriority
 import io.github.definitelystable.spongetube.core.engine.HttpRangeFetchExecutor
 import io.github.definitelystable.spongetube.core.engine.HttpRangeTarget
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterKind
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterObservation
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -319,13 +321,31 @@ class RecoveryCoordinatorTest {
     }
 
     @Test
-    fun rateLimitDecidesProviderWaitButFailsClosedUntilM2D() {
-        assertSingleAttemptTerminal(
-            FailureObservation.HttpResponse(429),
-            FailureClassification.PROVIDER_RATE_LIMITED,
-            RecoveryDecisionKind.WAIT_UNTIL_PROVIDER,
-            RecoveryActionKind.FAIL_CLOSED_ACTION_UNAVAILABLE,
+    fun rateLimitWithRetryAfterWaitsForTheProviderThenRetries() {
+        val h = harness()
+        val work = RecoveryHarness.work("retry-after")
+        h.origin.script(
+            work.fetchKey,
+            ScriptedOrigin.failWith(
+                FailureObservation.HttpResponse(
+                    429,
+                    retryAfter = RetryAfterObservation(
+                        rawKind = RetryAfterKind.DELAY_SECONDS,
+                        delaySeconds = 2,
+                    ),
+                ),
+            ),
         )
+
+        val outcome = h.blocking { h.acquire(work, "playback").await() }
+
+        assertTrue(outcome.isSuccess)
+        assertEquals(2, h.origin.executions(work.fetchKey))
+        assertEquals(listOf(2_000L), (h.sleeper as RecordingSleeper).delays)
+        val failure = h.failures.single()
+        assertEquals(RecoveryDecisionKind.WAIT_UNTIL_PROVIDER, failure.decision.kind)
+        assertEquals(RecoveryActionKind.WAIT_PROVIDER, failure.action.kind)
+        assertEquals(2_000L, checkNotNull(failure.action.providerWait).waitMs)
     }
 
     @Test
@@ -339,7 +359,7 @@ class RecoveryCoordinatorTest {
     }
 
     @Test
-    fun staleDescriptorDecidesRefreshButFailsClosedUntilM2D() {
+    fun staleDescriptorWithoutBindingCoordinatorFailsClosed() {
         assertSingleAttemptTerminal(
             FailureObservation.DeliveryDescriptorStale,
             FailureClassification.DELIVERY_BINDING_STALE,

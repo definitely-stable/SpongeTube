@@ -1,5 +1,8 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterKind
+
 internal enum class RecoveryBudgetEventKind {
     CHAIN_STARTED,
     CONSUMER_JOINED,
@@ -19,6 +22,64 @@ internal data class RecoveryBackoffRecord(
     val retryOrdinal: Int,
     val windowMs: Long,
     val delayMs: Long,
+)
+
+/**
+ * One executed server-directed provider wait. [waitMs] is a duration;
+ * [notBeforeUtcEpochMs] and [wallClockNowUtcEpochMs] are PROVIDER_WALL_CLOCK
+ * instants present only for [RetryAfterKind.HTTP_DATE] and are never compared
+ * with ANDROID_MONOTONIC.
+ */
+internal data class ProviderWaitRecord(
+    val rawKind: RetryAfterKind,
+    val waitMs: Long,
+    val notBeforeUtcEpochMs: Long?,
+    val wallClockNowUtcEpochMs: Long?,
+) {
+    init {
+        require(rawKind == RetryAfterKind.DELAY_SECONDS || rawKind == RetryAfterKind.HTTP_DATE) {
+            "a provider wait requires a usable Retry-After kind: $rawKind"
+        }
+        require(waitMs >= 0) { "waitMs must be >= 0" }
+        if (rawKind == RetryAfterKind.HTTP_DATE) {
+            require(notBeforeUtcEpochMs != null && wallClockNowUtcEpochMs != null) {
+                "HTTP_DATE carries both PROVIDER_WALL_CLOCK instants"
+            }
+        } else {
+            require(notBeforeUtcEpochMs == null && wallClockNowUtcEpochMs == null) {
+                "DELAY_SECONDS carries no PROVIDER_WALL_CLOCK instant"
+            }
+        }
+    }
+}
+
+/** Result of one executed delivery-binding refresh (M2-D). */
+internal enum class DeliveryBindingActionResult {
+    REFRESHED,
+    ALREADY_ADVANCED,
+    JOINED_REFRESH,
+    INCOMPATIBLE,
+    FAILED,
+    NOT_ADMITTED,
+    CLOSED,
+
+    /** The chain lost its demand or the session closed while awaiting. */
+    ABANDONED,
+}
+
+/**
+ * One executed delivery-binding refresh. [charged] is true iff this chain paid
+ * a DELIVERY_BINDING_REFRESH charge for an ACTUAL operation; joined,
+ * already-advanced, not-admitted and closed refreshes charge nothing.
+ */
+internal data class DeliveryBindingActionRecord(
+    val expectedRevision: DeliveryBindingRevision,
+    val result: DeliveryBindingActionResult,
+    /** REFRESHED / ALREADY_ADVANCED / JOINED_REFRESH only. */
+    val currentRevision: DeliveryBindingRevision?,
+    /** REFRESHED / JOINED_REFRESH / INCOMPATIBLE / FAILED only. */
+    val refreshCorrelationId: String?,
+    val charged: Boolean,
 )
 
 /**
@@ -103,12 +164,19 @@ internal data class RecoveryActionRecord(
     val delayMs: Long? = null,
     val retryOrdinal: Int? = null,
     val reconciliation: LocalReconciliation? = null,
+    /** Set iff this record terminated the chain as BUDGET_EXHAUSTED. */
+    val exhaustedDimension: RecoveryBudgetDimension? = null,
+    /** Executed [RecoveryActionKind.WAIT_PROVIDER] detail. */
+    val providerWait: ProviderWaitRecord? = null,
+    /** Executed [RecoveryActionKind.REFRESH_DELIVERY_BINDING] detail. */
+    val deliveryBinding: DeliveryBindingActionRecord? = null,
 )
 
 /**
- * One `failure-decision-events-v1` row: observation, classification,
+ * One `failure-decision-events-v2` row: observation, classification,
  * decision and executed action as four separate layers joined by
  * [failureId]. Never contains exception text, stack traces, URLs or headers.
+ * The v1 artifact stays immutable for historical evidence.
  */
 internal data class FailureDecisionEvent(
     val sequence: Long,
@@ -136,7 +204,7 @@ internal data class FailureDecisionEvent(
         "fetchId" to fetchId,
         "attemptCorrelationId" to attemptCorrelationId,
         "routeEpoch" to routeEpoch,
-        "observation" to observation.toArtifactMap(),
+        "observation" to observation.toArtifactMapV2(),
         "classification" to classification.name,
         "decision" to linkedMapOf(
             "kind" to decision.kind.name,
@@ -146,12 +214,17 @@ internal data class FailureDecisionEvent(
             "demandPresent" to context.demandPresent,
             "sessionClosing" to context.sessionClosing,
             "remoteAttemptsRemaining" to context.remoteAttemptsRemaining,
+            "deliveryBindingRefreshesRemaining" to
+                context.deliveryBindingRefreshesRemaining,
         ),
         "action" to linkedMapOf(
             "kind" to action.kind.name,
             "delayMs" to action.delayMs,
             "retryOrdinal" to action.retryOrdinal,
             "reconciliation" to action.reconciliation?.name,
+            "exhaustedDimension" to action.exhaustedDimension?.value,
+            "providerWait" to action.providerWait?.toArtifactMap(),
+            "deliveryBinding" to action.deliveryBinding?.toArtifactMap(),
         ),
     )
 }
@@ -164,7 +237,7 @@ internal interface RecoveryEvidenceListener {
 
 /**
  * Bounded producer of `recovery-budget-events-v1` and
- * `failure-decision-events-v1`. Exceeding [capacity] marks the artifacts
+ * `failure-decision-events-v2`. Exceeding [capacity] marks the artifacts
  * unusable instead of buffering without bound.
  */
 internal class RecoveryEvidenceRecorder(
@@ -212,7 +285,7 @@ internal class RecoveryEvidenceRecorder(
     fun budgetArtifact(policyId: String): Map<String, Any?> = synchronized(lock) {
         check(!overflowed) { "recovery evidence exceeded capacity $capacity" }
         linkedMapOf(
-            "schemaVersion" to SCHEMA_VERSION,
+            "schemaVersion" to BUDGET_SCHEMA_VERSION,
             "runId" to runId,
             "sessionId" to sessionId,
             "policyId" to policyId,
@@ -224,7 +297,7 @@ internal class RecoveryEvidenceRecorder(
     fun failureArtifact(policyId: String): Map<String, Any?> = synchronized(lock) {
         check(!overflowed) { "recovery evidence exceeded capacity $capacity" }
         linkedMapOf(
-            "schemaVersion" to SCHEMA_VERSION,
+            "schemaVersion" to FAILURE_SCHEMA_VERSION,
             "runId" to runId,
             "sessionId" to sessionId,
             "policyId" to policyId,
@@ -234,11 +307,36 @@ internal class RecoveryEvidenceRecorder(
     }
 
     companion object {
-        const val SCHEMA_VERSION = 1
+        /** `failure-decision-events-v2`; v1 stays immutable. */
+        const val FAILURE_SCHEMA_VERSION = 2
+
+        /** `recovery-budget-events-v1` is unchanged by M2-D. */
+        const val BUDGET_SCHEMA_VERSION = 1
+
         const val CLOCK_DOMAIN = "ANDROID_MONOTONIC"
         const val DEFAULT_CAPACITY = 8_192
     }
 }
+
+private fun ProviderWaitRecord.toArtifactMap(): Map<String, Any?> = linkedMapOf(
+    "rawKind" to rawKind.name,
+    "waitMs" to waitMs,
+    "notBeforeUtcEpochMs" to notBeforeUtcEpochMs,
+    "wallClockNowUtcEpochMs" to wallClockNowUtcEpochMs,
+    "wallClockDomain" to if (rawKind == RetryAfterKind.HTTP_DATE) {
+        "PROVIDER_WALL_CLOCK"
+    } else {
+        null
+    },
+)
+
+private fun DeliveryBindingActionRecord.toArtifactMap(): Map<String, Any?> = linkedMapOf(
+    "expectedRevision" to expectedRevision.value,
+    "result" to result.name,
+    "currentRevision" to currentRevision?.value,
+    "refreshCorrelationId" to refreshCorrelationId,
+    "charged" to charged,
+)
 
 private fun Map<RecoveryBudgetDimension, Int>.dimensionMap(): Map<String, Int> =
     entries.associateTo(linkedMapOf()) { (dimension, value) -> dimension.value to value }

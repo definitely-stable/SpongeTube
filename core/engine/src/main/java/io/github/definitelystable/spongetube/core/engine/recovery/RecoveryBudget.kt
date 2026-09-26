@@ -1,8 +1,9 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
 /**
- * Open budget dimension (M2-C). Not a closed enum: M2-D may add
- * `DELIVERY_BINDING_REFRESH` or `PROVIDER_RESOLVE` without changing the ledger.
+ * Open budget dimension (M2-C). Not a closed enum: M2-D added
+ * [DELIVERY_BINDING_REFRESH] and `PROVIDER_RESOLVE` may follow without
+ * changing the ledger.
  */
 @JvmInline
 internal value class RecoveryBudgetDimension(val value: String) {
@@ -19,6 +20,13 @@ internal value class RecoveryBudgetDimension(val value: String) {
 
         /** One physical remote request through a FetchBroker owner. */
         val REMOTE_ATTEMPT = RecoveryBudgetDimension("REMOTE_ATTEMPT")
+
+        /**
+         * One ACTUAL provider refresh operation started by this chain. A
+         * joined, already-advanced, not-admitted or closed refresh charges
+         * nothing.
+         */
+        val DELIVERY_BINDING_REFRESH = RecoveryBudgetDimension("DELIVERY_BINDING_REFRESH")
     }
 }
 

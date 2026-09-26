@@ -838,12 +838,12 @@ class M1RecoveryProvider : ContentProvider() {
         const val PROCESS_DEATH_SEED_US = 30_000_000L
         const val SHORT_SEED_US = 30_000_000L
         const val EXHAUST_SEED_US = 10_000_000L
-        // M2-C (ADR-0003): one FetchBroker owner is one physical attempt and
-        // Media3 never retries; the RecoveryChain (`sponge-recovery-v1`,
+        // M2-D (ADR-0003): one FetchBroker owner is one physical attempt and
+        // Media3 never retries; the RecoveryChain (`sponge-recovery-v2`,
         // REMOTE_ATTEMPT = 4) is the only bound on owners per work item.
-        // Recorded so the M1 verifier checks the M2-C bound, not M1's.
+        // Recorded so the M1 verifier checks the M2 bound, not M1's.
         const val MAX_ATTEMPTS_PER_OWNER = 1
-        const val RECOVERY_POLICY_ID = "sponge-recovery-v1"
+        const val RECOVERY_POLICY_ID = "sponge-recovery-v2"
         const val RECOVERY_REMOTE_ATTEMPT_LIMIT = 4
         const val MEDIA3_MAX_RETRIES = 0
         const val PROGRESS_SAMPLE_US = 250_000L

@@ -41,7 +41,7 @@ import org.junit.runner.RunWith
  * M2-C Android Smoke proof (API 36, Media Lab N4R, no VPN/network switch).
  *
  * Controlled transient failure sequence through the production
- * RecoveryCoordinator (`sponge-recovery-v1`), FetchBroker, real
+ * RecoveryCoordinator (`sponge-recovery-v2`), FetchBroker, real
  * HttpRangeFetchExecutor and ExtentStore:
  *
  * ```text

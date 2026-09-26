@@ -1,9 +1,11 @@
-"""M2-C recovery oracle: positive runtime evidence and falsification suite.
+"""M2-C/M2-D recovery oracle: positive runtime evidence and falsification suite.
 
 Examples under `.work/schemas/examples/m2/` were produced by the Kotlin
 RecoveryEvidenceHostTest (production RecoveryCoordinator). Each negative test
 mutates one aspect of real evidence and requires the oracle to fail closed
-(M2-C falsification list, items 1-24).
+(M2-C falsification list, items 1-24). The v2 suites use synthetic
+`failure-decision-events-v2` runs built by `m2_v2_fixtures` (M2-D
+falsification list).
 """
 
 import copy
@@ -14,13 +16,19 @@ import tempfile
 import unittest
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parents[1]
+TESTS_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(TESTS_DIR))
 
+import m2_v2_fixtures as v2  # noqa: E402
 from m2_recovery_oracle import (  # noqa: E402
+    DELIVERY_BINDING_REFRESH,
+    REMOTE_ATTEMPT,
     RecoveryOracleError,
     classify,
     decide,
+    expected_action_v2,
     main,
     read_jsonl,
     verify_recovery,
@@ -498,6 +506,475 @@ class RecoveryOracleFalsificationTest(unittest.TestCase):
         failures, budget, fetch, _ = run()
         budget["events"] = [e for e in budget["events"] if e["kind"] != "CHAIN_TERMINATED"]
         self.fails("CHAIN_TERMINATED", failures, budget, fetch)
+
+
+class RecoveryOracleV2VocabularyTest(unittest.TestCase):
+    """v2 schema, committed example and oracle tables agree."""
+
+    def test_v2_schema_is_inside_the_fail_closed_subset(self):
+        validate_schema_definition(load(SCHEMAS / "failure-decision-events-v2.schema.json"))
+
+    def test_committed_v2_example_validates(self):
+        validate_instance(
+            load(SCHEMAS / "failure-decision-events-v2.schema.json"),
+            load(EXAMPLES / "failure-decision-v2.example.json"),
+        )
+
+    def test_committed_v2_example_rows_match_the_oracle_tables(self):
+        document = load(EXAMPLES / "failure-decision-v2.example.json")
+        limits = {REMOTE_ATTEMPT: 4, DELIVERY_BINDING_REFRESH: 1}
+        for row in document["failures"]:
+            with self.subTest(failure=row["failureId"]):
+                observation = row["observation"]
+                self.assertEqual(row["classification"], classify(observation))
+                self.assertEqual(
+                    (row["decision"]["kind"], row["decision"]["reason"]),
+                    decide(row["classification"], observation, row["context"], "v2"),
+                )
+                self.assertEqual(
+                    (row["action"]["kind"], row["action"]["exhaustedDimension"]),
+                    expected_action_v2(
+                        row["decision"]["kind"],
+                        observation,
+                        row["context"],
+                        limits,
+                        row["action"]["reconciliation"],
+                    ),
+                )
+
+    def test_v1_decision_table_is_unchanged(self):
+        observation = {"type": "HTTP_RESPONSE", "kind": "HTTP_STATUS", "httpStatus": 429}
+        context = {
+            "demandPresent": True,
+            "sessionClosing": False,
+            "remoteAttemptsRemaining": 3,
+        }
+        self.assertEqual(
+            ("WAIT_UNTIL_PROVIDER", "PROVIDER_THROTTLED"),
+            decide("PROVIDER_RATE_LIMITED", observation, context),
+        )
+        self.assertEqual(
+            ("WAIT_UNTIL_PROVIDER", "PROVIDER_THROTTLED"),
+            decide("PROVIDER_RATE_LIMITED", observation, context, "v1"),
+        )
+
+
+class RecoveryOracleV2PositiveTest(unittest.TestCase):
+    def test_upconverted_v1_example_passes_as_v2(self):
+        failures, budget, fetch = v2.v1_example_as_v2()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual(2, summary["failureCount"])
+        self.assertEqual(3, summary["physicalAttemptCount"])
+        self.assertEqual(3, summary["chargedAttemptCount"])
+        self.assertEqual({"SUCCESS": 1}, summary["terminalCounts"])
+        self.assertEqual("PASS", summary["gates"]["M2-ACC-05"]["status"])
+        self.assertIn(
+            "M2-D proves provider-neutral delivery-binding replacement",
+            " ".join(summary["limitations"]),
+        )
+        self.assertNotIn(
+            "does not prove provider delivery-binding refresh",
+            " ".join(summary["limitations"]),
+        )
+
+    def test_wait_provider_delay_seconds_then_success(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"SUCCESS": 1}, summary["terminalCounts"])
+        self.assertEqual(1, summary["actionCounts"]["WAIT_PROVIDER"])
+        self.assertEqual(2, summary["physicalAttemptCount"])
+        row = failures["failures"][0]
+        self.assertEqual("DELAY_SECONDS", row["action"]["providerWait"]["rawKind"])
+        self.assertEqual(2000, row["action"]["providerWait"]["waitMs"])
+        self.assertIsNone(row["action"]["providerWait"]["wallClockNowUtcEpochMs"])
+
+    def test_wait_provider_http_date_uses_provider_wall_clock(self):
+        not_before = v2.PROVIDER_WALL_CLOCK_NOW + 2_000
+        failures, budget, fetch = v2.wait_run(
+            v2.retry_after_date(not_before),
+            wall_clock_now=v2.PROVIDER_WALL_CLOCK_NOW,
+        )
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        wait = failures["failures"][0]["action"]["providerWait"]
+        self.assertEqual("HTTP_DATE", wait["rawKind"])
+        self.assertEqual(2000, wait["waitMs"])
+        self.assertEqual(not_before, wait["notBeforeUtcEpochMs"])
+        self.assertEqual(v2.PROVIDER_WALL_CLOCK_NOW, wait["wallClockNowUtcEpochMs"])
+        self.assertEqual("PROVIDER_WALL_CLOCK", wait["wallClockDomain"])
+
+    def test_refresh_delivery_binding_then_success(self):
+        failures, budget, fetch = v2.refresh_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"SUCCESS": 1}, summary["terminalCounts"])
+        self.assertEqual(1, summary["actionCounts"]["REFRESH_DELIVERY_BINDING"])
+        self.assertEqual(2, summary["physicalAttemptCount"])
+        binding = failures["failures"][0]["action"]["deliveryBinding"]
+        self.assertEqual("REFRESHED", binding["result"])
+        self.assertTrue(binding["charged"])
+        self.assertEqual(2, summary["chargedAttemptCount"])
+
+    def test_refresh_budget_exhaustion_is_dimension_specific(self):
+        failures, budget, fetch = v2.refresh_then_exhausted_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"BUDGET_EXHAUSTED": 1}, summary["terminalCounts"])
+        self.assertEqual(1, summary["actionCounts"]["TERMINATE_BUDGET_EXHAUSTED"])
+        self.assertEqual(
+            DELIVERY_BINDING_REFRESH,
+            failures["failures"][1]["action"]["exhaustedDimension"],
+        )
+        self.assertEqual(2, summary["chargedAttemptCount"])
+
+    def test_remote_attempt_exhaustion_terminates_budget_exhausted(self):
+        failures, budget, fetch = v2.remote_exhausted_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"BUDGET_EXHAUSTED": 1}, summary["terminalCounts"])
+        self.assertEqual(4, summary["chargedAttemptCount"])
+        self.assertEqual(
+            REMOTE_ATTEMPT, failures["failures"][3]["action"]["exhaustedDimension"]
+        )
+
+    def test_abandoned_refresh_is_not_terminal(self):
+        failures, budget, fetch = v2.abandoned_refresh_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"NO_REMAINING_DEMAND": 1}, summary["terminalCounts"])
+        self.assertEqual(
+            "ABANDONED", failures["failures"][0]["action"]["deliveryBinding"]["result"]
+        )
+
+    def test_stale_without_binding_revision_fails_closed(self):
+        failures, budget, fetch = v2.fail_closed_stale_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"TERMINAL_FAILURE": 1}, summary["terminalCounts"])
+        self.assertEqual(1, summary["actionCounts"]["FAIL_CLOSED_ACTION_UNAVAILABLE"])
+        self.assertIsNone(failures["failures"][0]["action"]["deliveryBinding"])
+
+    def test_refresh_not_admitted_terminates_budget_exhausted(self):
+        failures, budget, fetch = v2.not_admitted_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"BUDGET_EXHAUSTED": 1}, summary["terminalCounts"])
+        self.assertEqual(1, summary["chargedAttemptCount"])
+        self.assertEqual([], v2.events(budget, "CHARGE")[1:])
+
+    def test_charged_incompatible_or_failed_refresh_fails_closed(self):
+        for result in ("INCOMPATIBLE", "FAILED"):
+            with self.subTest(result=result):
+                failures, budget, fetch = v2.charged_terminal_refresh_run(result)
+
+                summary = verify_recovery(failures, budget, fetch)
+
+                self.assertEqual("PASS", summary["status"])
+                self.assertEqual({"TERMINAL_FAILURE": 1}, summary["terminalCounts"])
+                self.assertEqual(1, summary["chargedAttemptCount"])
+                self.assertEqual(
+                    ["DELIVERY_BINDING_REFRESH"],
+                    [e["charge"]["dimension"] for e in v2.events(budget, "CHARGE")[1:]],
+                )
+
+    def test_charged_incompatible_refresh_followed_by_a_request(self):
+        failures, budget, fetch = v2.charged_terminal_refresh_run("INCOMPATIBLE")
+        refresh = v2.refresh_charge_event(budget)
+        extra = dict(refresh)
+        extra["failureId"] = None
+        extra["charge"] = dict(refresh["charge"], dimension="REMOTE_ATTEMPT")
+        budget["events"].insert(budget["events"].index(refresh) + 1, extra)
+        v2.resequence(budget)
+        with self.assertRaises(RecoveryOracleError):
+            verify_recovery(failures, budget, fetch)
+
+    def test_refresh_closed_terminates_session(self):
+        failures, budget, fetch = v2.closed_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"SESSION_TERMINATION": 1}, summary["terminalCounts"])
+        self.assertEqual(0, len(v2.events(budget, "CHARGE")[1:]))
+
+    def test_bare_403_fails_terminal(self):
+        failures, budget, fetch = v2.bare_403_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"TERMINAL_FAILURE": 1}, summary["terminalCounts"])
+        self.assertEqual("PROVIDER_REJECTED", failures["failures"][0]["classification"])
+
+    def test_rate_limited_without_retry_after_fails_closed(self):
+        failures, budget, fetch = v2.rate_limited_absent_run()
+
+        summary = verify_recovery(failures, budget, fetch)
+
+        self.assertEqual("PASS", summary["status"])
+        self.assertEqual({"TERMINAL_FAILURE": 1}, summary["terminalCounts"])
+        self.assertEqual("FAIL_TERMINAL", failures["failures"][0]["decision"]["kind"])
+        self.assertEqual("RETRY_AFTER_ABSENT", failures["failures"][0]["decision"]["reason"])
+
+
+class RecoveryOracleV2FalsificationTest(unittest.TestCase):
+    def fails(self, pattern, failures, budget, fetch, **kwargs):
+        with self.assertRaisesRegex(RecoveryOracleError, pattern):
+            verify_recovery(failures, budget, fetch, **kwargs)
+
+    # Policy table identity.
+    def test_v2_document_requires_a_table_v2_policy(self):
+        failures, budget, fetch = v2.v1_example_as_v2()
+        for document in (failures, budget):
+            document["policyId"] = "sponge-recovery-test-v1"
+        for event in budget["events"]:
+            event["policyId"] = "sponge-recovery-test-v1"
+            event["limits"] = {REMOTE_ATTEMPT: 4}
+            event["spent"] = {REMOTE_ATTEMPT: event["spent"][REMOTE_ATTEMPT]}
+        self.fails("requires a v2 policy", failures, budget, fetch)
+
+    # Classification.
+    def test_bare_403_classified_stale(self):
+        failures, budget, fetch = v2.bare_403_run()
+        failures["failures"][0]["classification"] = "DELIVERY_BINDING_STALE"
+        self.fails("classification", failures, budget, fetch)
+
+    def test_403_with_none_signal_deciding_refresh(self):
+        failures, budget, fetch = v2.bare_403_run()
+        failures["failures"][0]["decision"] = {
+            "kind": "REFRESH_DELIVERY_BINDING",
+            "reason": "STALE_BINDING_SIGNAL",
+        }
+        self.fails("decision", failures, budget, fetch)
+
+    def test_429_classified_as_transport(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["classification"] = "TRANSIENT_TRANSPORT"
+        self.fails("classification", failures, budget, fetch)
+
+    # Retry-After.
+    def test_malformed_retry_after_deciding_wait(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["observation"]["retryAfter"] = v2.retry_after_malformed()
+        self.fails("decision", failures, budget, fetch)
+
+    def test_malformed_retry_after_executed_as_retry(self):
+        for action_kind in ("SCHEDULE_BACKOFF", "START_NEXT_OWNER"):
+            with self.subTest(action=action_kind):
+                failures, budget, fetch = v2.rate_limited_absent_run()
+                row = failures["failures"][0]
+                row["observation"]["retryAfter"] = v2.retry_after_malformed()
+                row["decision"] = {
+                    "kind": "FAIL_TERMINAL",
+                    "reason": "RETRY_AFTER_MALFORMED",
+                }
+                row["action"]["kind"] = action_kind
+                if action_kind == "SCHEDULE_BACKOFF":
+                    row["action"]["delayMs"] = 100
+                    row["action"]["retryOrdinal"] = 1
+                self.fails("action", failures, budget, fetch)
+
+    # Provider wait.
+    def test_provider_wait_charge_without_permit(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        row = failures["failures"][0]
+        wait = next(
+            event
+            for event in v2.events(budget, "ATTEMPT_PERMIT_WAIT")
+            if event["elapsedRealtimeNs"] > row["elapsedRealtimeNs"]
+        )
+        inserted = copy.deepcopy(v2.remote_charges(budget)[1])
+        inserted.update(
+            elapsedRealtimeNs=row["elapsedRealtimeNs"] + 1_000,
+            spent={REMOTE_ATTEMPT: 2, DELIVERY_BINDING_REFRESH: 0},
+        )
+        inserted["charge"] = {
+            "dimension": REMOTE_ATTEMPT,
+            "amount": 1,
+            "spentBefore": 1,
+            "spentAfter": 2,
+            "limit": 4,
+        }
+        budget["events"].insert(budget["events"].index(wait), inserted)
+        v2.resequence(budget)
+        self.fails("attempt permit", failures, budget, fetch)
+
+    def test_provider_wait_spent_change_without_charge(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        row = failures["failures"][0]
+        wait = next(
+            event
+            for event in v2.events(budget, "ATTEMPT_PERMIT_WAIT")
+            if event["elapsedRealtimeNs"] > row["elapsedRealtimeNs"]
+        )
+        wait["spent"] = {REMOTE_ATTEMPT: 2, DELIVERY_BINDING_REFRESH: 0}
+        self.fails("changed the ledger", failures, budget, fetch)
+
+    def test_next_charge_before_provider_wait_elapsed(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        row = failures["failures"][0]
+        v2.remote_charges(budget)[1]["elapsedRealtimeNs"] = (
+            row["elapsedRealtimeNs"] + 2_000_000_000 - 1
+        )
+        self.fails("provider wait elapsed", failures, budget, fetch)
+
+    def test_wait_ms_not_matching_retry_after(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["action"]["providerWait"]["waitMs"] = 1500
+        self.fails("waitMs", failures, budget, fetch)
+
+    def test_http_date_wait_without_wall_clock(self):
+        failures, budget, fetch = v2.wait_run(
+            v2.retry_after_date(v2.PROVIDER_WALL_CLOCK_NOW + 2_000),
+            wall_clock_now=v2.PROVIDER_WALL_CLOCK_NOW,
+        )
+        failures["failures"][0]["action"]["providerWait"]["wallClockNowUtcEpochMs"] = None
+        self.fails("wall clock", failures, budget, fetch)
+
+    # Delivery-binding refresh.
+    def test_refresh_charged_as_remote_attempt(self):
+        failures, budget, fetch = v2.refresh_run()
+        charge = v2.refresh_charge_event(budget)
+        charge["charge"] = {
+            "dimension": REMOTE_ATTEMPT,
+            "amount": 1,
+            "spentBefore": 1,
+            "spentAfter": 2,
+            "limit": 4,
+        }
+        charge["spent"] = {REMOTE_ATTEMPT: 2, DELIVERY_BINDING_REFRESH: 0}
+        self.fails("attempt permit", failures, budget, fetch)
+
+    def test_refresh_charge_without_failure_row(self):
+        failures, budget, fetch = v2.refresh_run()
+        v2.refresh_charge_event(budget)["failureId"] = None
+        self.fails("failureId", failures, budget, fetch)
+
+    def test_charged_refresh_row_without_charge(self):
+        failures, budget, fetch = v2.refresh_run()
+        v2.remove_refresh_charge(budget)
+        self.fails("refresh charge", failures, budget, fetch)
+
+    def test_refreshed_revision_not_advanced(self):
+        failures, budget, fetch = v2.refresh_run()
+        failures["failures"][0]["action"]["deliveryBinding"]["currentRevision"] = "binding-1"
+        self.fails("REFRESHED", failures, budget, fetch)
+
+    def test_already_advanced_with_charge(self):
+        failures, budget, fetch = v2.refresh_run()
+        binding = failures["failures"][0]["action"]["deliveryBinding"]
+        binding.update(
+            result="ALREADY_ADVANCED",
+            currentRevision="binding-2",
+            refreshCorrelationId=None,
+            charged=True,
+        )
+        self.fails("ALREADY_ADVANCED", failures, budget, fetch)
+
+    def test_second_refresh_charge_at_limit_one(self):
+        failures, budget, fetch = v2.refresh_then_exhausted_run()
+        second = copy.deepcopy(v2.refresh_charge_event(budget))
+        second["failureId"] = failures["failures"][1]["failureId"]
+        second["spent"] = {REMOTE_ATTEMPT: 2, DELIVERY_BINDING_REFRESH: 2}
+        second["charge"] = {
+            "dimension": DELIVERY_BINDING_REFRESH,
+            "amount": 1,
+            "spentBefore": 1,
+            "spentAfter": 2,
+            "limit": 1,
+        }
+        terminal = v2.events(budget, "CHAIN_TERMINATED")[0]
+        budget["events"].insert(budget["events"].index(terminal), second)
+        v2.resequence(budget)
+        self.fails("exceeds limit", failures, budget, fetch)
+
+    def test_refresh_resetting_remote_attempt(self):
+        failures, budget, fetch = v2.refresh_run()
+        after = next(
+            event
+            for event in v2.events(budget, "ATTEMPT_PERMIT_WAIT")
+            if event["spent"][DELIVERY_BINDING_REFRESH] == 1
+        )
+        after["spent"] = {REMOTE_ATTEMPT: 0, DELIVERY_BINDING_REFRESH: 1}
+        self.fails("decreased", failures, budget, fetch)
+
+    # Terminals.
+    def test_budget_exhausted_terminal_without_exhausted_dimension(self):
+        failures, budget, fetch = v2.rate_limited_absent_run()
+        v2.events(budget, "CHAIN_TERMINATED")[0]["terminalReason"] = "BUDGET_EXHAUSTED"
+        self.fails("exhausted dimension", failures, budget, fetch)
+
+    def test_terminate_budget_exhausted_without_exhausted_dimension(self):
+        failures, budget, fetch = v2.refresh_then_exhausted_run()
+        failures["failures"][1]["action"]["exhaustedDimension"] = None
+        self.fails("exhaustedDimension", failures, budget, fetch)
+
+    def test_incompatible_refresh_followed_by_another_charge(self):
+        failures, budget, fetch = v2.refresh_run()
+        row = failures["failures"][0]
+        row["action"]["deliveryBinding"].update(
+            result="INCOMPATIBLE",
+            currentRevision=None,
+            refreshCorrelationId="refresh-1",
+            charged=True,
+        )
+        terminal = v2.events(budget, "CHAIN_TERMINATED")[0]
+        terminal["terminalReason"] = "TERMINAL_FAILURE"
+        terminal["failureId"] = row["failureId"]
+        self.fails("request after terminal decision", failures, budget, fetch)
+
+    # Demand and budget.
+    def test_no_demand_chain_deciding_wait(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["context"]["demandPresent"] = False
+        self.fails("decision", failures, budget, fetch)
+
+    def test_no_demand_chain_deciding_refresh(self):
+        failures, budget, fetch = v2.refresh_run()
+        failures["failures"][0]["context"]["demandPresent"] = False
+        self.fails("decision", failures, budget, fetch)
+
+    def test_remote_attempt_exhausted_but_waiting(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["context"]["remoteAttemptsRemaining"] = 0
+        self.fails("action", failures, budget, fetch)
+
+    # v2 observation shape.
+    def test_v2_non_http_observation_with_provider_signal(self):
+        failures, budget, fetch = v2.v1_example_as_v2()
+        failures["failures"][0]["observation"]["providerSignal"] = "NONE"
+        self.fails("provider transport fields", failures, budget, fetch)
+
+    def test_v2_http_observation_without_retry_after(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["observation"]["retryAfter"] = None
+        self.fails("lacks Retry-After", failures, budget, fetch)
+
+    # Privacy.
+    def test_url_inside_a_v2_row(self):
+        failures, budget, fetch = v2.wait_run(v2.retry_after_delay(2))
+        failures["failures"][0]["fetchKey"] = "https://media.example/v?sig=abc"
+        self.fails("signed URL", failures, budget, fetch)
 
 
 if __name__ == "__main__":

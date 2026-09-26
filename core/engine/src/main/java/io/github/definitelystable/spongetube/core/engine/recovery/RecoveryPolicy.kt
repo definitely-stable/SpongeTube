@@ -1,5 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterKind
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterObservation
 import kotlin.random.Random
 import kotlinx.coroutines.delay
 
@@ -8,9 +10,15 @@ internal data class RecoveryDecisionContext(
     val demandPresent: Boolean,
     val sessionClosing: Boolean,
     val remoteAttemptsRemaining: Int,
+    /**
+     * Remaining DELIVERY_BINDING_REFRESH charges of the chain; 0 when the
+     * policy does not declare the dimension.
+     */
+    val deliveryBindingRefreshesRemaining: Int,
 ) {
     init {
         require(remoteAttemptsRemaining >= 0)
+        require(deliveryBindingRefreshesRemaining >= 0)
     }
 }
 
@@ -81,6 +89,10 @@ internal fun interface RecoverySleeper {
 /**
  * Versioned recovery policy: the only place that turns a classification into
  * a decision. It performs no action; the RecoveryCoordinator executes.
+ *
+ * `sponge-recovery-v2` is the only runtime table. Its precedence is:
+ * session shutdown, then released demand, then `REMOTE_ATTEMPT` exhaustion,
+ * then `Retry-After` validity (M2.md 20, M2-D).
  */
 internal data class RecoveryPolicy(
     val budget: RecoveryBudgetPolicy,
@@ -118,14 +130,20 @@ internal data class RecoveryPolicy(
                 context,
                 RecoveryDecisionReason.PROVIDER_TRANSIENT_STATUS,
             )
-            FailureClassification.PROVIDER_RATE_LIMITED -> RecoveryDecision(
-                RecoveryDecisionKind.WAIT_UNTIL_PROVIDER,
-                RecoveryDecisionReason.PROVIDER_THROTTLED,
-            )
-            FailureClassification.DELIVERY_BINDING_STALE -> RecoveryDecision(
-                RecoveryDecisionKind.REFRESH_DELIVERY_BINDING,
-                RecoveryDecisionReason.STALE_BINDING_SIGNAL,
-            )
+            FailureClassification.PROVIDER_RATE_LIMITED ->
+                decideRateLimited(observation, context)
+            FailureClassification.DELIVERY_BINDING_STALE ->
+                if (context.demandPresent) {
+                    RecoveryDecision(
+                        RecoveryDecisionKind.REFRESH_DELIVERY_BINDING,
+                        RecoveryDecisionReason.STALE_BINDING_SIGNAL,
+                    )
+                } else {
+                    RecoveryDecision(
+                        RecoveryDecisionKind.COMPLETE_NO_DEMAND,
+                        RecoveryDecisionReason.DEMAND_RELEASED,
+                    )
+                }
             FailureClassification.PUBLICATION_CONFLICT -> RecoveryDecision(
                 RecoveryDecisionKind.RECONCILE_LOCAL_COVERAGE,
                 RecoveryDecisionReason.LOCAL_PUBLICATION_CONFLICT,
@@ -159,6 +177,50 @@ internal data class RecoveryPolicy(
         }
     }
 
+    /**
+     * `PROVIDER_RATE_LIMITED`: released demand completes, exhaustion of the
+     * remote-attempt dimension decides a provider wait that the coordinator
+     * terminates as budget exhaustion, and otherwise only a valid `Retry-After`
+     * may wait; ABSENT/MALFORMED fails closed. A non-HTTP observation classified
+     * rate limited cannot happen and is treated as ABSENT.
+     */
+    private fun decideRateLimited(
+        observation: FailureObservation,
+        context: RecoveryDecisionContext,
+    ): RecoveryDecision {
+        if (!context.demandPresent) {
+            return RecoveryDecision(
+                RecoveryDecisionKind.COMPLETE_NO_DEMAND,
+                RecoveryDecisionReason.DEMAND_RELEASED,
+            )
+        }
+        if (context.remoteAttemptsRemaining == 0) {
+            return RecoveryDecision(
+                RecoveryDecisionKind.WAIT_UNTIL_PROVIDER,
+                RecoveryDecisionReason.PROVIDER_THROTTLED,
+            )
+        }
+        val retryAfter = (observation as? FailureObservation.HttpResponse)
+            ?.retryAfter
+            ?: RetryAfterObservation.ABSENT
+        return when (retryAfter.rawKind) {
+            RetryAfterKind.ABSENT -> RecoveryDecision(
+                RecoveryDecisionKind.FAIL_TERMINAL,
+                RecoveryDecisionReason.RETRY_AFTER_ABSENT,
+            )
+            RetryAfterKind.MALFORMED -> RecoveryDecision(
+                RecoveryDecisionKind.FAIL_TERMINAL,
+                RecoveryDecisionReason.RETRY_AFTER_MALFORMED,
+            )
+            RetryAfterKind.DELAY_SECONDS,
+            RetryAfterKind.HTTP_DATE,
+            -> RecoveryDecision(
+                RecoveryDecisionKind.WAIT_UNTIL_PROVIDER,
+                RecoveryDecisionReason.PROVIDER_THROTTLED,
+            )
+        }
+    }
+
     private fun retryIfDemanded(
         context: RecoveryDecisionContext,
         reason: RecoveryDecisionReason,
@@ -173,10 +235,13 @@ internal data class RecoveryPolicy(
         }
 
     companion object {
-        const val DEFAULT_POLICY_ID = "sponge-recovery-v1"
+        const val DEFAULT_POLICY_ID = "sponge-recovery-v2"
 
-        /** `sponge-recovery-v1`: 1 initial attempt + at most 3 retries. */
+        /** `sponge-recovery-v2`: 1 initial attempt + at most 3 retries. */
         const val DEFAULT_REMOTE_ATTEMPT_LIMIT = 4
+
+        /** `sponge-recovery-v2`: at most one ACTUAL provider refresh. */
+        const val DEFAULT_DELIVERY_BINDING_REFRESH_LIMIT = 1
 
         val DEFAULT = RecoveryPolicy(
             budget = RecoveryBudgetPolicy(
@@ -184,6 +249,8 @@ internal data class RecoveryPolicy(
                 limits = mapOf(
                     RecoveryBudgetDimension.REMOTE_ATTEMPT to
                         DEFAULT_REMOTE_ATTEMPT_LIMIT,
+                    RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH to
+                        DEFAULT_DELIVERY_BINDING_REFRESH_LIMIT,
                 ),
             ),
             backoff = RecoveryBackoff(baseMs = 500, capMs = 5_000),

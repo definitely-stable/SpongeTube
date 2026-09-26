@@ -5,18 +5,20 @@ Normative source: `.work/milestones/M2.md` (sections 9, 11 and M2-C) and
 
 Inputs of one run:
 
-* `failure-decision-events-v1` - observation / classification / decision /
-  action rows of every failed physical owner;
+* `failure-decision-events-v1` or `failure-decision-events-v2` - observation /
+  classification / decision / action rows of every failed physical owner;
 * `recovery-budget-events-v1` - RecoveryChain lifecycle and ledger events;
-* `fetch-events-v3` (JSONL) - the FetchBroker physical owner ledger;
+* `fetch-events-v3` or `fetch-events-v4` (JSONL) - the FetchBroker physical
+  owner ledger;
 * optionally the Media Lab origin request trace and a scenario `case.json`.
 
 The verifier never imports or trusts the production Kotlin
 RecoveryCoordinator. It re-derives every classification, decision, executed
-action, backoff window and ledger transition with its own tables, replays the
-chain lifecycle, and joins budget charges to FetchBroker attempts and origin
-requests by correlation identities only (no clock comparison). Every check
-fails closed by raising `RecoveryOracleError`.
+action, backoff window, provider wait, delivery-binding refresh and ledger
+transition with its own tables, replays the chain lifecycle, and joins budget
+charges to FetchBroker attempts and origin requests by correlation identities
+only (no clock comparison). Every check fails closed by raising
+`RecoveryOracleError`.
 
 Usage:
 
@@ -43,13 +45,17 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from m2_contracts import (  # noqa: E402
     M2ContractError,
+    provider_wait_ms,
     scan_evidence_privacy,
     validate_failure_record,
 )
 from schema_subset import SchemaContractError, validate_instance  # noqa: E402
 
 SCHEMAS = REPO_ROOT / ".work" / "schemas"
-FAILURE_SCHEMA = SCHEMAS / "failure-decision-events-v1.schema.json"
+FAILURE_SCHEMAS = {
+    1: SCHEMAS / "failure-decision-events-v1.schema.json",
+    2: SCHEMAS / "failure-decision-events-v2.schema.json",
+}
 BUDGET_SCHEMA = SCHEMAS / "recovery-budget-events-v1.schema.json"
 FETCH_SCHEMAS = {
     3: SCHEMAS / "fetch-events-v3.schema.json",
@@ -68,18 +74,34 @@ def _require(condition: bool, message: str) -> None:
 
 
 REMOTE_ATTEMPT = "REMOTE_ATTEMPT"
+DELIVERY_BINDING_REFRESH = "DELIVERY_BINDING_REFRESH"
 DIMENSION = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 # Versioned policies the oracle knows. An unknown policyId fails closed: the
-# verifier cannot re-derive decisions for a policy it has not reviewed.
+# verifier cannot re-derive decisions for a policy it has not reviewed. The
+# decision table must match the failure document's schemaVersion.
 KNOWN_POLICIES: dict[str, dict[str, Any]] = {
     "sponge-recovery-v1": {
+        "table": "v1",
         "limits": {REMOTE_ATTEMPT: 4},
         "backoffBaseMs": 500,
         "backoffCapMs": 5_000,
     },
     "sponge-recovery-test-v1": {
+        "table": "v1",
         "limits": {REMOTE_ATTEMPT: 4},
+        "backoffBaseMs": 100,
+        "backoffCapMs": 400,
+    },
+    "sponge-recovery-v2": {
+        "table": "v2",
+        "limits": {REMOTE_ATTEMPT: 4, DELIVERY_BINDING_REFRESH: 1},
+        "backoffBaseMs": 500,
+        "backoffCapMs": 5_000,
+    },
+    "sponge-recovery-test-v2": {
+        "table": "v2",
+        "limits": {REMOTE_ATTEMPT: 4, DELIVERY_BINDING_REFRESH: 1},
         "backoffBaseMs": 100,
         "backoffCapMs": 400,
     },
@@ -91,6 +113,16 @@ LIMITATIONS = (
     "It does not prove provider delivery-binding refresh, Retry-After behavior, "
     "real VPN/default-route fetch suppression, packet/network fault attribution, "
     "or transport superiority.",
+)
+
+# M2-D (M2.md, M2-D section) limitation statements for table-v2 policies.
+LIMITATIONS_V2 = (
+    "M2-D proves provider-neutral delivery-binding replacement, Retry-After "
+    "handling and deterministic provider recovery.",
+    "It does not by itself prove that a live YouTube HTTP 403 means an expired "
+    "binding, does not select a production YouTube client/profile, does not "
+    "implement SABR/PO-token/challenge handling, and does not select the "
+    "production transport.",
 )
 
 # ---------------------------------------------------------------------------
@@ -122,7 +154,32 @@ OBSERVATION_TYPES: dict[str, tuple[str, frozenset[str]]] = {
     "INTERNAL": ("LOCAL", frozenset({"INTERNAL_FAILURE"})),
 }
 
-OBSERVATION_KEYS = frozenset({"plane", "type", "kind", "httpStatus"})
+# Exact layer key sets per failure schema version (v2 adds the Retry-After
+# observation, the provider signal, the binding revision, the refresh budget
+# context and the executed provider action).
+OBSERVATION_KEYS = {
+    1: frozenset({"plane", "type", "kind", "httpStatus"}),
+    2: frozenset({
+        "plane", "type", "kind", "httpStatus",
+        "retryAfter", "providerSignal", "deliveryBindingRevision",
+    }),
+}
+
+CONTEXT_KEYS = {
+    1: frozenset({"demandPresent", "sessionClosing", "remoteAttemptsRemaining"}),
+    2: frozenset({
+        "demandPresent", "sessionClosing", "remoteAttemptsRemaining",
+        "deliveryBindingRefreshesRemaining",
+    }),
+}
+
+ACTION_KEYS = {
+    1: frozenset({"kind", "delayMs", "retryOrdinal", "reconciliation"}),
+    2: frozenset({
+        "kind", "delayMs", "retryOrdinal", "reconciliation",
+        "exhaustedDimension", "providerWait", "deliveryBinding",
+    }),
+}
 
 # Keys that would carry free text or raw locators; never allowed anywhere.
 FORBIDDEN_KEYS = frozenset({
@@ -132,7 +189,12 @@ FORBIDDEN_KEYS = frozenset({
 
 
 def classify(observation: Mapping[str, Any]) -> str:
-    """M2-C frozen mappings, re-derived independently."""
+    """M2-C frozen mappings, re-derived independently.
+
+    The v2 refinement applies only when the observation explicitly carries a
+    provider signal; a v1 observation never has one, so a bare 403 stays
+    PROVIDER_REJECTED.
+    """
 
     kind_type = observation["type"]
     kind = observation["kind"]
@@ -145,6 +207,8 @@ def classify(observation: Mapping[str, Any]) -> str:
         if status == 408 or 500 <= status <= 599:
             return "PROVIDER_TRANSIENT_RESPONSE"
         if 400 <= status <= 499:
+            if observation.get("providerSignal") == "BINDING_STALE_CONFIRMED":
+                return "DELIVERY_BINDING_STALE"
             return "PROVIDER_REJECTED"
         return "UNKNOWN"
     if kind_type == "DELIVERY_DESCRIPTOR":
@@ -194,12 +258,27 @@ def legacy_outcome(observation: Mapping[str, Any]) -> str:
     }[(kind_type, kind)]
 
 
+def _retry_after_kind(observation: Mapping[str, Any]) -> str:
+    """Normalized Retry-After rawKind of an observation (ABSENT when absent)."""
+
+    retry_after = observation.get("retryAfter")
+    if not isinstance(retry_after, Mapping):
+        return "ABSENT"
+    raw_kind = retry_after.get("rawKind")
+    return (
+        raw_kind
+        if raw_kind in ("ABSENT", "DELAY_SECONDS", "HTTP_DATE", "MALFORMED")
+        else "ABSENT"
+    )
+
+
 def decide(
     classification: str,
     observation: Mapping[str, Any],
     context: Mapping[str, Any],
+    table: str = "v1",
 ) -> tuple[str, str]:
-    """`sponge-recovery-v1` decision table, re-derived independently."""
+    """`sponge-recovery-v1`/`v2` decision tables, re-derived independently."""
 
     if context["sessionClosing"] or (
         observation["type"] == "CANCELLATION" and observation["kind"] == "SESSION_SHUTDOWN"
@@ -216,8 +295,21 @@ def decide(
             else "PROVIDER_TRANSIENT_STATUS",
         )
     if classification == "PROVIDER_RATE_LIMITED":
+        if table == "v2":
+            if not demand:
+                return "COMPLETE_NO_DEMAND", "DEMAND_RELEASED"
+            if context["remoteAttemptsRemaining"] == 0:
+                return "WAIT_UNTIL_PROVIDER", "PROVIDER_THROTTLED"
+            raw_kind = _retry_after_kind(observation)
+            if raw_kind == "ABSENT":
+                return "FAIL_TERMINAL", "RETRY_AFTER_ABSENT"
+            if raw_kind == "MALFORMED":
+                return "FAIL_TERMINAL", "RETRY_AFTER_MALFORMED"
+            return "WAIT_UNTIL_PROVIDER", "PROVIDER_THROTTLED"
         return "WAIT_UNTIL_PROVIDER", "PROVIDER_THROTTLED"
     if classification == "DELIVERY_BINDING_STALE":
+        if table == "v2" and not demand:
+            return "COMPLETE_NO_DEMAND", "DEMAND_RELEASED"
         return "REFRESH_DELIVERY_BINDING", "STALE_BINDING_SIGNAL"
     if classification == "PUBLICATION_CONFLICT":
         return "RECONCILE_LOCAL_COVERAGE", "LOCAL_PUBLICATION_CONFLICT"
@@ -275,6 +367,69 @@ def expected_action_kind(
     raise RecoveryOracleError(f"unknown decision {decision!r}")
 
 
+def expected_action_v2(
+    decision: str,
+    observation: Mapping[str, Any],
+    context: Mapping[str, Any],
+    limits: Mapping[str, int],
+    reconciliation: str | None,
+) -> tuple[str, str | None]:
+    """`sponge-recovery-v2` executed action and exhausted dimension.
+
+    Only a TERMINATE_BUDGET_EXHAUSTED action names the dimension whose
+    exhaustion ended the chain; every other action carries null.
+    """
+
+    remaining = context["remoteAttemptsRemaining"]
+    if decision == "RETRY_AFTER_BACKOFF":
+        if remaining > 0:
+            return "SCHEDULE_BACKOFF", None
+        return "TERMINATE_BUDGET_EXHAUSTED", REMOTE_ATTEMPT
+    if decision in ("CONTINUE_FOR_DEMAND", "WAIT_FOR_ROUTE"):
+        if remaining > 0:
+            return "START_NEXT_OWNER", None
+        return "TERMINATE_BUDGET_EXHAUSTED", REMOTE_ATTEMPT
+    if decision == "WAIT_UNTIL_PROVIDER":
+        if remaining == 0:
+            return "TERMINATE_BUDGET_EXHAUSTED", REMOTE_ATTEMPT
+        if _retry_after_kind(observation) in ("DELAY_SECONDS", "HTTP_DATE"):
+            return "WAIT_PROVIDER", None
+        return "FAIL_CLOSED_ACTION_UNAVAILABLE", None
+    if decision == "REFRESH_DELIVERY_BINDING":
+        if remaining == 0:
+            return "TERMINATE_BUDGET_EXHAUSTED", REMOTE_ATTEMPT
+        if (
+            observation.get("deliveryBindingRevision") is None
+            or DELIVERY_BINDING_REFRESH not in limits
+        ):
+            return "FAIL_CLOSED_ACTION_UNAVAILABLE", None
+        if context["deliveryBindingRefreshesRemaining"] == 0:
+            return "TERMINATE_BUDGET_EXHAUSTED", DELIVERY_BINDING_REFRESH
+        return "REFRESH_DELIVERY_BINDING", None
+    if decision == "RERESOLVE_PROVIDER":
+        return "FAIL_CLOSED_ACTION_UNAVAILABLE", None
+    return expected_action_kind(decision, remaining, reconciliation), None
+
+
+def terminal_of_action(action: Mapping[str, Any]) -> str | None:
+    """Terminal reason produced by one executed action, or None when the chain
+    may continue (SCHEDULE_BACKOFF, START_NEXT_OWNER, WAIT_PROVIDER and the
+    non-terminal delivery-binding refresh results)."""
+
+    kind = action["kind"]
+    if kind == "REFRESH_DELIVERY_BINDING":
+        binding = action.get("deliveryBinding") or {}
+        result = binding.get("result")
+        if result in ("INCOMPATIBLE", "FAILED"):
+            return "TERMINAL_FAILURE"
+        if result == "NOT_ADMITTED":
+            return "BUDGET_EXHAUSTED"
+        if result == "CLOSED":
+            return "SESSION_TERMINATION"
+        return None
+    return TERMINAL_OF_ACTION.get(kind)
+
+
 def backoff_window_ms(policy: Mapping[str, Any], retry_ordinal: int) -> int:
     window = policy["backoffBaseMs"] * (2 ** (retry_ordinal - 1))
     return min(policy["backoffCapMs"], window)
@@ -318,6 +473,10 @@ def _check_frozen_anchors(row: Mapping[str, Any], where: str) -> None:
         "classification": {"class": row["classification"]},
         "decision": {"action": _CONTRACT_DECISION[decision]},
     }
+    # Only an explicit provider signal refines a rejection; a bare 403 keeps
+    # being checked by the frozen anchor as PROVIDER_REJECTED.
+    if observation.get("providerSignal") == "BINDING_STALE_CONFIRMED":
+        record["providerEvidence"] = {"signal": observation["providerSignal"]}
     try:
         validate_failure_record(record)
     except M2ContractError as error:
@@ -377,6 +536,7 @@ class _Chain:
         self.spent = dict(event["spent"])
         self.terminal: str | None = None
         self.terminal_failure_id: str | None = None
+        self.terminal_event: dict[str, Any] | None = None
         self.priority = event["effectivePriority"]
         self.consumers: set[str] = set()
         # owner lifecycle
@@ -386,6 +546,7 @@ class _Chain:
         self.permit_granted = False
         self.backoff_open: dict[str, Any] | None = None
         self.charges: list[dict[str, Any]] = []
+        self.refresh_charges: list[dict[str, Any]] = []
         self.owners: list[dict[str, Any]] = []
         self.finished: dict[str, dict[str, Any]] = {}
         self.retry_ordinal = 0
@@ -394,6 +555,7 @@ class _Chain:
 
 def _replay_budget(
     document: Mapping[str, Any],
+    table: str,
 ) -> tuple[dict[str, _Chain], list[Mapping[str, Any]]]:
     events = document["events"]
     chains: dict[str, _Chain] = {}
@@ -422,6 +584,11 @@ def _replay_budget(
             _require(chain_id not in chains, f"{where}: chain {chain_id} started twice")
             policy = KNOWN_POLICIES.get(event["policyId"])
             _require(policy is not None, f"{where}: unknown policyId {event['policyId']!r}")
+            _require(
+                policy["table"] == table,
+                f"{where}: policy {event['policyId']!r} uses the {policy['table']} "
+                f"decision table; failure-decision-events-{table} requires a {table} policy",
+            )
             _require(
                 event["limits"] == policy["limits"],
                 f"{where}: limits {event['limits']} != policy {policy['limits']}",
@@ -489,32 +656,54 @@ def _replay_budget(
             expected = dict(before)
             expected[dimension] += charge["amount"]
             _require(after == expected, f"{where}: ledger {after} != {before} + charge")
-            _require(
-                dimension == REMOTE_ATTEMPT and charge["amount"] == 1,
-                f"{where}: M2-C charges exactly one REMOTE_ATTEMPT per physical attempt",
-            )
-            _require(chain.permit_granted, f"{where}: charge without attempt permit")
-            _require(chain.open_owner is None, f"{where}: charge while an owner is open")
-            _require(chain.backoff_open is None, f"{where}: charge during backoff")
-            _require(
-                chain.pending_charge is None,
-                f"{where}: charge without a physical owner for the previous charge",
-            )
-            _require(
-                event["ownerOrdinal"] == chain.owner_ordinal + 1,
-                f"{where}: owner ordinal {event['ownerOrdinal']} != {chain.owner_ordinal + 1}",
-            )
-            _require(
-                event["fetchId"] is not None and event["attemptCorrelationId"] is not None,
-                f"{where}: charge must correlate fetchId and attemptCorrelationId",
-            )
-            _require(
-                event["attemptCorrelationId"] == f"{event['fetchId']}:attempt-1",
-                f"{where}: attemptCorrelationId does not belong to fetchId",
-            )
-            chain.pending_charge = dict(event)
-            chain.charges.append(dict(event))
-            chain.permit_granted = False
+            if dimension == REMOTE_ATTEMPT:
+                _require(
+                    charge["amount"] == 1,
+                    f"{where}: M2-C charges exactly one REMOTE_ATTEMPT per physical attempt",
+                )
+                _require(chain.permit_granted, f"{where}: charge without attempt permit")
+                _require(chain.open_owner is None, f"{where}: charge while an owner is open")
+                _require(chain.backoff_open is None, f"{where}: charge during backoff")
+                _require(
+                    chain.pending_charge is None,
+                    f"{where}: charge without a physical owner for the previous charge",
+                )
+                _require(
+                    event["ownerOrdinal"] == chain.owner_ordinal + 1,
+                    f"{where}: owner ordinal {event['ownerOrdinal']} != {chain.owner_ordinal + 1}",
+                )
+                _require(
+                    event["fetchId"] is not None and event["attemptCorrelationId"] is not None,
+                    f"{where}: charge must correlate fetchId and attemptCorrelationId",
+                )
+                _require(
+                    event["attemptCorrelationId"] == f"{event['fetchId']}:attempt-1",
+                    f"{where}: attemptCorrelationId does not belong to fetchId",
+                )
+                chain.pending_charge = dict(event)
+                chain.charges.append(dict(event))
+                chain.permit_granted = False
+            elif dimension == DELIVERY_BINDING_REFRESH:
+                _require(
+                    charge["amount"] == 1,
+                    f"{where}: one actual refresh is exactly one DELIVERY_BINDING_REFRESH",
+                )
+                _require(
+                    event["failureId"] is not None,
+                    f"{where}: refresh charge without the failureId that requested it",
+                )
+                _require(
+                    chain.open_owner is None,
+                    f"{where}: refresh charge while an owner is open",
+                )
+                for field in ("ownerOrdinal", "fetchId", "attemptCorrelationId"):
+                    _require(
+                        event[field] is None,
+                        f"{where}: refresh charge must not correlate {field}",
+                    )
+                chain.refresh_charges.append(dict(event))
+            else:
+                _require(False, f"{where}: unsupported charge dimension {dimension}")
         else:
             _require(after == before, f"{where}: {kind} changed the ledger {before} -> {after}")
             _require(event["charge"] is None, f"{where}: {kind} carries a charge")
@@ -604,7 +793,7 @@ def _replay_budget(
             _require(reason is not None, f"{where}: terminal without reason")
             _require(chain.open_owner is None, f"{where}: chain terminal before its owner")
             _require(chain.pending_charge is None, f"{where}: terminal with unused charge")
-            if reason == "BUDGET_EXHAUSTED":
+            if reason == "BUDGET_EXHAUSTED" and table == "v1":
                 _require(
                     after[REMOTE_ATTEMPT] == chain.limits[REMOTE_ATTEMPT],
                     f"{where}: BUDGET_EXHAUSTED with REMOTE_ATTEMPT {after[REMOTE_ATTEMPT]} "
@@ -612,6 +801,7 @@ def _replay_budget(
                 )
             chain.terminal = reason
             chain.terminal_failure_id = event["failureId"]
+            chain.terminal_event = dict(event)
             chain.backoff_open = None
             if open_by_key.get(chain.fetch_key) == chain_id:
                 del open_by_key[chain.fetch_key]
@@ -633,11 +823,177 @@ def _replay_budget(
     return chains, events
 
 
+def _check_v2_observation(observation: Mapping[str, Any], where: str) -> None:
+    """Shape rules of the v2 observation extension (DESIGN 4.1)."""
+
+    is_http = observation["type"] == "HTTP_RESPONSE"
+    retry_after = observation["retryAfter"]
+    signal = observation["providerSignal"]
+    revision = observation["deliveryBindingRevision"]
+    if not is_http:
+        _require(
+            retry_after is None and signal is None and revision is None,
+            f"{where}: non-HTTP observation carries provider transport fields",
+        )
+        return
+    _require(
+        retry_after is not None and signal is not None,
+        f"{where}: HTTP observation lacks Retry-After or provider signal",
+    )
+    raw_kind = retry_after["rawKind"]
+    delay_seconds = retry_after["delaySeconds"]
+    not_before = retry_after["notBeforeUtcEpochMs"]
+    clock_domain = retry_after["clockDomain"]
+    if raw_kind in ("ABSENT", "MALFORMED"):
+        _require(
+            delay_seconds is None and not_before is None and clock_domain is None,
+            f"{where}: {raw_kind} Retry-After carries a value",
+        )
+    elif raw_kind == "DELAY_SECONDS":
+        _require(
+            isinstance(delay_seconds, int) and not isinstance(delay_seconds, bool)
+            and delay_seconds >= 0,
+            f"{where}: DELAY_SECONDS Retry-After without delaySeconds",
+        )
+        _require(
+            not_before is None and clock_domain is None,
+            f"{where}: DELAY_SECONDS Retry-After carries a clock instant",
+        )
+    elif raw_kind == "HTTP_DATE":
+        _require(
+            isinstance(not_before, int) and not isinstance(not_before, bool),
+            f"{where}: HTTP_DATE Retry-After without notBeforeUtcEpochMs",
+        )
+        _require(
+            delay_seconds is None and clock_domain == "PROVIDER_WALL_CLOCK",
+            f"{where}: HTTP_DATE Retry-After without the provider wall clock domain",
+        )
+    else:
+        _require(False, f"{where}: unknown Retry-After rawKind {raw_kind!r}")
+    _require(
+        signal in ("NONE", "BINDING_STALE_CONFIRMED"),
+        f"{where}: unknown provider signal {signal!r}",
+    )
+
+
+def _check_v2_action(
+    action: Mapping[str, Any],
+    observation: Mapping[str, Any],
+    where: str,
+) -> None:
+    """Shape rules of the v2 executed provider actions (DESIGN 4.6/5)."""
+
+    kind = action["kind"]
+    provider_wait = action["providerWait"]
+    delivery_binding = action["deliveryBinding"]
+    _require(
+        (provider_wait is not None) == (kind == "WAIT_PROVIDER"),
+        f"{where}: providerWait belongs only to WAIT_PROVIDER",
+    )
+    _require(
+        (delivery_binding is not None) == (kind == "REFRESH_DELIVERY_BINDING"),
+        f"{where}: deliveryBinding belongs only to REFRESH_DELIVERY_BINDING",
+    )
+    if kind == "WAIT_PROVIDER":
+        retry_after = observation["retryAfter"]
+        _require(
+            retry_after is not None,
+            f"{where}: WAIT_PROVIDER without a Retry-After observation",
+        )
+        _require(
+            provider_wait["rawKind"] == retry_after["rawKind"],
+            f"{where}: provider wait rawKind {provider_wait['rawKind']} != "
+            f"observation {retry_after['rawKind']}",
+        )
+        normalized = {
+            "rawKind": retry_after["rawKind"],
+            "delaySeconds": retry_after["delaySeconds"],
+            "notBeforeUtcEpochMs": retry_after["notBeforeUtcEpochMs"],
+        }
+        try:
+            expected_wait_ms = provider_wait_ms(normalized, provider_wait["wallClockNowUtcEpochMs"])
+        except M2ContractError as error:
+            raise RecoveryOracleError(
+                f"{where}: provider wait is not derivable: {error}"
+            ) from error
+        _require(
+            provider_wait["waitMs"] == expected_wait_ms,
+            f"{where}: provider waitMs {provider_wait['waitMs']} != oracle {expected_wait_ms}",
+        )
+        if retry_after["rawKind"] == "HTTP_DATE":
+            _require(
+                provider_wait["notBeforeUtcEpochMs"] == retry_after["notBeforeUtcEpochMs"],
+                f"{where}: provider wait notBeforeUtcEpochMs differs from the observation",
+            )
+            _require(
+                provider_wait["wallClockNowUtcEpochMs"] is not None,
+                f"{where}: HTTP_DATE provider wait without the provider wall clock",
+            )
+            _require(
+                provider_wait["wallClockDomain"] == "PROVIDER_WALL_CLOCK",
+                f"{where}: HTTP_DATE provider wait without the provider wall clock domain",
+            )
+        elif retry_after["rawKind"] == "DELAY_SECONDS":
+            _require(
+                provider_wait["notBeforeUtcEpochMs"] is None
+                and provider_wait["wallClockNowUtcEpochMs"] is None
+                and provider_wait["wallClockDomain"] is None,
+                f"{where}: DELAY_SECONDS provider wait carries a clock instant",
+            )
+        else:
+            _require(False, f"{where}: WAIT_PROVIDER without a valid Retry-After")
+    elif kind == "REFRESH_DELIVERY_BINDING":
+        expected = observation["deliveryBindingRevision"]
+        _require(
+            delivery_binding["expectedRevision"] == expected,
+            f"{where}: refresh expectedRevision {delivery_binding['expectedRevision']} != "
+            f"observation {expected}",
+        )
+        result = delivery_binding["result"]
+        current = delivery_binding["currentRevision"]
+        correlation = delivery_binding["refreshCorrelationId"]
+        charged = delivery_binding["charged"]
+        if result == "REFRESHED":
+            _require(
+                current is not None and current != delivery_binding["expectedRevision"]
+                and correlation is not None and charged is True,
+                f"{where}: REFRESHED must advance the revision and charge this chain",
+            )
+        elif result == "ALREADY_ADVANCED":
+            _require(
+                current is not None and current != delivery_binding["expectedRevision"]
+                and correlation is None and charged is False,
+                f"{where}: ALREADY_ADVANCED must not operate or charge",
+            )
+        elif result == "JOINED_REFRESH":
+            _require(
+                current is not None and current != delivery_binding["expectedRevision"]
+                and correlation is not None and charged is False,
+                f"{where}: JOINED_REFRESH must not charge this chain",
+            )
+        elif result in ("INCOMPATIBLE", "FAILED"):
+            _require(
+                current is None and correlation is not None,
+                f"{where}: {result} must keep the binding and name the operation",
+            )
+        elif result in ("NOT_ADMITTED", "CLOSED"):
+            _require(
+                current is None and correlation is None and charged is False,
+                f"{where}: {result} must not start an operation or charge",
+            )
+        elif result == "ABANDONED":
+            _require(current is None, f"{where}: ABANDONED must not advance the binding")
+        else:
+            _require(False, f"{where}: unknown refresh result {result!r}")
+
+
 def _verify_failures(
     document: Mapping[str, Any],
     chains: Mapping[str, _Chain],
 ) -> list[Mapping[str, Any]]:
     rows = document["failures"]
+    version = document["schemaVersion"]
+    table = f"v{version}"
     seen_ids: set[str] = set()
     by_chain: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for index, row in enumerate(rows):
@@ -656,8 +1012,16 @@ def _verify_failures(
 
         observation = row["observation"]
         _require(
-            set(observation) == OBSERVATION_KEYS,
+            set(observation) == OBSERVATION_KEYS[version],
             f"{where}: observation layer carries {sorted(observation)} (layers conflated)",
+        )
+        _require(
+            set(row["context"]) == CONTEXT_KEYS[version],
+            f"{where}: context layer carries {sorted(row['context'])}",
+        )
+        _require(
+            set(row["action"]) == ACTION_KEYS[version],
+            f"{where}: action layer carries {sorted(row['action'])}",
         )
         plane, kinds = OBSERVATION_TYPES[observation["type"]]
         _require(
@@ -669,27 +1033,47 @@ def _verify_failures(
             (observation["type"] == "HTTP_RESPONSE") == (observation["httpStatus"] is not None),
             f"{where}: httpStatus only and always for HTTP_RESPONSE",
         )
+        if version == 2:
+            _check_v2_observation(observation, where)
 
         classification = classify(observation)
         _require(
             row["classification"] == classification,
             f"{where}: classification {row['classification']} != oracle {classification}",
         )
-        decision, reason = decide(classification, observation, row["context"])
+        decision, reason = decide(classification, observation, row["context"], table)
         _require(
             (row["decision"]["kind"], row["decision"]["reason"]) == (decision, reason),
             f"{where}: decision {row['decision']} != oracle {decision}/{reason}",
         )
         action = row["action"]
-        expected = expected_action_kind(
-            decision,
-            row["context"]["remoteAttemptsRemaining"],
-            action["reconciliation"],
-        )
-        _require(
-            action["kind"] == expected,
-            f"{where}: action {action['kind']} != oracle {expected} for {decision}",
-        )
+        if version == 2:
+            expected, exhausted = expected_action_v2(
+                decision,
+                observation,
+                row["context"],
+                chain.limits,
+                action["reconciliation"],
+            )
+            _require(
+                action["kind"] == expected,
+                f"{where}: action {action['kind']} != oracle {expected} for {decision}",
+            )
+            _require(
+                action["exhaustedDimension"] == exhausted,
+                f"{where}: exhaustedDimension {action['exhaustedDimension']} != oracle {exhausted}",
+            )
+            _check_v2_action(action, observation, where)
+        else:
+            expected = expected_action_kind(
+                decision,
+                row["context"]["remoteAttemptsRemaining"],
+                action["reconciliation"],
+            )
+            _require(
+                action["kind"] == expected,
+                f"{where}: action {action['kind']} != oracle {expected} for {decision}",
+            )
         _require(
             (action["reconciliation"] is not None) == (decision == "RECONCILE_LOCAL_COVERAGE"),
             f"{where}: reconciliation recorded only for RECONCILE_LOCAL_COVERAGE",
@@ -727,11 +1111,11 @@ def _verify_failure_lineage(
         if row["fetchId"] is not None:
             rows_by_fetch[(row["recoveryChainId"], row["fetchId"])].append(row)
 
-    spent_at_finish: dict[tuple[str, str], int] = {}
+    spent_at_finish: dict[tuple[str, str], dict[str, int]] = {}
     for event in events:
         if event["kind"] == "OWNER_FINISHED":
             key = (event["recoveryChainId"], event["fetchId"])
-            spent_at_finish[key] = event["spent"][REMOTE_ATTEMPT]
+            spent_at_finish[key] = dict(event["spent"])
             linked = rows_by_fetch.get(key, [])
             if event["ownerOutcome"] == "SUCCESS":
                 _require(not linked, f"successful owner {key} has a failure row")
@@ -756,12 +1140,54 @@ def _verify_failure_lineage(
         if row["fetchId"] is not None:
             key = (row["recoveryChainId"], row["fetchId"])
             _require(key in spent_at_finish, f"{row['failureId']}: names no finished owner")
-            remaining = chain.limits[REMOTE_ATTEMPT] - spent_at_finish[key]
+            spent = spent_at_finish[key]
+            remaining = chain.limits[REMOTE_ATTEMPT] - spent[REMOTE_ATTEMPT]
             _require(
                 row["context"]["remoteAttemptsRemaining"] == remaining,
                 f"{row['failureId']}: context remaining "
                 f"{row['context']['remoteAttemptsRemaining']} != ledger {remaining}",
             )
+            if chain.policy["table"] == "v2":
+                refresh_remaining = chain.limits.get(DELIVERY_BINDING_REFRESH, 0) - spent.get(
+                    DELIVERY_BINDING_REFRESH, 0
+                )
+                _require(
+                    row["context"]["deliveryBindingRefreshesRemaining"] == refresh_remaining,
+                    f"{row['failureId']}: context refresh remaining "
+                    f"{row['context']['deliveryBindingRefreshesRemaining']} != "
+                    f"ledger {refresh_remaining}",
+                )
+
+    # One refresh charge exactly per failure row that paid DELIVERY_BINDING_REFRESH.
+    for chain in chains.values():
+        for charge in chain.refresh_charges:
+            row = failure_by_id.get(charge["failureId"])
+            _require(
+                row is not None and row["recoveryChainId"] == chain.chain_id,
+                f"refresh charge for {charge['failureId']}: no failure row in {chain.chain_id}",
+            )
+            binding = row["action"].get("deliveryBinding")
+            _require(
+                row["action"]["kind"] == "REFRESH_DELIVERY_BINDING"
+                and binding is not None
+                and binding["charged"] is True,
+                f"{row['failureId']}: refresh charge without a charged refresh row",
+            )
+    for row in rows:
+        binding = row["action"].get("deliveryBinding")
+        if row["action"]["kind"] != "REFRESH_DELIVERY_BINDING" or binding is None:
+            continue
+        if binding["charged"] is not True:
+            continue
+        charges = [
+            charge
+            for charge in chains[row["recoveryChainId"]].refresh_charges
+            if charge["failureId"] == row["failureId"]
+        ]
+        _require(
+            len(charges) == 1,
+            f"{row['failureId']}: charged refresh must have exactly one refresh charge",
+        )
 
     # Terminal decisions end the chain; non-terminal ones continue it.
     by_chain_events: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
@@ -775,13 +1201,24 @@ def _verify_failure_lineage(
             row = rows_by_fetch[(chain_id, event["fetchId"])][0]
             action = row["action"]["kind"]
             after = chain_events[position + 1:]
-            later_charges = [e for e in after if e["kind"] == "CHARGE"]
-            if action in TERMINAL_OF_ACTION:
+            # A terminal refresh result (INCOMPATIBLE/FAILED) is charged by
+            # design before this row is written: that one refresh charge of
+            # the same failure is the executed action, not a later request.
+            later_charges = [
+                e for e in after
+                if e["kind"] == "CHARGE"
+                and not (
+                    e["charge"]["dimension"] == DELIVERY_BINDING_REFRESH
+                    and e["failureId"] == row["failureId"]
+                )
+            ]
+            terminal = terminal_of_action(row["action"])
+            if terminal is not None:
                 _require(
-                    chain.terminal == TERMINAL_OF_ACTION[action]
+                    chain.terminal == terminal
                     and chain.terminal_failure_id == row["failureId"],
                     f"{row['failureId']}: {action} must end the chain as "
-                    f"{TERMINAL_OF_ACTION[action]} (got {chain.terminal}/"
+                    f"{terminal} (got {chain.terminal}/"
                     f"{chain.terminal_failure_id})",
                 )
                 _require(
@@ -799,14 +1236,63 @@ def _verify_failure_lineage(
                     and scheduled[0]["backoff"]["retryOrdinal"] == row["action"]["retryOrdinal"],
                     f"{row['failureId']}: executed backoff differs from the decided action",
                 )
+            elif action == "WAIT_PROVIDER":
+                wait = row["action"]["providerWait"]
+                _require(wait is not None, f"{row['failureId']}: WAIT_PROVIDER without a wait")
+                if later_charges:
+                    _require(
+                        later_charges[0]["elapsedRealtimeNs"]
+                        >= row["elapsedRealtimeNs"] + wait["waitMs"] * 1_000_000,
+                        f"{row['failureId']}: request before the provider wait elapsed",
+                    )
+                scheduled = [
+                    e for e in after
+                    if e["kind"] == "BACKOFF_SCHEDULED" and e["failureId"] == row["failureId"]
+                ]
+                _require(
+                    not scheduled,
+                    f"{row['failureId']}: provider wait must not schedule a backoff",
+                )
     for chain in chains.values():
         if chain.terminal_failure_id is not None:
             row = failure_by_id.get(chain.terminal_failure_id)
             _require(row is not None, f"chain {chain.chain_id}: terminal names unknown failure")
             _require(
-                TERMINAL_OF_ACTION.get(row["action"]["kind"]) == chain.terminal,
+                terminal_of_action(row["action"]) == chain.terminal,
                 f"chain {chain.chain_id}: terminal {chain.terminal} not the action outcome",
             )
+
+
+def _verify_budget_exhausted(
+    rows: list[Mapping[str, Any]],
+    chains: Mapping[str, _Chain],
+) -> None:
+    """DESIGN 7: a v2 BUDGET_EXHAUSTED terminal names the exhausted dimension."""
+
+    failure_by_id = {row["failureId"]: row for row in rows}
+    for chain in chains.values():
+        if chain.policy["table"] != "v2" or chain.terminal != "BUDGET_EXHAUSTED":
+            continue
+        spent = chain.terminal_event["spent"]
+        row = (
+            failure_by_id.get(chain.terminal_failure_id)
+            if chain.terminal_failure_id is not None
+            else None
+        )
+        remote_exhausted = spent[REMOTE_ATTEMPT] == chain.limits[REMOTE_ATTEMPT]
+        refresh_limit = chain.limits.get(DELIVERY_BINDING_REFRESH)
+        refresh_exhausted = (
+            row is not None
+            and row["action"].get("exhaustedDimension") == DELIVERY_BINDING_REFRESH
+            and refresh_limit is not None
+            and spent.get(DELIVERY_BINDING_REFRESH) == refresh_limit
+        )
+        binding = row["action"].get("deliveryBinding") if row is not None else None
+        not_admitted = isinstance(binding, Mapping) and binding.get("result") == "NOT_ADMITTED"
+        _require(
+            remote_exhausted or refresh_exhausted or not_admitted,
+            f"chain {chain.chain_id}: BUDGET_EXHAUSTED without an exhausted dimension",
+        )
 
 
 def _load_fetch(rows: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -946,9 +1432,16 @@ def verify_recovery(
     case: Mapping[str, Any] | None = None,
     forbid_rechain_after_failure: bool = False,
 ) -> dict[str, Any]:
-    _validate(FAILURE_SCHEMA, failures_doc, "failure-decision-events-v1")
+    version = failures_doc.get("schemaVersion")
+    _require(
+        isinstance(version, int) and not isinstance(version, bool) and version in FAILURE_SCHEMAS,
+        f"unsupported failure-decision schemaVersion {version!r}",
+    )
+    label = f"failure-decision-events-v{version}"
+    table = f"v{version}"
+    _validate(FAILURE_SCHEMAS[version], failures_doc, label)
     _validate(BUDGET_SCHEMA, budget_doc, "recovery-budget-events-v1")
-    _check_privacy(failures_doc, "failure-decision-events-v1")
+    _check_privacy(failures_doc, label)
     _check_privacy(budget_doc, "recovery-budget-events-v1")
     _require(
         failures_doc["sessionId"] == budget_doc["sessionId"]
@@ -961,8 +1454,9 @@ def verify_recovery(
     )
     fetch = _load_fetch(fetch_rows)
 
-    chains, events = _replay_budget(budget_doc)
+    chains, events = _replay_budget(budget_doc, table)
     rows = _verify_failures(failures_doc, chains)
+    _verify_budget_exhausted(rows, chains)
     _verify_failure_lineage(events, rows, chains)
     fetch_result = _verify_fetch(fetch, chains, budget_doc["sessionId"])
 
@@ -1045,7 +1539,7 @@ def verify_recovery(
                 "checks": acc06_checks,
             },
         },
-        "limitations": list(LIMITATIONS),
+        "limitations": list(LIMITATIONS_V2 if table == "v2" else LIMITATIONS),
     }
     _validate(SUMMARY_SCHEMA, summary, "recovery-verification-summary-v1")
     return summary
@@ -1068,7 +1562,9 @@ def main(argv: list[str] | None = None) -> int:
     verify = commands.add_parser("verify", help="verify one run's M2-C recovery evidence")
     verify.add_argument("--failures", required=True, type=pathlib.Path)
     verify.add_argument("--budget", required=True, type=pathlib.Path)
-    verify.add_argument("--fetch", required=True, type=pathlib.Path, help="fetch-events-v3 JSONL")
+    verify.add_argument(
+        "--fetch", required=True, type=pathlib.Path, help="fetch-events JSONL (v3 or v4)"
+    )
     verify.add_argument("--origin", type=pathlib.Path, help="Media Lab requests.jsonl")
     verify.add_argument("--case", type=pathlib.Path, help="scenario case.json")
     verify.add_argument("--output", required=True, type=pathlib.Path)

@@ -14,6 +14,15 @@ import io.github.definitelystable.spongetube.core.engine.FetchOutcome
 import io.github.definitelystable.spongetube.core.engine.FetchPriority
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
 import io.github.definitelystable.spongetube.core.engine.attemptCorrelationId
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCaller
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRefreshAdmission
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRefreshResult
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.ProviderWallClock
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfter
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterKind
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterObservation
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,21 +43,30 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 
 /**
- * The only logical retry owner (M2-C, ADR-0003).
+ * The only logical retry owner (M2-C / M2-D, ADR-0003).
  *
  * ```text
  * Playback / Reserve demand
  *   -> RecoveryCoordinator (one open RecoveryChain per immutable FetchKey)
- *        attempt gate -> budget admission -> FetchBroker owner (one attempt)
+ *        attempt gate -> budget admission -> FetchBroker owner (one attempt,
+ *        carrying the delivery binding selected for that owner)
  *        -> raw observation -> FailureClassifier -> RecoveryPolicy -> action
  * ```
  *
- * Neither FetchBroker, the transport executor nor Media3 decide to try again.
- * Consumers join the chain; the coordinator is the only FetchBroker consumer
- * (`recovery:<chainId>:<ownerOrdinal>`). A new owner, backoff, priority
- * escalation, attempt-gate wait or late demand never grants fresh budget:
- * the chain ledger is charged exactly once per physical attempt, inside the
- * broker owner, immediately before the request.
+ * Executed actions beyond a plain retry are the server-directed provider wait
+ * (`Retry-After`, as-is and free of charge) and one delivery-binding refresh
+ * outside the coordinator lock; the executed refresh result is recorded on the
+ * failure row. Neither FetchBroker, the transport executor nor Media3 decide
+ * to try again. Consumers join the chain; the coordinator is the only
+ * FetchBroker consumer (`recovery:<chainId>:<ownerOrdinal>`). A new owner,
+ * backoff, priority escalation, attempt-gate wait, provider wait or binding
+ * refresh never grants fresh budget: the chain ledger is charged exactly once
+ * per physical attempt, inside the broker owner, immediately before the
+ * request, and once per ACTUAL provider refresh operation.
+ *
+ * The delivery binding of an owner is execution context, never identity: it is
+ * selected outside the coordinator lock and a join never changes it. Lock
+ * order is always DeliveryBindingCoordinator -> RecoveryCoordinator.
  */
 internal class RecoveryCoordinator(
     private val broker: FetchBroker,
@@ -56,6 +74,8 @@ internal class RecoveryCoordinator(
     val policy: RecoveryPolicy = RecoveryPolicy.DEFAULT,
     private val attemptGate: RecoveryAttemptGate = RecoveryAttemptGate.ALWAYS_PERMIT,
     private val reconciler: RecoveryLocalReconciler? = null,
+    private val bindings: DeliveryBindingCoordinator? = null,
+    private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
     private val jitter: RecoveryJitterSource = RecoveryJitterSource.RANDOM,
     private val sleeper: RecoverySleeper = RecoverySleeper.COROUTINE_DELAY,
     private val evidence: RecoveryEvidenceListener? = null,
@@ -185,8 +205,10 @@ internal class RecoveryCoordinator(
     /**
      * Session shutdown: stop admitting chains, terminate every open chain as
      * SESSION_TERMINATION (closing its current broker handle and waking any
-     * wait) and wait for them. FetchBroker is shut down afterwards by the
-     * runtime; no chain starts an attempt after this returns.
+     * wait, including a provider wait or refresh await), settle the delivery
+     * binding coordinator and wait for every chain. FetchBroker is shut down
+     * afterwards by the runtime; no chain starts an attempt after this
+     * returns.
      */
     private val shutdownCompletion = CompletableDeferred<Unit>()
 
@@ -216,6 +238,11 @@ internal class RecoveryCoordinator(
                     }
                 }
                 handles.forEach(FetchHandle::close)
+                // Lock order stays DeliveryBindingCoordinator -> Recovery
+                // Coordinator: no coordinator lock is held here. Closing the
+                // binding coordinator after the chains were stopped leaves no
+                // refresh operation running when this returns.
+                bindings?.shutdown()
                 chains.forEach { chain -> chain.job?.join() }
                 if (ownsScope) {
                     scope.cancel()
@@ -324,6 +351,10 @@ internal class RecoveryCoordinator(
         consumerKind: FetchConsumerKind,
     ): FetchOutcome? {
         val admitted = AtomicBoolean()
+        // The binding is execution context, never identity: it is read outside
+        // the coordinator lock and passed to the broker owner.
+        val binding = bindings?.current()
+        synchronized(lock) { chain.lastSelectedBinding = binding?.revision }
         val handle = try {
             broker.acquire(
                 request = chain.request,
@@ -351,7 +382,24 @@ internal class RecoveryCoordinator(
                         fetchId = fetchId.value,
                         attemptCorrelationId = attemptCorrelationId,
                     )
+                    if (binding != null) {
+                        // The failure snapshot is taken under the coordinator
+                        // lock; recordSelection is never called while holding
+                        // it (lock order is binding -> recovery).
+                        val failureId = synchronized(lock) { chain.lastFailureId }
+                        bindings.recordSelection(
+                            DeliveryBindingCaller(
+                                recoveryChainId = chain.id.value,
+                                failureId = failureId,
+                                fetchKey = chain.fetchKey.value,
+                                extentId = chain.request.extentSpec.extentId.value,
+                            ),
+                            attemptCorrelationId,
+                            binding.revision,
+                        )
+                    }
                 },
+                deliveryBinding = binding,
             )
         } catch (closedBroker: IllegalStateException) {
             if (closing) {
@@ -427,15 +475,32 @@ internal class RecoveryCoordinator(
         // Demand-dependent decisions and their terminal transition happen in
         // one critical section, so a consumer joining concurrently either is
         // counted as demand or joins a new chain; it never receives a
-        // NO_REMAINING_DEMAND that it did not cause.
+        // NO_REMAINING_DEMAND that it did not cause. Executable refreshes run
+        // outside the lock; a provider wait is only stored here.
         var reconcileWith: Pending? = null
+        var refreshWith: Pending? = null
         val immediate: Next? = synchronized(lock) {
             val pending = pendingFailure(chain, outcome, observation, classification)
-            if (pending.decision.kind == RecoveryDecisionKind.RECONCILE_LOCAL_COVERAGE) {
-                reconcileWith = pending
+            val action = if (
+                pending.decision.kind == RecoveryDecisionKind.RECONCILE_LOCAL_COVERAGE
+            ) {
                 null
             } else {
-                applyLocked(chain, pending, actionFor(chain, pending))
+                actionFor(chain, pending)
+            }
+            when {
+                action == null -> {
+                    reconcileWith = pending
+                    null
+                }
+                // The executable-refresh marker carries no result yet: the
+                // operation runs outside the lock and is applied afterwards.
+                action.kind == RecoveryActionKind.REFRESH_DELIVERY_BINDING &&
+                    action.deliveryBinding == null -> {
+                    refreshWith = pending
+                    null
+                }
+                else -> applyLocked(chain, pending, action)
             }
         }
         if (immediate == Next.TERMINATED) {
@@ -465,6 +530,21 @@ internal class RecoveryCoordinator(
             return next
         }
 
+        val pendingRefresh = refreshWith
+        if (pendingRefresh != null) {
+            return executeRefresh(chain, pendingRefresh)
+        }
+
+        // A decided provider wait runs outside the lock and spends nothing:
+        // no budget event and no extra backoff on top of `Retry-After`.
+        val providerWait = synchronized(lock) {
+            chain.pendingProviderWait.also { chain.pendingProviderWait = null }
+        }
+        if (providerWait != null) {
+            awaitWhileDemanded(chain) { sleeper.sleep(providerWait.first) }
+            return Next.CONTINUE
+        }
+
         // SCHEDULE_BACKOFF or START_NEXT_OWNER.
         val backoff = synchronized(lock) { chain.pendingBackoff.also { chain.pendingBackoff = null } }
         if (backoff != null) {
@@ -483,6 +563,138 @@ internal class RecoveryCoordinator(
             }
         }
         return Next.CONTINUE
+    }
+
+    /**
+     * One executed delivery-binding refresh, outside the coordinator lock
+     * (lock order is DeliveryBindingCoordinator -> RecoveryCoordinator). The
+     * failure-decision row is emitted after the operation returns, carrying
+     * its result.
+     */
+    private suspend fun executeRefresh(
+        chain: RecoveryChain,
+        pending: Pending,
+    ): Next {
+        val expected = checkNotNull(
+            (pending.observation as? FailureObservation.HttpResponse)
+                ?.deliveryBindingRevision,
+        ) { "an executable refresh carries the selected revision" }
+        val coordinator = checkNotNull(bindings) {
+            "an executable refresh has a delivery binding coordinator"
+        }
+        setState(chain, RecoveryChainState.REFRESHING_BINDING)
+        val charged = AtomicBoolean()
+        val admission = DeliveryBindingRefreshAdmission {
+            val charge = chain.ledger.charge(
+                RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH,
+            )
+            charged.set(true)
+            emitBudget(
+                chain,
+                RecoveryBudgetEventKind.CHARGE,
+                charge = charge,
+                failureId = pending.failureId,
+            )
+        }
+        // null means the chain lost its demand or the session closed while
+        // awaiting: the refresh is abandoned and the loop re-checks state. A
+        // result that did arrive is recorded as it is, even when the chain is
+        // being stopped, so the failure row never contradicts the
+        // delivery-binding evidence; an operation cancelled by shutdown (or
+        // by every waiter leaving) is recorded as ABANDONED.
+        val result = awaitWhileDemanded(chain) {
+            coordinator.refresh(
+                expected = expected,
+                caller = DeliveryBindingCaller(
+                    recoveryChainId = chain.id.value,
+                    failureId = pending.failureId,
+                    fetchKey = chain.fetchKey.value,
+                    extentId = chain.request.extentSpec.extentId.value,
+                ),
+                admission = admission,
+            )
+        }
+        val action = RecoveryActionRecord(
+            kind = RecoveryActionKind.REFRESH_DELIVERY_BINDING,
+            exhaustedDimension = if (result is DeliveryBindingRefreshResult.NotAdmitted) {
+                RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH
+            } else {
+                null
+            },
+            deliveryBinding = deliveryBindingRecord(expected, result, charged.get()),
+        )
+        val next = synchronized(lock) { applyLocked(chain, pending, action) }
+        if (next == Next.TERMINATED) {
+            complete(chain, checkNotNull(chain.terminalOutcome))
+        }
+        return next
+    }
+
+    private fun deliveryBindingRecord(
+        expected: DeliveryBindingRevision,
+        result: DeliveryBindingRefreshResult?,
+        charged: Boolean,
+    ): DeliveryBindingActionRecord = when (result) {
+        null -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.ABANDONED,
+            currentRevision = null,
+            refreshCorrelationId = null,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.Refreshed -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.REFRESHED,
+            currentRevision = result.current,
+            refreshCorrelationId = result.refreshCorrelationId,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.AlreadyAdvanced -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.ALREADY_ADVANCED,
+            currentRevision = result.current,
+            refreshCorrelationId = null,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.JoinedRefresh -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.JOINED_REFRESH,
+            currentRevision = result.current,
+            refreshCorrelationId = result.refreshCorrelationId,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.Incompatible -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.INCOMPATIBLE,
+            currentRevision = null,
+            refreshCorrelationId = result.refreshCorrelationId,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.Failed -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = if (result.cancelled) {
+                DeliveryBindingActionResult.ABANDONED
+            } else {
+                DeliveryBindingActionResult.FAILED
+            },
+            currentRevision = null,
+            refreshCorrelationId = result.refreshCorrelationId,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.NotAdmitted -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.NOT_ADMITTED,
+            currentRevision = null,
+            refreshCorrelationId = null,
+            charged = charged,
+        )
+        is DeliveryBindingRefreshResult.Closed -> DeliveryBindingActionRecord(
+            expectedRevision = expected,
+            result = DeliveryBindingActionResult.CLOSED,
+            currentRevision = null,
+            refreshCorrelationId = null,
+            charged = charged,
+        )
     }
 
     private class Pending(
@@ -507,11 +719,15 @@ internal class RecoveryCoordinator(
             sessionClosing = closing,
             remoteAttemptsRemaining =
                 chain.ledger.remaining(RecoveryBudgetDimension.REMOTE_ATTEMPT),
+            deliveryBindingRefreshesRemaining =
+                deliveryBindingRefreshesRemaining(chain),
         )
         chain.failureOrdinal += 1
+        val failureId = "${chain.id}:failure-${chain.failureOrdinal}"
+        chain.lastFailureId = failureId
         val fetchId = chain.lastFetchId
         return Pending(
-            failureId = "${chain.id}:failure-${chain.failureOrdinal}",
+            failureId = failureId,
             fetchId = fetchId?.takeIf { outcome != null }?.value,
             attemptCorrelationId = fetchId
                 ?.takeIf { outcome != null && outcome.attempts > 0 }
@@ -524,7 +740,23 @@ internal class RecoveryCoordinator(
         )
     }
 
-    /** Executed action for every decision except RECONCILE_LOCAL_COVERAGE. */
+    /**
+     * Remaining DELIVERY_BINDING_REFRESH charges when the policy declares the
+     * dimension; 0 when it does not (M2.md 20, M2-D).
+     */
+    private fun deliveryBindingRefreshesRemaining(chain: RecoveryChain): Int {
+        val dimension = RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH
+        return if (policy.budget.limit(dimension) != null) {
+            chain.ledger.remaining(dimension)
+        } else {
+            0
+        }
+    }
+
+    /**
+     * Executed action for every decision except RECONCILE_LOCAL_COVERAGE and
+     * an executable REFRESH_DELIVERY_BINDING, which run outside the lock.
+     */
     private fun actionFor(
         chain: RecoveryChain,
         pending: Pending,
@@ -533,7 +765,10 @@ internal class RecoveryCoordinator(
         return when (pending.decision.kind) {
             RecoveryDecisionKind.RETRY_AFTER_BACKOFF ->
                 if (remaining == 0) {
-                    RecoveryActionRecord(RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED)
+                    RecoveryActionRecord(
+                        kind = RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED,
+                        exhaustedDimension = RecoveryBudgetDimension.REMOTE_ATTEMPT,
+                    )
                 } else {
                     chain.retryOrdinal += 1
                     RecoveryActionRecord(
@@ -546,17 +781,19 @@ internal class RecoveryCoordinator(
             RecoveryDecisionKind.WAIT_FOR_ROUTE,
             ->
                 if (remaining == 0) {
-                    RecoveryActionRecord(RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED)
+                    RecoveryActionRecord(
+                        kind = RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED,
+                        exhaustedDimension = RecoveryBudgetDimension.REMOTE_ATTEMPT,
+                    )
                 } else {
                     // The next iteration waits for the attempt gate first.
                     RecoveryActionRecord(RecoveryActionKind.START_NEXT_OWNER)
                 }
-            // Provider actions are implemented by M2-D. Until then the
-            // decision stands but fails closed instead of becoming a retry.
-            RecoveryDecisionKind.WAIT_UNTIL_PROVIDER,
-            RecoveryDecisionKind.REFRESH_DELIVERY_BINDING,
-            RecoveryDecisionKind.RERESOLVE_PROVIDER,
-            ->
+            RecoveryDecisionKind.WAIT_UNTIL_PROVIDER -> waitUntilProvider(pending)
+            RecoveryDecisionKind.REFRESH_DELIVERY_BINDING -> refreshDecision(chain, pending)
+            RecoveryDecisionKind.RERESOLVE_PROVIDER ->
+                // Re-resolve semantics are not defined by #50; stays
+                // fail-closed instead of becoming a retry.
                 RecoveryActionRecord(RecoveryActionKind.FAIL_CLOSED_ACTION_UNAVAILABLE)
             RecoveryDecisionKind.FAIL_TERMINAL ->
                 RecoveryActionRecord(RecoveryActionKind.TERMINATE_FAILURE)
@@ -567,6 +804,77 @@ internal class RecoveryCoordinator(
             RecoveryDecisionKind.RECONCILE_LOCAL_COVERAGE ->
                 error("reconciliation is executed outside the lock")
         }
+    }
+
+    /**
+     * `WAIT_UNTIL_PROVIDER`: exhaustion of the remote-attempt dimension is
+     * decided first, then the `Retry-After` observation is turned into a
+     * provider wait inside PROVIDER_WALL_CLOCK. ABSENT/MALFORMED cannot reach
+     * this action from the v2 policy and fail closed defensively.
+     */
+    private fun waitUntilProvider(pending: Pending): RecoveryActionRecord {
+        if (pending.context.remoteAttemptsRemaining == 0) {
+            return RecoveryActionRecord(
+                kind = RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED,
+                exhaustedDimension = RecoveryBudgetDimension.REMOTE_ATTEMPT,
+            )
+        }
+        val retryAfter = (pending.observation as? FailureObservation.HttpResponse)
+            ?.retryAfter
+            ?: RetryAfterObservation.ABSENT
+        val nowUtcEpochMs = providerWallClock.nowUtcEpochMs()
+        val waitMs = RetryAfter.waitMs(retryAfter, nowUtcEpochMs)
+            ?: return RecoveryActionRecord(RecoveryActionKind.FAIL_CLOSED_ACTION_UNAVAILABLE)
+        val httpDate = retryAfter.rawKind == RetryAfterKind.HTTP_DATE
+        return RecoveryActionRecord(
+            kind = RecoveryActionKind.WAIT_PROVIDER,
+            providerWait = ProviderWaitRecord(
+                rawKind = retryAfter.rawKind,
+                waitMs = waitMs,
+                notBeforeUtcEpochMs = if (httpDate) retryAfter.notBeforeUtcEpochMs else null,
+                wallClockNowUtcEpochMs = if (httpDate) nowUtcEpochMs else null,
+            ),
+        )
+    }
+
+    /**
+     * `REFRESH_DELIVERY_BINDING`: the REMOTE_ATTEMPT dimension is checked
+     * first, then binding availability. The refresh budget is intentionally
+     * NOT checked here: an exhausted chain must still be able to observe
+     * ALREADY_ADVANCED or JOINED_REFRESH, both of which are zero-charge paths.
+     * Only the actual refresh initiator reaches DeliveryBindingRefreshAdmission,
+     * where DELIVERY_BINDING_REFRESH is charged atomically; exhaustion there
+     * becomes NOT_ADMITTED / BUDGET_EXHAUSTED.
+     */
+    private fun refreshDecision(chain: RecoveryChain, pending: Pending): RecoveryActionRecord {
+        if (pending.context.remoteAttemptsRemaining == 0) {
+            return RecoveryActionRecord(
+                kind = RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED,
+                exhaustedDimension = RecoveryBudgetDimension.REMOTE_ATTEMPT,
+            )
+        }
+        if (!refreshExecutable(chain, pending)) {
+            return RecoveryActionRecord(RecoveryActionKind.FAIL_CLOSED_ACTION_UNAVAILABLE)
+        }
+        return RecoveryActionRecord(RecoveryActionKind.REFRESH_DELIVERY_BINDING)
+    }
+
+    /**
+     * True when a refresh is available: a binding coordinator participates,
+     * the policy declares the dimension, and the failed owner's response
+     * carries exactly the revision the coordinator selected for that owner.
+     */
+    private fun refreshExecutable(chain: RecoveryChain, pending: Pending): Boolean {
+        if (bindings == null) {
+            return false
+        }
+        if (policy.budget.limit(RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH) == null) {
+            return false
+        }
+        val response = pending.observation as? FailureObservation.HttpResponse
+            ?: return false
+        val revision = response.deliveryBindingRevision ?: return false
+        return revision == chain.lastSelectedBinding
     }
 
     /** Records the four failure layers, then executes a terminal or a wait. */
@@ -596,7 +904,23 @@ internal class RecoveryCoordinator(
         val terminal = when (action.kind) {
             RecoveryActionKind.SCHEDULE_BACKOFF,
             RecoveryActionKind.START_NEXT_OWNER,
+            RecoveryActionKind.WAIT_PROVIDER,
             -> null
+            RecoveryActionKind.REFRESH_DELIVERY_BINDING ->
+                when (checkNotNull(action.deliveryBinding).result) {
+                    DeliveryBindingActionResult.REFRESHED,
+                    DeliveryBindingActionResult.ALREADY_ADVANCED,
+                    DeliveryBindingActionResult.JOINED_REFRESH,
+                    DeliveryBindingActionResult.ABANDONED,
+                    -> null
+                    DeliveryBindingActionResult.INCOMPATIBLE,
+                    DeliveryBindingActionResult.FAILED,
+                    -> RecoveryTerminalReason.TERMINAL_FAILURE
+                    DeliveryBindingActionResult.NOT_ADMITTED ->
+                        RecoveryTerminalReason.BUDGET_EXHAUSTED
+                    DeliveryBindingActionResult.CLOSED ->
+                        RecoveryTerminalReason.SESSION_TERMINATION
+                }
             RecoveryActionKind.LOCAL_COVERAGE_READY -> RecoveryTerminalReason.SUCCESS
             RecoveryActionKind.TERMINATE_BUDGET_EXHAUSTED ->
                 RecoveryTerminalReason.BUDGET_EXHAUSTED
@@ -616,24 +940,34 @@ internal class RecoveryCoordinator(
                 classification = pending.classification,
                 action = action.kind,
                 failureId = pending.failureId,
+                exhaustedDimension = action.exhaustedDimension,
+                deliveryBindingResult = action.deliveryBinding?.result,
             )
             return Next.TERMINATED
         }
-        if (action.kind == RecoveryActionKind.SCHEDULE_BACKOFF) {
-            val retryOrdinal = checkNotNull(action.retryOrdinal)
-            val record = RecoveryBackoffRecord(
-                retryOrdinal = retryOrdinal,
-                windowMs = policy.backoff.windowMs(retryOrdinal),
-                delayMs = checkNotNull(action.delayMs),
-            )
-            chain.state = RecoveryChainState.WAITING_BACKOFF
-            emitBudget(
-                chain,
-                RecoveryBudgetEventKind.BACKOFF_SCHEDULED,
-                backoff = record,
-                failureId = pending.failureId,
-            )
-            chain.pendingBackoff = record to pending.failureId
+        when (action.kind) {
+            RecoveryActionKind.SCHEDULE_BACKOFF -> {
+                val retryOrdinal = checkNotNull(action.retryOrdinal)
+                val record = RecoveryBackoffRecord(
+                    retryOrdinal = retryOrdinal,
+                    windowMs = policy.backoff.windowMs(retryOrdinal),
+                    delayMs = checkNotNull(action.delayMs),
+                )
+                chain.state = RecoveryChainState.WAITING_BACKOFF
+                emitBudget(
+                    chain,
+                    RecoveryBudgetEventKind.BACKOFF_SCHEDULED,
+                    backoff = record,
+                    failureId = pending.failureId,
+                )
+                chain.pendingBackoff = record to pending.failureId
+            }
+            RecoveryActionKind.WAIT_PROVIDER -> {
+                val record = checkNotNull(action.providerWait)
+                chain.state = RecoveryChainState.WAITING_PROVIDER
+                chain.pendingProviderWait = record.waitMs to pending.failureId
+            }
+            else -> Unit
         }
         return Next.CONTINUE
     }
@@ -756,6 +1090,8 @@ internal class RecoveryCoordinator(
         classification: FailureClassification? = null,
         action: RecoveryActionKind? = null,
         failureId: String? = null,
+        exhaustedDimension: RecoveryBudgetDimension? = null,
+        deliveryBindingResult: DeliveryBindingActionResult? = null,
     ): RecoveryOutcome {
         check(chain.state != RecoveryChainState.TERMINAL)
         emitBudget(
@@ -779,6 +1115,8 @@ internal class RecoveryCoordinator(
             classification = classification,
             action = action,
             committedExtent = committedExtent,
+            exhaustedDimension = exhaustedDimension,
+            deliveryBindingResult = deliveryBindingResult,
         )
         chain.terminalOutcome = outcome
         return outcome
