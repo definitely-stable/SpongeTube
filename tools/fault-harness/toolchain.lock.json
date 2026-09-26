@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "toxiproxy": {
+    "version": "2.12.0",
+    "asset": "toxiproxy-server-linux-amd64",
+    "sha256": "556d891134a3c582dc1e1a3f7335fd55142e5965769855a00b944e13e48302fc",
+    "downloadSource": "https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/toxiproxy-server-linux-amd64"
+  },
+  "netem": {
+    "systemSource": "ubuntu-24.04 iproute2",
+    "labTc": {
+      "version": "6.6.0",
+      "asset": "iproute2-6.6.0.tar.xz",
+      "sha256": "8738c804afd09f0bf756937f0c3de23117832a98d8cbbf50386cf5005cd613ce",
+      "downloadSource": "https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-6.6.0.tar.xz"
+    },
+    "requiredCapabilities": [
+      "network-namespace",
+      "veth",
+      "qdisc-json-readback",
+      "filter-json-readback",
+      "netem-seed",
+      "traffic-classifier"
+    ]
+  }
+}
