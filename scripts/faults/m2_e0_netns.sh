@@ -120,6 +120,12 @@ filters = json.loads(sys.argv[2])
 kinds = {entry.get("kind") for entry in qdiscs if isinstance(entry, dict)}
 if "netem" not in kinds or "clsact" not in kinds:
     raise SystemExit(f"missing qdisc readback: {sorted(k for k in kinds if k)}")
+netem = next(
+    (entry for entry in qdiscs if isinstance(entry, dict) and entry.get("kind") == "netem"),
+    None,
+)
+if netem is None or int(netem.get("seed", -1)) != 424242:
+    raise SystemExit(f"netem seed readback mismatch: {netem!r}")
 if not any(isinstance(entry, dict) and entry.get("kind") == "flower" for entry in filters):
     raise SystemExit("missing flower classifier readback")
 PY
