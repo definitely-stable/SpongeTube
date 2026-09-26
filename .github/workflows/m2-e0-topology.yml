@@ -36,8 +36,11 @@ jobs:
         run: |
           set -euo pipefail
           root="build/m2-e0/host"
-          tools="$root/tools"
-          mkdir -p "$root" "$tools"
+          tool_root="$RUNNER_TEMP/m2-e0-tools"
+          toxi_tools="$tool_root/toxiproxy"
+          iproute_tools="$tool_root/iproute2"
+          rm -rf "$root" "$tool_root"
+          mkdir -p "$root" "$toxi_tools" "$iproute_tools"
 
           cleanup() {
             bash scripts/faults/m2_e0_netns.sh remove-probe || true
@@ -49,11 +52,18 @@ jobs:
           }
           trap cleanup EXIT
 
-          bash scripts/faults/m2_e0_netns.sh probe
-          bash scripts/faults/install_toxiproxy.sh "$tools" \
-            > "$root/toxiproxy-version.txt"
+          tc -V > "$root/system-tc-version.txt"
+          uname -r > "$root/kernel-release.txt"
 
-          "$tools/toxiproxy-server" -host 127.0.0.1 -port 18474 \
+          bash scripts/faults/install_toxiproxy.sh "$toxi_tools" \
+            > "$root/toxiproxy-version.txt"
+          bash scripts/faults/install_iproute2_tc.sh "$iproute_tools" \
+            > "$root/lab-tc-version.txt"
+          export M2_TC_BIN="$iproute_tools/tc"
+
+          bash scripts/faults/m2_e0_netns.sh probe
+
+          "$toxi_tools/toxiproxy-server" -host 127.0.0.1 -port 18474 \
             > "$root/toxiproxy.out" 2> "$root/toxiproxy.err" &
           TOXI_PID=$!
           for attempt in {1..30}; do
@@ -91,7 +101,7 @@ jobs:
           kill "$TOXI_PID"
           wait "$TOXI_PID" 2>/dev/null || true
           unset TOXI_PID
-          if pgrep -f "$tools/toxiproxy-server" >/dev/null 2>&1; then
+          if pgrep -f "$toxi_tools/toxiproxy-server" >/dev/null 2>&1; then
             echo "Toxiproxy process leaked" >&2
             exit 1
           fi
@@ -102,7 +112,11 @@ jobs:
             --qdisc-json "$root/qdisc.json" \
             --filter-json "$root/filter.json" \
             --toxiproxy-version "$root/toxiproxy-version.txt" \
-            --toxiproxy-sha "$tools/toxiproxy-server.sha256" \
+            --toxiproxy-sha "$toxi_tools/toxiproxy-server.sha256" \
+            --system-tc-version "$root/system-tc-version.txt" \
+            --lab-tc-version "$root/lab-tc-version.txt" \
+            --lab-tc-source-sha "$iproute_tools/iproute2-source.sha256" \
+            --kernel-release "$root/kernel-release.txt" \
             --seed-accepted "$root/seed-accepted.txt" \
             --clean "$root/clean.txt" \
             --toxiproxy-clean "$root/toxiproxy-clean.txt"
@@ -114,7 +128,19 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: m2-e0-host-feasibility
-          path: build/m2-e0/host/
+          path: |
+            build/m2-e0/host/host-feasibility.json
+            build/m2-e0/host/qdisc.json
+            build/m2-e0/host/filter.json
+            build/m2-e0/host/system-tc-version.txt
+            build/m2-e0/host/lab-tc-version.txt
+            build/m2-e0/host/kernel-release.txt
+            build/m2-e0/host/toxiproxy-version.txt
+            build/m2-e0/host/toxiproxy-api-version.json
+            build/m2-e0/host/toxiproxy-proxies.json
+            build/m2-e0/host/seed-accepted.txt
+            build/m2-e0/host/clean.txt
+            build/m2-e0/host/toxiproxy-clean.txt
           if-no-files-found: error
           retention-days: 14
 
