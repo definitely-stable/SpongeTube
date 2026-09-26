@@ -679,12 +679,17 @@ class ProviderRecoveryTest {
         val secondOwnerEntered = CompletableDeferred<Unit>()
         val releaseSecondOwner = CompletableDeferred<Unit>()
 
-        h.origin.script(
-            work.fetchKey,
-            h.origin.http(403, signal = ProviderSignal.BINDING_STALE_CONFIRMED),
-        )
         h.origin.scriptBound(
             work.fetchKey,
+            { _, _, _, revision ->
+                FetchAttemptDisposition.Failure(
+                    FailureObservation.HttpResponse(
+                        statusCode = 403,
+                        providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+                        deliveryBindingRevision = revision,
+                    ),
+                )
+            },
             { _, _, _, revision ->
                 secondOwnerEntered.complete(Unit)
                 releaseSecondOwner.await()
@@ -764,12 +769,17 @@ class ProviderRecoveryTest {
         val secondOwnerEntered = CompletableDeferred<Unit>()
         val releaseSecondOwner = CompletableDeferred<Unit>()
 
-        h.origin.script(
-            work.fetchKey,
-            h.origin.http(403, signal = ProviderSignal.BINDING_STALE_CONFIRMED),
-        )
         h.origin.scriptBound(
             work.fetchKey,
+            { _, _, _, revision ->
+                FetchAttemptDisposition.Failure(
+                    FailureObservation.HttpResponse(
+                        statusCode = 403,
+                        providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+                        deliveryBindingRevision = revision,
+                    ),
+                )
+            },
             { _, _, _, revision ->
                 secondOwnerEntered.complete(Unit)
                 releaseSecondOwner.await()
