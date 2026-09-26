@@ -46,6 +46,12 @@ internal enum class RecoveryChainState {
     ACTIVE,
     WAITING_BACKOFF,
     WAITING_ATTEMPT_PERMIT,
+
+    /** Waiting a server-directed provider delay (no backoff, no charge). */
+    WAITING_PROVIDER,
+
+    /** Executing one delivery-binding refresh operation outside the lock. */
+    REFRESHING_BINDING,
     CANCELLING,
     TERMINAL,
 }
@@ -117,6 +123,10 @@ internal enum class RecoveryDecisionReason {
     SESSION_SHUTDOWN,
     DEMAND_PRESENT_AFTER_CANCELLATION,
     LOCAL_PUBLICATION_CONFLICT,
+
+    /** 429 without a usable `Retry-After`; fails closed until #50. */
+    RETRY_AFTER_ABSENT,
+    RETRY_AFTER_MALFORMED,
 }
 
 /** The operation actually executed after a decision (M2.md 9). */
@@ -128,10 +138,22 @@ internal enum class RecoveryActionKind {
     TERMINATE_NO_DEMAND,
     TERMINATE_SESSION,
 
-    /** The decided action has no handler in this runtime (e.g. M2-D). */
+    /**
+     * The decided action has no handler in this runtime, or a provider action
+     * has no usable delivery binding (e.g. RERESOLVE_PROVIDER).
+     */
     FAIL_CLOSED_ACTION_UNAVAILABLE,
     LOCAL_COVERAGE_READY,
     FAIL_CLOSED_IDENTITY_CONFLICT,
+
+    /**
+     * Server-directed provider wait. Distinct from [SCHEDULE_BACKOFF]: it
+     * follows a valid `Retry-After`, spends no budget and adds no backoff.
+     */
+    WAIT_PROVIDER,
+
+    /** One executed delivery-binding refresh operation. */
+    REFRESH_DELIVERY_BINDING,
 }
 
 internal data class RecoveryDecision(
@@ -162,6 +184,10 @@ internal data class RecoveryOutcome(
     val classification: FailureClassification?,
     val action: RecoveryActionKind?,
     val committedExtent: CommittedExtent?,
+    /** Set iff the terminal action was BUDGET_EXHAUSTED (M2-D). */
+    val exhaustedDimension: RecoveryBudgetDimension? = null,
+    /** Executed refresh result when the terminal action was a refresh (M2-D). */
+    val deliveryBindingResult: DeliveryBindingActionResult? = null,
 ) {
     val isSuccess: Boolean
         get() = terminalReason == RecoveryTerminalReason.SUCCESS

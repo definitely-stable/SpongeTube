@@ -1,6 +1,12 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingSnapshot
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
+import io.github.definitelystable.spongetube.core.engine.delivery.ProviderWallClock
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfter
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.ProviderSignal
 import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
 import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import java.io.IOException
@@ -28,7 +34,8 @@ internal data class HttpRangeTarget(
 }
 
 /**
- * Minimal deterministic-origin range executor for M1-E (plan D6).
+ * Minimal deterministic-origin range executor for M1-E (plan D6), extended by
+ * M2-D with delivery-binding awareness.
  *
  * One call = one physical origin request for exactly the FetchUnit range.
  * Accepts only `206` with a matching `Content-Range`; a `200` full body to a
@@ -40,8 +47,16 @@ internal data class HttpRangeTarget(
  * [FailureObservation.HttpResponse], never a transport failure, and nothing
  * here decides retryability. Exception messages are never inspected.
  *
- * This is not the production transport: HttpEngine/OkHttp/Cronet selection is
- * M2 and nothing here is a performance claim.
+ * Since M2-D an owner that carries a delivery binding resolves its target
+ * through the injected `bindingTargetFor` mapping and sends the selected
+ * revision as `X-Sponge-Binding-Revision`; every received status that becomes
+ * an [FailureObservation.HttpResponse] additionally carries the normalized
+ * `Retry-After` observation (parsed, never retained raw), the injected
+ * provider signal and the selected revision. The unbound path parses the same
+ * observations with a null revision.
+ *
+ * This is not the production transport: HttpEngine/OkHttp/Cronet selection and
+ * the lab provider mapping are injected. Nothing here is a performance claim.
  */
 internal class HttpRangeFetchExecutor(
     private val targetFor: (FetchRequest) -> HttpRangeTarget?,
@@ -51,7 +66,12 @@ internal class HttpRangeFetchExecutor(
     private val openConnection: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     },
-) : CorrelatingFetchAttemptExecutor {
+    private val bindingTargetFor: ((FetchRequest, DeliveryMaterial) -> HttpRangeTarget?)? = null,
+    private val providerSignalFor:
+        (statusCode: Int, header: (String) -> String?) -> ProviderSignal =
+        { _, _ -> ProviderSignal.NONE },
+    private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
+) : DeliveryBoundFetchAttemptExecutor {
     init {
         require(connectTimeoutMs > 0)
         require(readTimeoutMs > 0)
@@ -95,10 +115,54 @@ internal class HttpRangeFetchExecutor(
         onPhysicalAttemptStart: () -> Unit,
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition =
+        executeWithTarget(
+            request = request,
+            attempt = attempt,
+            onPhysicalAttemptStart = onPhysicalAttemptStart,
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+            resolveTarget = { targetFor(request) },
+            bindingRevision = null,
+        )
+
+    override suspend fun executeWithDeliveryBinding(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        deliveryBinding: DeliveryBindingSnapshot,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition =
+        executeWithTarget(
+            request = request,
+            attempt = attempt,
+            onPhysicalAttemptStart = onPhysicalAttemptStart,
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+            resolveTarget = { bindingTargetFor?.invoke(request, deliveryBinding.material) },
+            bindingRevision = deliveryBinding.revision,
+        )
+
+    /**
+     * One physical origin request shared by the bound and unbound paths; only
+     * target resolution and the selected revision differ. Local preflight
+     * ([resolveTarget] and the range checks) happens before admission: no
+     * socket exists yet, so it never consumes REMOTE_ATTEMPT.
+     */
+    private suspend fun executeWithTarget(
+        request: FetchRequest,
+        attempt: Int,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        resolveTarget: () -> HttpRangeTarget?,
+        bindingRevision: DeliveryBindingRevision?,
     ): FetchAttemptDisposition {
         // These checks are local preflight. They must not consume
         // REMOTE_ATTEMPT because no socket/request exists yet.
-        val target = targetFor(request)
+        val target = resolveTarget()
             ?: return failure(
                 FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
                 null,
@@ -126,6 +190,9 @@ internal class HttpRangeFetchExecutor(
                 setRequestProperty("Accept-Encoding", "identity")
                 setRequestProperty(FETCH_KEY_HEADER, request.fetchKey.value)
                 setRequestProperty(ATTEMPT_HEADER, attempt.toString())
+                if (bindingRevision != null) {
+                    setRequestProperty(BINDING_REVISION_HEADER, bindingRevision.value)
+                }
             }
             // Non-suspending admission is immediately adjacent to physical
             // transport start. A successful preflight therefore has exactly
@@ -149,6 +216,7 @@ internal class HttpRangeFetchExecutor(
                         resourceLength = target.resourceLength,
                         onTransportCorrelation = onTransportCorrelation,
                         emitChunk = emitChunk,
+                        bindingRevision = bindingRevision,
                     )
                 } finally {
                     watchdog.cancel()
@@ -164,6 +232,7 @@ internal class HttpRangeFetchExecutor(
         resourceLength: Long,
         onTransportCorrelation: suspend (String) -> Unit,
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        bindingRevision: DeliveryBindingRevision?,
     ): FetchAttemptDisposition {
         try {
             connection.connect()
@@ -194,7 +263,17 @@ internal class HttpRangeFetchExecutor(
                 correlation,
             )
             status in 100..599 -> return failure(
-                FailureObservation.HttpResponse(status),
+                FailureObservation.HttpResponse(
+                    statusCode = status,
+                    retryAfter = RetryAfter.parse(
+                        connection.getHeaderField(RETRY_AFTER_HEADER),
+                        providerWallClock.nowUtcEpochMs(),
+                    ),
+                    providerSignal = providerSignalFor(status) { name ->
+                        connection.getHeaderField(name)
+                    },
+                    deliveryBindingRevision = bindingRevision,
+                ),
                 correlation,
             )
             // Not a parseable HTTP status line.
@@ -327,6 +406,8 @@ internal class HttpRangeFetchExecutor(
         const val LAB_REQUEST_HEADER = "X-Sponge-Lab-Request"
         const val FETCH_KEY_HEADER = "X-Sponge-Fetch-Key"
         const val ATTEMPT_HEADER = "X-Sponge-Attempt"
+        const val BINDING_REVISION_HEADER = "X-Sponge-Binding-Revision"
+        private const val RETRY_AFTER_HEADER = "Retry-After"
         private const val DEFAULT_CHUNK_SIZE = 16 * 1024
     }
 }

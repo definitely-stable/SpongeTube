@@ -1,12 +1,13 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
 import io.github.definitelystable.spongetube.core.engine.FetchOutcomeKind
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
 import io.github.definitelystable.spongetube.core.engine.legacyOutcomeKind
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 
-/** M2-C frozen classification anchors (C-11..C-14 and item 23). */
+/** M2-C frozen classification anchors (C-11..C-14 and item 23) and the M2-D refinement. */
 class FailureClassifierTest {
     private fun classify(observation: FailureObservation) =
         FailureClassifier.classify(observation)
@@ -52,6 +53,81 @@ class FailureClassifierTest {
         assertNotEquals(FailureClassification.DELIVERY_BINDING_STALE, classify(observation))
     }
 
+    // M2-D refinement: only an explicit signal refines a rejection.
+    @Test
+    fun explicitBindingStaleSignalRefinesRejectionsOnly() {
+        assertEquals(
+            FailureClassification.DELIVERY_BINDING_STALE,
+            classify(
+                FailureObservation.HttpResponse(
+                    403,
+                    providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+                ),
+            ),
+        )
+        listOf(404, 410).forEach { status ->
+            assertEquals(
+                FailureClassification.DELIVERY_BINDING_STALE,
+                classify(
+                    FailureObservation.HttpResponse(
+                        status,
+                        providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+                    ),
+                ),
+                "$status",
+            )
+        }
+    }
+
+    // M2-D refinement: a signal never overrides status semantics.
+    @Test
+    fun signalNeverOverridesRateLimitingOrTransientStatuses() {
+        assertEquals(
+            FailureClassification.PROVIDER_RATE_LIMITED,
+            classify(
+                FailureObservation.HttpResponse(
+                    429,
+                    providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+                ),
+            ),
+        )
+        listOf(408, 500, 503).forEach { status ->
+            assertEquals(
+                FailureClassification.PROVIDER_TRANSIENT_RESPONSE,
+                classify(
+                    FailureObservation.HttpResponse(
+                        status,
+                        providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+                    ),
+                ),
+                "$status",
+            )
+        }
+    }
+
+    // M2-D: the signal is an interpretation input only; the raw fact stays.
+    @Test
+    fun signalNeverChangesTheObservationPlaneAndStatusStaysRaw() {
+        val observation = FailureObservation.HttpResponse(
+            statusCode = 403,
+            providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+            deliveryBindingRevision = DeliveryBindingRevision("binding-2"),
+        )
+
+        assertEquals(ObservationPlane.PROVIDER, observation.plane)
+        assertEquals(FailureClassification.DELIVERY_BINDING_STALE, classify(observation))
+        assertEquals(403, observation.statusCode)
+        assertEquals(
+            mapOf(
+                "plane" to "PROVIDER",
+                "type" to "HTTP_RESPONSE",
+                "kind" to "HTTP_STATUS",
+                "httpStatus" to 403,
+            ),
+            observation.toArtifactMap(),
+        )
+    }
+
     @Test
     fun everyReceivedHttpStatusIsAProviderPlaneObservation() {
         (100..599).forEach { status ->
@@ -85,7 +161,12 @@ class FailureClassifierTest {
             val decision = RecoveryPolicy.DEFAULT.decide(
                 classification,
                 FailureObservation.HttpResponse(status),
-                RecoveryDecisionContext(true, false, 3),
+                RecoveryDecisionContext(
+                    demandPresent = true,
+                    sessionClosing = false,
+                    remoteAttemptsRemaining = 3,
+                    deliveryBindingRefreshesRemaining = 1,
+                ),
             )
             assertEquals(RecoveryDecisionKind.FAIL_TERMINAL, decision.kind)
             assertEquals(RecoveryDecisionReason.UNKNOWN_FAILS_CLOSED, decision.reason)

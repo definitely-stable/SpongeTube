@@ -2,11 +2,20 @@ package io.github.definitelystable.spongetube.core.engine
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingSnapshot
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
+import io.github.definitelystable.spongetube.core.engine.delivery.ProviderWallClock
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterKind
+import io.github.definitelystable.spongetube.core.engine.delivery.RetryAfterObservation
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureClassifier
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureClassification
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.ProviderSignal
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionContext
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
+import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
@@ -34,6 +43,8 @@ class HttpRangeFetchExecutorTest {
     private val body = ByteArray(RESOURCE_LENGTH) { (it * 31).toByte() }
     private val rangeHeaders = CopyOnWriteArrayList<String?>()
     private val attemptHeaders = CopyOnWriteArrayList<String?>()
+    private val retryAfterResponses = CopyOnWriteArrayList<String?>()
+    private val bindingRevisionHeaders = CopyOnWriteArrayList<String?>()
     private val transportCorrelations = CopyOnWriteArrayList<String>()
     private val responseStatuses = CopyOnWriteArrayList<Int>()
     private val responseContentRanges = CopyOnWriteArrayList<String?>()
@@ -172,6 +183,224 @@ class HttpRangeFetchExecutorTest {
     }
 
     @Test
+    fun retryAfterDelaySecondsIsParsedOnTheUnboundPath() {
+        mode = Mode.RATE_LIMITED
+
+        val (disposition, _) = execute(start = 0, endExclusive = 10)
+
+        val failure = disposition as FetchAttemptDisposition.Failure
+        assertEquals(
+            FailureObservation.HttpResponse(
+                429,
+                retryAfter = RetryAfterObservation(
+                    rawKind = RetryAfterKind.DELAY_SECONDS,
+                    delaySeconds = 2,
+                ),
+            ),
+            failure.observation,
+        )
+        assertEquals("lab-1", failure.transportCorrelationId)
+        assertNull(
+            (failure.observation as FailureObservation.HttpResponse)
+                .deliveryBindingRevision,
+        )
+        assertEquals(listOf("2"), retryAfterResponses.toList())
+        assertEquals(
+            FailureClassification.PROVIDER_RATE_LIMITED,
+            FailureClassifier.classify(failure.observation),
+        )
+    }
+
+    @Test
+    fun retryAfterHttpDateUsesTheProviderWallClock() {
+        mode = Mode.SERVICE_UNAVAILABLE_DATE
+        val executor = HttpRangeFetchExecutor(
+            targetFor = {
+                HttpRangeTarget(
+                    url = URL("http://127.0.0.1:${server.address.port}/fixtures/TEST/r"),
+                    resourceLength = RESOURCE_LENGTH.toLong(),
+                )
+            },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+            providerWallClock = ProviderWallClock { PROVIDER_WALL_CLOCK_UTC_MS },
+        )
+
+        val disposition = runBlocking {
+            executor.executeCorrelated(
+                request = request(0, 10),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                onTransportCorrelation = { },
+                emitChunk = { },
+            )
+        }
+
+        val observation =
+            (disposition as FetchAttemptDisposition.Failure).observation
+        observation as FailureObservation.HttpResponse
+        assertEquals(503, observation.statusCode)
+        assertEquals(RetryAfterKind.HTTP_DATE, observation.retryAfter.rawKind)
+        assertEquals(
+            PROVIDER_WALL_CLOCK_UTC_MS + 2_000,
+            observation.retryAfter.notBeforeUtcEpochMs,
+        )
+        assertEquals("Fri, 25 Sep 2026 12:00:02 GMT", retryAfterResponses.single())
+    }
+
+    @Test
+    fun labStaleHeaderIsMappedByTheInjectedProviderSignal() {
+        mode = Mode.BINDING_STALE
+        val executor = HttpRangeFetchExecutor(
+            targetFor = {
+                HttpRangeTarget(
+                    url = URL("http://127.0.0.1:${server.address.port}/fixtures/TEST/r"),
+                    resourceLength = RESOURCE_LENGTH.toLong(),
+                )
+            },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+            providerSignalFor = labProviderSignal(),
+        )
+
+        val disposition = runBlocking {
+            executor.executeCorrelated(
+                request = request(0, 10),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                onTransportCorrelation = { },
+                emitChunk = { },
+            )
+        }
+
+        val observation =
+            (disposition as FetchAttemptDisposition.Failure).observation
+        assertEquals(
+            FailureObservation.HttpResponse(
+                403,
+                providerSignal = ProviderSignal.BINDING_STALE_CONFIRMED,
+            ),
+            observation,
+        )
+        assertEquals(403, (observation as FailureObservation.HttpResponse).statusCode)
+        assertEquals(
+            FailureClassification.DELIVERY_BINDING_STALE,
+            FailureClassifier.classify(observation),
+        )
+    }
+
+    @Test
+    fun bare403KeepsNoProviderSignalEvenWithTheLabMapping() {
+        mode = Mode.BARE_403
+        val executor = HttpRangeFetchExecutor(
+            targetFor = {
+                HttpRangeTarget(
+                    url = URL("http://127.0.0.1:${server.address.port}/fixtures/TEST/r"),
+                    resourceLength = RESOURCE_LENGTH.toLong(),
+                )
+            },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+            providerSignalFor = labProviderSignal(),
+        )
+
+        val disposition = runBlocking {
+            executor.executeCorrelated(
+                request = request(0, 10),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                onTransportCorrelation = { },
+                emitChunk = { },
+            )
+        }
+
+        val observation =
+            (disposition as FetchAttemptDisposition.Failure).observation
+        observation as FailureObservation.HttpResponse
+        assertEquals(403, observation.statusCode)
+        assertEquals(ProviderSignal.NONE, observation.providerSignal)
+        assertEquals(
+            FailureClassification.PROVIDER_REJECTED,
+            FailureClassifier.classify(observation),
+        )
+    }
+
+    @Test
+    fun boundPathUsesTheBoundTargetAndSendsTheRevisionHeader() {
+        val material = TestMaterial("material-7")
+        var admissions = 0
+        val received = ByteArrayOutputStream()
+        val executor = HttpRangeFetchExecutor(
+            targetFor = { error("the bound path must not resolve the unbound target") },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+            bindingTargetFor = { _, boundMaterial ->
+                assertEquals(material, boundMaterial)
+                HttpRangeTarget(
+                    url = URL("http://127.0.0.1:${server.address.port}/fixtures/BOUND/r"),
+                    resourceLength = RESOURCE_LENGTH.toLong(),
+                )
+            },
+        )
+
+        val disposition = runBlocking {
+            executor.executeWithDeliveryBinding(
+                request = request(100, 1_100),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                deliveryBinding = DeliveryBindingSnapshot(
+                    DeliveryBindingRevision("binding-1"),
+                    material,
+                ),
+                onPhysicalAttemptStart = { admissions += 1 },
+                onTransportCorrelation = { },
+            ) { chunk ->
+                received.write(chunk.bytes)
+            }
+        }
+
+        assertTrue(disposition is FetchAttemptDisposition.Success, disposition.toString())
+        assertEquals(1, admissions)
+        assertEquals(listOf("binding-1"), bindingRevisionHeaders.toList())
+        assertArrayEquals(body.copyOfRange(100, 1_100), received.toByteArray())
+    }
+
+    @Test
+    fun boundPathWithoutAResolvableTargetAdmitsNothing() {
+        var admissions = 0
+        val executor = HttpRangeFetchExecutor(
+            targetFor = { error("the bound path must not resolve the unbound target") },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+            bindingTargetFor = { _, _ -> null },
+            openConnection = { error("preflight must not open a connection") },
+        )
+
+        val disposition = runBlocking {
+            executor.executeWithDeliveryBinding(
+                request = request(0, 10),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                deliveryBinding = DeliveryBindingSnapshot(
+                    DeliveryBindingRevision("binding-1"),
+                    TestMaterial("material-7"),
+                ),
+                onPhysicalAttemptStart = { admissions += 1 },
+                onTransportCorrelation = { },
+                emitChunk = { },
+            )
+        }
+
+        assertEquals(0, admissions)
+        assertEquals(
+            FetchAttemptDisposition.Failure(
+                FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
+            ),
+            disposition,
+        )
+    }
+
+    @Test
     fun contentRangeParserIsStrict() {
         assertEquals(
             HttpRangeFetchExecutor.ContentRange(0, 9, 10),
@@ -277,16 +506,17 @@ class HttpRangeFetchExecutorTest {
                 demandPresent = true,
                 sessionClosing = false,
                 remoteAttemptsRemaining = 1,
+                deliveryBindingRefreshesRemaining = 1,
             ),
         ).kind == RecoveryDecisionKind.RETRY_AFTER_BACKOFF
 
-    private fun execute(
+    private fun request(
         start: Long?,
         endExclusive: Long?,
-    ): Pair<FetchAttemptDisposition, ByteArray> {
+    ): FetchRequest {
         val length =
             if (start == null) RESOURCE_LENGTH.toLong() else endExclusive!! - start
-        val request = FetchRequest(
+        return FetchRequest(
             fetchKey = FetchKey("fixture:TEST/r"),
             extentSpec = ExtentSpec(
                 mediaAssetId = MediaAssetId("fixture:TEST"),
@@ -300,6 +530,22 @@ class HttpRangeFetchExecutorTest {
                 expectedLength = length,
             ),
         )
+    }
+
+    private fun labProviderSignal(): (Int, (String) -> String?) -> ProviderSignal =
+        { _, header ->
+            if (header("X-Sponge-Provider-Binding") == "STALE") {
+                ProviderSignal.BINDING_STALE_CONFIRMED
+            } else {
+                ProviderSignal.NONE
+            }
+        }
+
+    private fun execute(
+        start: Long?,
+        endExclusive: Long?,
+    ): Pair<FetchAttemptDisposition, ByteArray> {
+        val request = request(start, endExclusive)
         val executor = HttpRangeFetchExecutor(
             targetFor = {
                 HttpRangeTarget(
@@ -338,6 +584,9 @@ class HttpRangeFetchExecutorTest {
             rangeHeaders += range
             attemptHeaders +=
                 exchange.requestHeaders.getFirst(HttpRangeFetchExecutor.ATTEMPT_HEADER)
+            bindingRevisionHeaders += exchange.requestHeaders.getFirst(
+                HttpRangeFetchExecutor.BINDING_REVISION_HEADER,
+            )
             exchange.responseHeaders.add(
                 HttpRangeFetchExecutor.LAB_REQUEST_HEADER,
                 "lab-" + rangeHeaders.size,
@@ -382,6 +631,34 @@ class HttpRangeFetchExecutorTest {
                     responseStatuses += 503
                     responseContentRanges += null
                     exchange.sendResponseHeaders(503, -1)
+                }
+                Mode.RATE_LIMITED -> {
+                    responseStatuses += 429
+                    responseContentRanges += null
+                    retryAfterResponses += "2"
+                    exchange.responseHeaders.add("Retry-After", "2")
+                    exchange.sendResponseHeaders(429, -1)
+                }
+                Mode.SERVICE_UNAVAILABLE_DATE -> {
+                    responseStatuses += 503
+                    responseContentRanges += null
+                    retryAfterResponses += "Fri, 25 Sep 2026 12:00:02 GMT"
+                    exchange.responseHeaders.add(
+                        "Retry-After",
+                        "Fri, 25 Sep 2026 12:00:02 GMT",
+                    )
+                    exchange.sendResponseHeaders(503, -1)
+                }
+                Mode.BINDING_STALE -> {
+                    responseStatuses += 403
+                    responseContentRanges += null
+                    exchange.responseHeaders.add("X-Sponge-Provider-Binding", "STALE")
+                    exchange.sendResponseHeaders(403, -1)
+                }
+                Mode.BARE_403 -> {
+                    responseStatuses += 403
+                    responseContentRanges += null
+                    exchange.sendResponseHeaders(403, -1)
                 }
             }
         } finally {
@@ -430,10 +707,19 @@ class HttpRangeFetchExecutorTest {
         WRONG_TOTAL,
         FULL_200,
         SERVER_ERROR,
+        RATE_LIMITED,
+        SERVICE_UNAVAILABLE_DATE,
+        BINDING_STALE,
+        BARE_403,
     }
+
+    private data class TestMaterial(val id: String) : DeliveryMaterial
 
     private companion object {
         const val RESOURCE_LENGTH = 4_096
+
+        /** 2026-09-25T12:00:00Z: the fixed PROVIDER_WALL_CLOCK of the cases. */
+        const val PROVIDER_WALL_CLOCK_UTC_MS = 1_790_337_600_000L
         const val ACC15_EVIDENCE_PATH = "build/m1-acc15/range-continuation-v1.jsonl"
 
         fun jsonString(value: String?): String {

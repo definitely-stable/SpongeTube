@@ -6,6 +6,7 @@ import io.github.definitelystable.spongetube.core.engine.FetchKey
 import io.github.definitelystable.spongetube.core.engine.FetchOutcomeKind
 import io.github.definitelystable.spongetube.core.engine.FetchPriority
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,18 @@ internal class RecoveryChain(
     var lastFetchOutcome: FetchOutcomeKind? = null
     var lastRouteEpoch: Long? = null
     var pendingBackoff: Pair<RecoveryBackoffRecord, String>? = null
+
+    /**
+     * Delivery binding selected for the most recent owner (M2-D); null when
+     * no binding coordinator participates or before the first owner starts.
+     */
+    var lastSelectedBinding: DeliveryBindingRevision? = null
+
+    /** failureId of the most recent failure row of the chain. */
+    var lastFailureId: String? = null
+
+    /** waitMs to failureId of a decided provider wait not executed yet. */
+    var pendingProviderWait: Pair<Long, String>? = null
     var terminalOutcome: RecoveryOutcome? = null
     var job: Job? = null
 

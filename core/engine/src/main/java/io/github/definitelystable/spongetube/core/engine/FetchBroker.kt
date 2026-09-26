@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine
 
 import android.os.SystemClock
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingSnapshot
 import io.github.definitelystable.spongetube.core.engine.recovery.CancellationKind
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
 import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
@@ -91,11 +92,19 @@ internal class FetchBroker internal constructor(
      * it is where the RecoveryCoordinator charges its budget, so a charge
      * exists if and only if the attempt is made. If it throws, the owner ends
      * as INTERNAL_FAILURE with zero attempts.
+     *
+     * [deliveryBinding] is execution context, never identity: it is stored on
+     * the new owner only and a join never changes it. An owner carrying a
+     * binding is executed through [DeliveryBoundFetchAttemptExecutor]; an
+     * executor that does not implement it ends the owner as
+     * [FailureObservation.InternalFailure] with zero attempts and no
+     * admission, so a bound request is never sent unbound.
      */
     internal suspend fun acquire(
         request: FetchRequest,
         consumer: FetchConsumer,
         admission: FetchAttemptAdmission? = null,
+        deliveryBinding: DeliveryBindingSnapshot? = null,
     ): FetchHandle {
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -117,6 +126,7 @@ internal class FetchBroker internal constructor(
                         ),
                         initialConsumer = consumer,
                         admission = admission,
+                        deliveryBinding = deliveryBinding,
                     )
                     active[request.fetchKey] = shared
                     created = shared
@@ -455,23 +465,43 @@ internal class FetchBroker internal constructor(
                     )
                 }
 
-                disposition = if (executor is CorrelatingFetchAttemptExecutor) {
-                    executor.executeCorrelatedWithAdmission(
-                        request = shared.request,
-                        attempt = attempt,
-                        priority = shared.priority,
-                        onPhysicalAttemptStart = startPhysicalAttempt,
-                        onTransportCorrelation = emitCorrelation,
-                        emitChunk = emitChunk,
-                    )
-                } else {
-                    startPhysicalAttempt()
-                    executor.execute(
-                        request = shared.request,
-                        attempt = attempt,
-                        priority = shared.priority,
-                        emitChunk = emitChunk,
-                    )
+                val binding = shared.deliveryBinding
+                val boundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
+                disposition = when {
+                    binding != null && boundExecutor != null ->
+                        boundExecutor.executeWithDeliveryBinding(
+                            request = shared.request,
+                            attempt = attempt,
+                            priority = shared.priority,
+                            deliveryBinding = binding,
+                            onPhysicalAttemptStart = startPhysicalAttempt,
+                            onTransportCorrelation = emitCorrelation,
+                            emitChunk = emitChunk,
+                        )
+                    binding != null ->
+                        // Execution context the executor cannot carry: never
+                        // start an unbound request, fail with zero attempts.
+                        FetchAttemptDisposition.Failure(
+                            FailureObservation.InternalFailure,
+                        )
+                    executor is CorrelatingFetchAttemptExecutor ->
+                        executor.executeCorrelatedWithAdmission(
+                            request = shared.request,
+                            attempt = attempt,
+                            priority = shared.priority,
+                            onPhysicalAttemptStart = startPhysicalAttempt,
+                            onTransportCorrelation = emitCorrelation,
+                            emitChunk = emitChunk,
+                        )
+                    else -> {
+                        startPhysicalAttempt()
+                        executor.execute(
+                            request = shared.request,
+                            attempt = attempt,
+                            priority = shared.priority,
+                            emitChunk = emitChunk,
+                        )
+                    }
                 }
 
                 val terminalDisposition = checkNotNull(disposition) {
@@ -867,6 +897,24 @@ internal interface CorrelatingFetchAttemptExecutor : FetchAttemptExecutor {
     }
 }
 
+/**
+ * Executor capability for an owner that carries a delivery binding (M2-D).
+ * The binding is execution context, never identity; the executor resolves its
+ * target and attaches the normalized provider observations. Admission runs
+ * exactly once, after local preflight and immediately before physical I/O.
+ */
+internal interface DeliveryBoundFetchAttemptExecutor : CorrelatingFetchAttemptExecutor {
+    suspend fun executeWithDeliveryBinding(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        deliveryBinding: DeliveryBindingSnapshot,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition
+}
+
 internal interface FetchPublishSink {
     suspend fun write(bytes: ByteArray)
 }
@@ -908,6 +956,7 @@ private class SharedFetch(
     val fetchId: FetchId,
     initialConsumer: FetchConsumer,
     val admission: FetchAttemptAdmission?,
+    val deliveryBinding: DeliveryBindingSnapshot?,
 ) {
     val consumers = linkedMapOf(
         initialConsumer.id to initialConsumer,
