@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-e-example-run",
+  "sessionId": "m2-e-example-session",
+  "scenarioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "harness": {
+    "harnessId": "sponge-network-harness",
+    "harnessVersion": "1",
+    "toolId": "netem",
+    "toolVersion": "iproute2-6.6.0"
+  },
+  "clockDomain": "HOST_FAULT_MONOTONIC",
+  "events": [
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 100,
+      "faultEventId": "event-1",
+      "faultId": "media-path-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "HARNESS_STARTED",
+      "direction": "NONE",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {},
+      "observedStateHash": null,
+      "result": "OK"
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 200,
+      "faultEventId": "event-2",
+      "faultId": "media-path-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "FAULT_APPLIED",
+      "direction": "DOWNSTREAM",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {
+        "lossPpm": 20000,
+        "burstCorrelationPpm": 250000,
+        "randomSeed": 424242
+      },
+      "observedStateHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "result": "APPLIED"
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 300,
+      "faultEventId": "event-3",
+      "faultId": "media-path-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "FAULT_REMOVED",
+      "direction": "DOWNSTREAM",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {},
+      "observedStateHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "result": "REMOVED"
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 400,
+      "faultEventId": "event-4",
+      "faultId": "media-path-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "HARNESS_STOPPED",
+      "direction": "NONE",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {},
+      "observedStateHash": null,
+      "result": "OK"
+    }
+  ]
+}
