@@ -64,7 +64,7 @@ class RouteVpnFeasibilityAndroidTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.context
         val connectivity = checkNotNull(context.getSystemService(ConnectivityManager::class.java))
-        val originBaseUrl = instrumentation.arguments
+        val originBaseUrl = InstrumentationRegistry.getArguments()
             .getString(ORIGIN_ARGUMENT)
             ?.trimEnd('/')
         assumeTrue("M2-F0 requires $ORIGIN_ARGUMENT", !originBaseUrl.isNullOrBlank())
