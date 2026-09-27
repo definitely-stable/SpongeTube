@@ -107,8 +107,27 @@ jobs:
             )
             mkdir -p "$case_root"
 
-            python3 scripts/faults/m2_network_harness.py "$mode" "${common[@]}"
-            if [[ "$mode" == "start" ]]; then
+            if [[ "$mode" == "pulse" ]]; then
+              python3 scripts/faults/m2_network_harness.py pulse "${common[@]}" &
+              local pulse_pid=$!
+              for attempt in {1..80}; do
+                if [[ -s "$case_root/fault-harness-events.json" ]] &&
+                   jq -e '.events[-1].operation == "FAULT_ARMED"' "$case_root/fault-harness-events.json" >/dev/null 2>&1; then
+                  break
+                fi
+                if ! kill -0 "$pulse_pid" 2>/dev/null; then
+                  wait "$pulse_pid"
+                  return 1
+                fi
+                [[ "$attempt" -lt 80 ]] || return 1
+                sleep 0.025
+              done
+              local media_addr
+              media_addr="$(bash scripts/faults/m2_e0_netns.sh media-address)"
+              curl --max-time 1 --silent "http://$media_addr:18081/" >/dev/null 2>&1 || true
+              wait "$pulse_pid"
+            else
+              python3 scripts/faults/m2_network_harness.py start "${common[@]}"
               python3 scripts/faults/m2_network_harness.py stop "${common[@]}"
             fi
             bash scripts/faults/netem_control.sh assert-clean
