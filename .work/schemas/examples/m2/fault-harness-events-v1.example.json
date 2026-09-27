@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-e-n5-example",
+  "sessionId": "session-1",
+  "scenarioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "harness": {
+    "id": "m2.network.netem",
+    "version": "1",
+    "toolId": "netem",
+    "toolVersion": "6.6.0"
+  },
+  "clockDomain": "HOST_FAULT_MONOTONIC",
+  "events": [
+    {
+      "sequence": 0,
+      "elapsedRealtimeNs": 1000000,
+      "faultEventId": "fault-event-0",
+      "faultId": null,
+      "plane": null,
+      "kind": null,
+      "operation": "HARNESS_STARTED",
+      "direction": "NONE",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {},
+      "observedStateHash": null,
+      "result": "APPLIED"
+    },
+    {
+      "sequence": 1,
+      "elapsedRealtimeNs": 2000000,
+      "faultEventId": "fault-event-1",
+      "faultId": "n5-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "FAULT_ARMED",
+      "direction": "DOWNSTREAM",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {
+        "lossPpm": 20000,
+        "burstCorrelationPpm": 250000,
+        "randomSeed": 424242
+      },
+      "observedStateHash": null,
+      "result": "APPLIED"
+    },
+    {
+      "sequence": 2,
+      "elapsedRealtimeNs": 3000000,
+      "faultEventId": "fault-event-2",
+      "faultId": "n5-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "FAULT_APPLIED",
+      "direction": "DOWNSTREAM",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {
+        "lossPpm": 20000,
+        "burstCorrelationPpm": 250000,
+        "randomSeed": 424242
+      },
+      "observedStateHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "result": "APPLIED"
+    },
+    {
+      "sequence": 3,
+      "elapsedRealtimeNs": 4000000,
+      "faultEventId": "fault-event-3",
+      "faultId": "n5-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "operation": "FAULT_REMOVED",
+      "direction": "DOWNSTREAM",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {},
+      "observedStateHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "result": "REMOVED"
+    },
+    {
+      "sequence": 4,
+      "elapsedRealtimeNs": 5000000,
+      "faultEventId": "fault-event-4",
+      "faultId": null,
+      "plane": null,
+      "kind": null,
+      "operation": "HARNESS_STOPPED",
+      "direction": "NONE",
+      "scope": "MEDIA_DATA_ONLY",
+      "parameters": {},
+      "observedStateHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "result": "REMOVED"
+    }
+  ]
+}
