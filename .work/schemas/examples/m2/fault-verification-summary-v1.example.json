@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-e-n5-example",
+  "sessionId": "session-1",
+  "scenarioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "scenarioFamily": "N5",
+  "variant": "BURST_LOSS",
+  "primaryPlane": "NETWORK",
+  "status": "PASS",
+  "evidenceSource": "HOST_SCRIPTED",
+  "faultCount": 1,
+  "owningHarnessCount": 1,
+  "recoveryChainCount": 1,
+  "physicalAttemptCount": 2,
+  "remoteAttemptChargeCount": 2,
+  "stochastic": true,
+  "randomSeed": 424242,
+  "gates": {
+    "M2-ACC-01": {
+      "status": "PASS",
+      "checks": [
+        "canonical scenario hash and persisted seed match"
+      ]
+    },
+    "M2-ACC-02": {
+      "status": "PASS",
+      "checks": [
+        "fault has exactly one NETWORK owner"
+      ]
+    },
+    "M2-ACC-05": {
+      "status": "NOT_EXERCISED",
+      "checks": [
+        "contract example does not carry runtime failure evidence"
+      ]
+    },
+    "M2-ACC-06": {
+      "status": "NOT_EXERCISED",
+      "checks": [
+        "contract example does not carry runtime recovery evidence"
+      ]
+    },
+    "M2-ACC-09": {
+      "status": "PASS",
+      "checks": [
+        "normalized applied state, media scope, ADB health and cleanup verified"
+      ]
+    }
+  },
+  "limitations": [
+    "Contract example only; E3 supplies executable oracle output."
+  ]
+}
