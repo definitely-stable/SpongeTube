@@ -274,9 +274,13 @@ def normalize_tc_state(
         fail("scoped prio qdisc must expose three bands")
     if prio_options.get("priomap") != BYPASS_PRIOMAP:
         fail("unmatched traffic is not pinned to the bypass band")
-    flowers = _find_kinds(filters, "flower")
+    flowers = [
+        item
+        for item in _find_kinds(filters, "flower")
+        if isinstance(item.get("options"), dict)
+    ]
     if len(flowers) != 1:
-        fail("tc readback must contain exactly one flower classifier")
+        fail("tc readback must contain exactly one effective flower classifier")
     flower = flowers[0]
     if not _has_key_value(flower, "src_port", MEDIA_PORT):
         fail("flower readback is not scoped to media source port")

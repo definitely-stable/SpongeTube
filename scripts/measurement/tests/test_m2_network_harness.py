@@ -157,27 +157,50 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
                 },
             },
         ]
-        filters = [{
-            "kind": "flower",
-            "protocol": "ip",
-            "options": {
-                "keys": {"ip_proto": "tcp", "src_port": 18081},
-                "classid": "1:1",
-            },
-        }]
-        self.assertEqual(
+        # iproute2 6.6 emits a flower header row plus the detailed row for one
+        # logical filter. Only rows carrying options are effective classifiers.
+        filters = [
             {
-                "direction": "DOWNSTREAM",
-                "ipFamily": "IPV4",
-                "l4Protocol": "TCP",
-                "scope": "MEDIA_DATA_ONLY",
-                "mediaPortScoped": True,
-                "delayUs": 100000,
-                "jitterUs": 30000,
-                "delayCorrelationPpm": 250000,
-                "randomSeed": 424242,
+                "kind": "flower",
+                "protocol": "ip",
+                "pref": 10,
+                "chain": 0,
             },
+            {
+                "kind": "flower",
+                "protocol": "ip",
+                "pref": 10,
+                "chain": 0,
+                "options": {
+                    "keys": {
+                        "eth_type": "ipv4",
+                        "ip_proto": "tcp",
+                        "src_port": 18081,
+                    },
+                    "classid": "1:1",
+                    "handle": 1,
+                    "not_in_hw": True,
+                },
+            },
+        ]
+        expected = {
+            "direction": "DOWNSTREAM",
+            "ipFamily": "IPV4",
+            "l4Protocol": "TCP",
+            "scope": "MEDIA_DATA_ONLY",
+            "mediaPortScoped": True,
+            "delayUs": 100000,
+            "jitterUs": 30000,
+            "delayCorrelationPpm": 250000,
+            "randomSeed": 424242,
+        }
+        self.assertEqual(
+            expected,
             oracle.normalize_network_tc_state(qdisc, filters, "HIGH_RTT_JITTER"),
+        )
+        self.assertEqual(
+            expected,
+            harness.normalize_tc_state(qdisc, filters, "HIGH_RTT_JITTER"),
         )
 
     def test_wrong_or_ambiguous_flower_routing_fails_closed(self):

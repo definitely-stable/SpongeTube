@@ -497,8 +497,15 @@ def normalize_network_tc_state(
         prio_options.get("priomap") == BYPASS_PRIOMAP,
         "unmatched traffic is not pinned to the bypass band",
     )
-    flowers = _find_kinds(filters, "flower")
-    require(len(flowers) == 1, "raw filter readback must contain exactly one flower")
+    flowers = [
+        item
+        for item in _find_kinds(filters, "flower")
+        if isinstance(item.get("options"), Mapping)
+    ]
+    require(
+        len(flowers) == 1,
+        "raw filter readback must contain exactly one effective flower",
+    )
     flower = flowers[0]
     require(
         _contains_key_value(flower, "src_port", 18081),
