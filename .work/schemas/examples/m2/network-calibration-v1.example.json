@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-e-n5-example",
+  "sessionId": "session-1",
+  "scenarioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "harnessId": "m2.network.netem",
+  "harnessVersion": "1",
+  "clockDomain": "HOST_FAULT_MONOTONIC",
+  "toolVersions": {
+    "netem": "6.6.0",
+    "runner": "ubuntu-24.04"
+  },
+  "expectedConfig": {
+    "direction": "DOWNSTREAM",
+    "scope": "MEDIA_DATA_ONLY",
+    "lossPpm": 20000,
+    "burstCorrelationPpm": 250000,
+    "randomSeed": 424242
+  },
+  "observedConfig": {
+    "direction": "DOWNSTREAM",
+    "scope": "MEDIA_DATA_ONLY",
+    "lossPpm": 20000,
+    "burstCorrelationPpm": 250000,
+    "randomSeed": 424242
+  },
+  "scopeProof": {
+    "mediaPacketsBefore": 13,
+    "mediaPacketsAfter": 21,
+    "mediaBytesBefore": 1024,
+    "mediaBytesAfter": 4096,
+    "controlPacketsBefore": 0,
+    "controlPacketsAfter": 0,
+    "adbHealthyBefore": true,
+    "adbHealthyDuring": true,
+    "adbHealthyAfter": true
+  },
+  "qdiscCounters": {
+    "packets": 8,
+    "bytes": 3072,
+    "drops": 0,
+    "overlimits": 0,
+    "requeues": 0
+  },
+  "probeSummary": {
+    "sampleCount": 1,
+    "successCount": 1,
+    "failureCount": 0,
+    "timeoutCount": 0,
+    "minDurationNs": 1000000,
+    "maxDurationNs": 1000000
+  },
+  "cleanup": {
+    "qdiscRemoved": true,
+    "filtersRemoved": true,
+    "namespaceRemoved": true,
+    "proxiesRemoved": true,
+    "toxicsRemoved": true
+  },
+  "limitations": [
+    "Contract example only; it is not retained canonical run evidence."
+  ]
+}
