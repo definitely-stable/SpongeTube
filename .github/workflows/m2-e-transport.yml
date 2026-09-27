@@ -1,0 +1,359 @@
+name: M2-E Transport Faults
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-e-transport.yml"
+      - "core/engine/src/androidTest/**"
+      - "core/engine/src/main/**"
+      - "scripts/faults/**"
+      - "scripts/ci/verify-m2-e-transport-evidence.sh"
+      - "scripts/measurement/**"
+      - "test-fixtures/network/m2/**"
+      - "tools/fault-harness/**"
+      - "tools/media-lab/**"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-e-transport-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-contract:
+    name: host-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run transport harness falsification tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/tests/test_m2_transport_harness.py -v
+          python3 scripts/measurement/tests/test_m2_fault_oracle.py -v
+
+      - name: Exercise pinned Toxiproxy API and readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="build/m2-e-transport/host"
+          tools="$RUNNER_TEMP/m2-e-transport-tools"
+          rm -rf "$root" "$tools"
+          mkdir -p "$root" "$tools"
+
+          cleanup() {
+            if [[ -n "${TOXI_PID:-}" ]] && kill -0 "$TOXI_PID" 2>/dev/null; then
+              kill "$TOXI_PID" || true
+              wait "$TOXI_PID" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          bash scripts/faults/install_toxiproxy.sh "$tools"             > "$root/toxiproxy-version.txt"
+          "$tools/toxiproxy-server" -host 127.0.0.1 -port 18474             > "$root/server.out" 2> "$root/server.err" &
+          TOXI_PID=$!
+
+          for attempt in {1..50}; do
+            if curl --fail --silent http://127.0.0.1:18474/version >/dev/null; then
+              break
+            fi
+            [[ "$attempt" -lt 50 ]] || {
+              cat "$root/server.err" >&2 || true
+              exit 1
+            }
+            sleep 0.1
+          done
+
+          api=http://127.0.0.1:18474
+          python3 scripts/faults/toxiproxy_control.py --api "$api" create             --name m2e-media --listen 127.0.0.1:19080 --upstream 127.0.0.1:19081
+          python3 scripts/faults/toxiproxy_control.py --api "$api" add-toxic             --proxy m2e-media --name m2e-fault --type reset_peer             --stream downstream --attribute timeout=0
+          python3 scripts/faults/toxiproxy_control.py --api "$api" inspect             --proxy m2e-media --output "$root/active.json"
+
+          jq -e '
+            .name == "m2e-media" and
+            .enabled == true and
+            (.toxics | length) == 1 and
+            .toxics[0].type == "reset_peer" and
+            .toxics[0].attributes.timeout == 0
+          ' "$root/active.json"
+
+          python3 scripts/faults/toxiproxy_control.py --api "$api" remove-toxic             --proxy m2e-media --name m2e-fault
+          python3 scripts/faults/toxiproxy_control.py --api "$api" delete             --name m2e-media
+          python3 scripts/faults/toxiproxy_control.py --api "$api" assert-clean
+
+          kill "$TOXI_PID"
+          wait "$TOXI_PID" 2>/dev/null || true
+          unset TOXI_PID
+          trap - EXIT
+
+      - name: Upload host evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-e-transport-host
+          path: build/m2-e-transport/host/
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-api36:
+    name: android-api36-transport
+    needs: host-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Build Android transport target and Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict --configuration-cache             :core:engine:assembleDebug             :core:engine:assembleDebugAndroidTest             :tools:media-lab:installDist
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh             36             m2e-transport-api36             build/m2-e-transport/android/device
+
+      - name: Run canonical TRANSPORT scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="build/m2-e-transport/android"
+          tools="$RUNNER_TEMP/m2-e-transport-tools"
+          mkdir -p "$root" "$tools"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          LAB_BIN="$(realpath "$LAB_BIN")"
+
+          cleanup() {
+            if [[ -n "${LAB_PID:-}" ]] && kill -0 "$LAB_PID" 2>/dev/null; then
+              kill "$LAB_PID" || true
+              wait "$LAB_PID" 2>/dev/null || true
+            fi
+            if [[ -n "${TOXI_PID:-}" ]] && kill -0 "$TOXI_PID" 2>/dev/null; then
+              kill "$TOXI_PID" || true
+              wait "$TOXI_PID" 2>/dev/null || true
+            fi
+            bash scripts/faults/m2_e0_netns.sh teardown || true
+          }
+          trap cleanup EXIT
+
+          bash scripts/faults/install_toxiproxy.sh "$tools" \
+            > "$root/toxiproxy-version.txt"
+          TOXI_BIN="$(realpath "$tools/toxiproxy-server")"
+
+          run_case() {
+            local variant="$1"
+            local fixture="$2"
+            local case_id="$3"
+            local case_root="$root/$case_id"
+            local run_id="m2-e-$case_id"
+            local session_id="$run_id-session"
+            local trace="$PWD/$case_root/origin-requests.jsonl"
+            local scenario="$PWD/test-fixtures/network/m2/$fixture"
+
+            rm -rf "$case_root"
+            mkdir -p "$case_root"/{server,android,harness,verified,health}
+
+            bash scripts/faults/m2_e0_netns.sh prepare
+            local ns
+            local media_addr
+            ns="$(bash scripts/faults/m2_e0_netns.sh namespace)"
+            media_addr="$(bash scripts/faults/m2_e0_netns.sh media-address)"
+            local api="http://$media_addr:18474"
+
+            sudo -n ip netns exec "$ns" \
+              "$TOXI_BIN" -host "$media_addr" -port 18474 \
+              > "$case_root/toxiproxy.out" 2> "$case_root/toxiproxy.err" &
+            TOXI_PID=$!
+
+            for attempt in {1..50}; do
+              if curl --fail --silent "$api/version" >/dev/null; then
+                break
+              fi
+              [[ "$attempt" -lt 50 ]] || {
+                cat "$case_root/toxiproxy.err" >&2 || true
+                return 1
+              }
+              sleep 0.1
+            done
+
+            sudo -n ip netns exec "$ns" \
+              env JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:/usr/bin:/bin" \
+              "$LAB_BIN" serve \
+                "--fixture-root=$PWD/test-fixtures/media" \
+                "--trace=$trace" \
+                "--session-id=$session_id" \
+                --profile=N0 \
+                --data-port=18081 \
+                --control-port=18082 \
+              > "$case_root/server/media-lab.out" \
+              2> "$case_root/server/media-lab.err" &
+            LAB_PID=$!
+
+            for attempt in {1..50}; do
+              if sudo -n ip netns exec "$ns" \
+                curl --fail --silent http://127.0.0.1:18082/__lab/config \
+                > "$case_root/server/config.json"; then
+                break
+              fi
+              [[ "$attempt" -lt 50 ]] || {
+                cat "$case_root/server/media-lab.err" >&2 || true
+                return 1
+              }
+              sleep 0.1
+            done
+
+            adb get-state > "$case_root/health/adb-before.txt"
+            grep -Fxq device "$case_root/health/adb-before.txt"
+            sudo -n ip netns exec "$ns" \
+              curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
+            printf 'ok\n' > "$case_root/health/control-before.txt"
+
+            if adb reverse --list | grep -Eq 'tcp:18080([[:space:]]|$)'; then
+              echo "media-under-test unexpectedly uses adb reverse" >&2
+              return 1
+            fi
+            printf 'ok\n' > "$case_root/health/media-reverse-absent.txt"
+
+            python3 scripts/measurement/m2_run_manifest.py \
+              --scenario "$scenario" \
+              --output "$case_root/m2-run-manifest.json" \
+              --run-id "$run_id" \
+              --session-id "$session_id" \
+              --git-commit "$GIT_SHA" \
+              --fixture-manifest test-fixtures/media/manifest.json \
+              --device-api 36
+
+            python3 scripts/faults/m2_transport_harness.py start \
+              --scenario "$scenario" \
+              --api "$api" \
+              --evidence "$case_root/harness/fault-harness-events.json" \
+              --state "$case_root/harness/toxiproxy-active-state.json" \
+              --run-id "$run_id" \
+              --session-id "$session_id" \
+              --listen "$media_addr:18080" \
+              --upstream 127.0.0.1:18081
+
+            adb get-state > "$case_root/health/adb-during.txt"
+            grep -Fxq device "$case_root/health/adb-during.txt"
+            sudo -n ip netns exec "$ns" \
+              curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
+            printf 'ok\n' > "$case_root/health/control-during.txt"
+
+            bash scripts/faults/m2_e0_netns.sh tx-packets \
+              > "$case_root/media-packets-before.txt"
+
+            ./gradlew --dependency-verification=strict \
+              :core:engine:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.TransportFaultAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e.transportBaseUrl="http://$media_addr:18080" \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e.scenario="$variant"
+
+            bash scripts/faults/m2_e0_netns.sh tx-packets \
+              > "$case_root/media-packets-after.txt"
+
+            adb get-state > "$case_root/health/adb-after.txt"
+            grep -Fxq device "$case_root/health/adb-after.txt"
+            sudo -n ip netns exec "$ns" \
+              curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
+            printf 'ok\n' > "$case_root/health/control-after.txt"
+
+            python3 scripts/faults/m2_transport_harness.py stop \
+              --scenario "$scenario" \
+              --api "$api" \
+              --evidence "$case_root/harness/fault-harness-events.json" \
+              --state "$case_root/harness/toxiproxy-clean-state.json" \
+              --run-id "$run_id" \
+              --session-id "$session_id"
+
+            python3 scripts/faults/toxiproxy_control.py --api "$api" assert-clean
+
+            kill "$LAB_PID" 2>/dev/null || true
+            wait "$LAB_PID" 2>/dev/null || true
+            unset LAB_PID
+
+            local source_dir
+            source_dir="$(find core/engine/build/outputs/connected_android_test_additional_output \
+              -type d -path "*/m2-e-transport/$case_id" -print -quit)"
+            test -n "$source_dir"
+            cp -R "$source_dir/." "$case_root/android/"
+            printf 'ok\n' > "$case_root/health/artifact-collection.txt"
+
+            kill "$TOXI_PID" 2>/dev/null || true
+            wait "$TOXI_PID" 2>/dev/null || true
+            unset TOXI_PID
+
+            bash scripts/faults/m2_e0_netns.sh teardown
+            bash scripts/faults/m2_e0_netns.sh assert-clean
+            printf 'ok\n' > "$case_root/health/cleanup.txt"
+
+            bash scripts/ci/verify-m2-e-transport-evidence.sh \
+              "$case_root/android" \
+              "$scenario" \
+              "$case_root/origin-requests.jsonl" \
+              "$case_root/harness/fault-harness-events.json" \
+              "$case_root/harness/toxiproxy-active-state.json" \
+              "$case_root/harness/toxiproxy-clean-state.json" \
+              "$case_root/m2-run-manifest.json" \
+              "$case_root/media-packets-before.txt" \
+              "$case_root/media-packets-after.txt" \
+              "$case_root/health" \
+              "$case_root/verified"
+          }
+
+          run_case TRANSPORT_READ_TIMEOUT n6-transport-read-timeout.json transport-read-timeout
+          run_case TRANSPORT_RESET n6-transport-reset.json transport-reset
+          run_case TRUNCATED_STREAM n6-truncated-stream.json truncated-stream
+          run_case SLOW_CLOSE n6-slow-close.json slow-close
+
+          adb get-state | grep -Fxq device
+          bash scripts/faults/m2_e0_netns.sh assert-clean
+          trap - EXIT
+
+      - name: Upload Android transport evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-e-transport-api36
+          path: |
+            build/m2-e-transport/android/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/outputs/connected_android_test_additional_output/
+            core/engine/build/reports/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: adb emu kill || true

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "scenarioFamily": "N6",
+  "variant": "TRANSPORT_RESET",
+  "primaryPlane": "TRANSPORT",
+  "deliveryFaults": [],
+  "transportFaults": [
+    {
+      "faultId": "media-transport-fault",
+      "plane": "TRANSPORT",
+      "kind": "RESET_PEER",
+      "stochastic": false,
+      "parameters": {
+        "timeoutMs": 0,
+        "direction": "DOWNSTREAM",
+        "scope": "MEDIA_DATA_ONLY"
+      }
+    }
+  ],
+  "networkFaults": [],
+  "providerFaults": [],
+  "routeFaults": [],
+  "storageFaults": [],
+  "randomSeed": null,
+  "requiresActualDefaultNetwork": false
+}
