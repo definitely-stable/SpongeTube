@@ -73,6 +73,15 @@ CONTRACTS = {
     "provider-verification-summary-v1.schema.json": [
         "provider-verification-summary-v1.example.json",
     ],
+    "fault-harness-events-v1.schema.json": [
+        "fault-harness-events-v1.example.json",
+    ],
+    "network-calibration-v1.schema.json": [
+        "network-calibration-v1.example.json",
+    ],
+    "fault-verification-summary-v1.schema.json": [
+        "fault-verification-summary-v1.example.json",
+    ],
 }
 
 
@@ -277,6 +286,55 @@ class M2HistoricalContractTest(unittest.TestCase):
                 self.assertNotIn(
                     "primaryPlane", path.read_text(encoding="utf-8")
                 )
+
+
+class M2EFaultHarnessContractTest(unittest.TestCase):
+    """M2-E1 contract-only falsification for the new portable artifacts."""
+
+    def test_raw_harness_events_cannot_self_declare_pass(self):
+        document = example("fault-harness-events-v1.example.json")
+        document["status"] = "PASS"
+        with self.assertRaises(SchemaContractError):
+            validate_instance(schema("fault-harness-events-v1.schema.json"), document)
+
+    def test_harness_event_plane_and_direction_are_closed(self):
+        for field, value in (("plane", "PROVIDER"), ("direction", "SIDEWAYS")):
+            with self.subTest(field=field):
+                document = example("fault-harness-events-v1.example.json")
+                document["events"][2][field] = value
+                with self.assertRaises(SchemaContractError):
+                    validate_instance(
+                        schema("fault-harness-events-v1.schema.json"), document
+                    )
+
+    def test_network_calibration_cannot_embed_cross_clock_latency(self):
+        document = example("network-calibration-v1.example.json")
+        document["probeSummary"]["androidMinusHostDurationNs"] = 1
+        with self.assertRaises(SchemaContractError):
+            validate_instance(schema("network-calibration-v1.schema.json"), document)
+
+    def test_fault_summary_requires_exactly_one_owning_harness(self):
+        document = example("fault-verification-summary-v1.example.json")
+        document["owningHarnessCount"] = 2
+        with self.assertRaises(SchemaContractError):
+            validate_instance(
+                schema("fault-verification-summary-v1.schema.json"), document
+            )
+
+    def test_m2e_examples_are_portable_privacy_clean(self):
+        for name in (
+            "fault-harness-events-v1.example.json",
+            "network-calibration-v1.example.json",
+            "fault-verification-summary-v1.example.json",
+        ):
+            with self.subTest(example=name):
+                scan_evidence_privacy(example(name))
+
+    def test_m2e_portable_artifacts_reject_ip_and_url(self):
+        for value in ("203.0.113.7", "http://media.example.invalid/chunk"):
+            with self.subTest(value=value):
+                with self.assertRaises(M2ContractError):
+                    scan_evidence_privacy({"diagnostic": value})
 
 
 class M2ScenarioIdentityTest(unittest.TestCase):
