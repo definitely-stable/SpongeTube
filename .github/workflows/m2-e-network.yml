@@ -239,7 +239,7 @@ jobs:
             local case_id="$4"
             local case_root="$root/$case_id"
             local scenario="$PWD/test-fixtures/network/m2/$fixture"
-            local trace="$PWD/$case_root/origin-requests.jsonl"
+            local trace="$case_root/origin-requests.jsonl"
 
             rm -rf "$case_root"
             mkdir -p "$case_root"/{server,android,harness,health,verified}
@@ -252,9 +252,11 @@ jobs:
             sudo -n ip netns exec "$ns"               env JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:/usr/bin:/bin"               "$LAB_BIN" serve                 "--fixture-root=$PWD/test-fixtures/media"                 "--trace=$trace"                 "--session-id=m2-e-$case_id-session"                 --profile=N0                 --data-bind-address="$media_addr"                 --data-port=18081                 --control-port=18082               > "$case_root/server/media-lab.out"               2> "$case_root/server/media-lab.err" &
             LAB_PID=$!
 
+            # Media Lab binds both listeners before it starts serving. Probe only
+            # the control plane here: a data-plane readiness GET would pollute the
+            # request trace that is later correlated with FetchBroker attempts.
             for attempt in {1..60}; do
-              if curl --fail --silent                    "http://$media_addr:18081/fixtures/F1/segment-1-00001.m4s"                    -o /dev/null &&
-                 sudo -n ip netns exec "$ns"                    curl --fail --silent http://127.0.0.1:18082/__lab/config                    > "$case_root/server/config.json"; then
+              if sudo -n ip netns exec "$ns"                    curl --fail --silent http://127.0.0.1:18082/__lab/config                    > "$case_root/server/config.json"; then
                 break
               fi
               [[ "$attempt" -lt 60 ]] || {
