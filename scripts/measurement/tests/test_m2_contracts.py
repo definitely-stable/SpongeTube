@@ -80,6 +80,7 @@ CONTRACTS = {
     "network-calibration-v1.schema.json": [
         "network-calibration-v1.example.json",
     ],
+    "fault-engine-fingerprint-v1.schema.json": [],
     "fault-verification-summary-v1.schema.json": [
         "fault-verification-summary-v1.example.json",
     ],

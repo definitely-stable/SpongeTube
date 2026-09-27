@@ -1183,6 +1183,7 @@ def validate_m2e_harness_binding(plane: str, harness_id: str, tool_id: str) -> N
 M2_SLICE_SCHEMAS = frozenset({
     "fault-harness-events-v1.schema.json",
     "network-calibration-v1.schema.json",
+    "fault-engine-fingerprint-v1.schema.json",
     "fault-verification-summary-v1.schema.json",
 })
 

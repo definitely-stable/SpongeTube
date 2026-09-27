@@ -151,6 +151,7 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
         ]
         filters = [{
             "kind": "flower",
+            "protocol": "ip",
             "options": {
                 "keys": {"ip_proto": "tcp", "src_port": 18081},
                 "classid": "1:1",
