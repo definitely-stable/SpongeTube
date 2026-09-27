@@ -39,6 +39,7 @@ dependencies {
     androidTestImplementation(project(":test-support:fixture-f1"))
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.uiautomator)
 }
 
 tasks.withType<Test>().configureEach {
