@@ -275,13 +275,19 @@ class RouteVpnFeasibilityAndroidTest {
             context.startActivity(prepare)
             device.waitForIdle()
 
+            val dialogPackage = checkNotNull(prepare.component?.packageName) {
+                "VpnService.prepare returned an intent without a component package"
+            }
+            val resourceIdRegex = "android:id/button1$|button_start_vpn"
             val allow = device.findObject(
                 UiSelector()
                     .className("android.widget.Button")
-                    .resourceIdMatches("android:id/button1|.*:id/button_start_vpn"),
+                    .packageName(dialogPackage)
+                    .resourceIdMatches(resourceIdRegex),
             )
             assertTrue(
-                "VPN confirmation allow button not found",
+                "VPN confirmation allow button not found; package=$dialogPackage " +
+                    "resourceIdRegex=$resourceIdRegex",
                 allow.waitForExists(VPN_CONSENT_TIMEOUT_MS),
             )
             assertTrue("VPN confirmation click failed", allow.click())
