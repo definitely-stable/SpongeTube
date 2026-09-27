@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A through M2-D complete; M2-E in progress (E0 topology proven, E1 contract freeze)**
+Status: **Active — M2-A through M2-E complete; M2-F next**
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -85,7 +85,7 @@ M2 is split into focused deliveries (an ownership map, not a frozen API):
 - **M2-B — Route Observation & Privacy Policy** (complete, `.work/evidence/2026-09-25-m2-b-route-observation.md`): Android default-route observation (API 24+ `registerDefaultNetworkCallback`, API 23 `CONNECTIVITY_ACTION` snapshot fallback), one serialized reducer, `DefaultRouteState`, per-session `SessionRouteGuard` and `ExternalFetchRouteDecision`, `route-events-v1`; API 23 and API 34/36 tested. No FetchBroker wiring (M2-C/M2-F).
 - **M2-C — Recovery Chain, Failure Classification & Request Budget** (#79, complete, `.work/evidence/2026-09-25-m2-c-recovery-chain.md`, ADR-0003): `RecoveryCoordinator` as the only logical retry owner, RecoveryChain identity, typed `FailureObservation` + conservative `FailureClassifier`, `sponge-recovery-v1` (`REMOTE_ATTEMPT = 4`, exponential backoff with full jitter), `RecoveryAttemptGate` seam, one FetchBroker owner = one attempt, no Media3 retry; `failure-decision-events-v1`, `recovery-budget-events-v1`; M2-ACC-05/06 executable. Provider actions fail closed until M2-D; route gate wiring is M2-F.
 - **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery** (#81, complete, `.work/evidence/2026-09-26-m2-d-provider-recovery.md`, ADR-0004): delivery binding revision, CAS/single-flight refresh, `sponge-recovery-v2`, `Retry-After`, N8/N9/N10 deterministic provider simulator, M2-ACC-07/08; #50 review recorded; production stale-binding signal unresolved.
-- **M2-E — Transport / Packet Fault Harness** (#85, in progress; E0 #86 complete): ADR-0005 separates pinned Toxiproxy TRANSPORT faults from scoped tc/netem NETWORK faults; E0 proved the direct API36 namespace/veth media path, control isolation and cleanup. E1 freezes evidence schemas and M2-ACC-09 before the full harness/runtime evidence implementation.
+- **M2-E — Transport / Packet Fault Harness** (#85, complete, `.work/evidence/2026-09-28-m2-e-fault-harness.md`, ADR-0005): pinned Toxiproxy 2.12.0 owns TRANSPORT faults; scoped tc/netem owns NETWORK faults on the direct API36 namespace/veth media path. E2/E3 provide typed harnesses, normalized tool readback, traffic-synchronized N3 blackout, fault-engine fingerprinting with GRO/GSO/TSO disabled on the lab veth, independent M2-ACC-01/02/09 verification and retained M2-ACC-05/06 regressions.
 - **M2-F — Android Route/VPN Recovery Integration**: end-to-end VPN/default-route recovery on Android's actual selected network.
 - **M2-G — Transport Evidence Evaluation**: transport comparison under the controlled experiment contract.
 - **M2-H — Canonical M2 Acceptance**: aggregation of already-working owning-slice evidence.
@@ -119,7 +119,7 @@ Exit:
 - VPN disappearance follows the defined privacy policy;
 - 403/429/expiry simulations have deterministic recovery;
 - transport/network faults can be attributed to their owning layer;
-- stochastic scenarios are reproducible from their persisted seed;
+- stochastic scenarios persist and apply their seed; stronger identical per-packet effect replay is claimed only where separately proven;
 - transport choice is backed by playback/device evidence, not synthetic throughput preference.
 
 ## M3 — YouTube Adapter
