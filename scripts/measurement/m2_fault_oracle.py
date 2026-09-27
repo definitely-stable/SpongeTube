@@ -431,19 +431,21 @@ def expected_network_fault(
 
 
 def _find_kind(value: Any, kind: str) -> dict[str, Any] | None:
+    matches = _find_kinds(value, kind)
+    return matches[0] if matches else None
+
+
+def _find_kinds(value: Any, kind: str) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
     if isinstance(value, dict):
         if value.get("kind") == kind:
-            return value
+            matches.append(value)
         for child in value.values():
-            found = _find_kind(child, kind)
-            if found is not None:
-                return found
+            matches.extend(_find_kinds(child, kind))
     elif isinstance(value, list):
         for child in value:
-            found = _find_kind(child, kind)
-            if found is not None:
-                return found
-    return None
+            matches.extend(_find_kinds(child, kind))
+    return matches
 
 
 def _contains_key_value(value: Any, key: str, expected: Any) -> bool:
@@ -484,8 +486,10 @@ def normalize_network_tc_state(
     """Normalize raw pinned tc JSON without importing the harness implementation."""
     netem = _find_kind(qdiscs, "netem")
     require(netem is not None, "raw qdisc readback has no netem")
+    require(netem.get("parent") == "1:1", "raw netem is not attached to impaired band 1:1")
     prio = _find_kind(qdiscs, "prio")
     require(prio is not None, "raw qdisc readback has no scoped prio")
+    require(prio.get("handle") == "1:", "raw scoped prio must use handle 1:")
     prio_options = prio.get("options") or {}
     require(isinstance(prio_options, Mapping), "raw prio options must be an object")
     require(prio_options.get("bands") == 3, "raw prio readback has unexpected band count")
@@ -493,19 +497,25 @@ def normalize_network_tc_state(
         prio_options.get("priomap") == BYPASS_PRIOMAP,
         "unmatched traffic is not pinned to the bypass band",
     )
-    require(_find_kind(filters, "flower") is not None, "raw filter readback has no flower")
+    flowers = _find_kinds(filters, "flower")
+    require(len(flowers) == 1, "raw filter readback must contain exactly one flower")
+    flower = flowers[0]
     require(
-        _contains_key_value(filters, "src_port", 18081),
+        _contains_key_value(flower, "src_port", 18081),
         "flower classifier is not restricted to media source port",
     )
     require(
-        _contains_key_value(filters, "ip_proto", "tcp"),
+        _contains_key_value(flower, "ip_proto", "tcp"),
         "flower classifier is not restricted to TCP",
     )
     require(
-        _contains_key_value(filters, "eth_type", "ipv4")
-        or _contains_key_value(filters, "protocol", "ip"),
+        _contains_key_value(flower, "eth_type", "ipv4")
+        or _contains_key_value(flower, "protocol", "ip"),
         "flower classifier is not restricted to IPv4",
+    )
+    require(
+        _contains_key_value(flower, "classid", "1:1"),
+        "media flower classifier is not directed to impaired band 1:1",
     )
     options = netem.get("options") or {}
     require(isinstance(options, Mapping), "netem options must be an object")

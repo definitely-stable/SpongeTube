@@ -180,6 +180,45 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
             oracle.normalize_network_tc_state(qdisc, filters, "HIGH_RTT_JITTER"),
         )
 
+    def test_wrong_or_ambiguous_flower_routing_fails_closed(self):
+        qdisc = [
+            {
+                "kind": "prio",
+                "handle": "1:",
+                "options": {"bands": 3, "priomap": [2] * 16},
+            },
+            {
+                "kind": "netem",
+                "handle": "10:",
+                "parent": "1:1",
+                "options": {
+                    "loss-random": {"loss": 0.02, "correlation": 0.25},
+                    "seed": 424242,
+                },
+            },
+        ]
+        wrong_band = [{
+            "kind": "flower",
+            "protocol": "ip",
+            "options": {
+                "keys": {"ip_proto": "tcp", "src_port": 18081},
+                "classid": "1:3",
+            },
+        }]
+        with self.assertRaises(Exception):
+            oracle.normalize_network_tc_state(qdisc, wrong_band, "BURST_LOSS")
+
+        ambiguous = wrong_band + [{
+            "kind": "flower",
+            "protocol": "ip",
+            "options": {
+                "keys": {"ip_proto": "tcp", "src_port": 18081},
+                "classid": "1:1",
+            },
+        }]
+        with self.assertRaises(Exception):
+            oracle.normalize_network_tc_state(qdisc, ambiguous, "BURST_LOSS")
+
     def test_unmatched_prio_mapping_fails_closed(self):
         qdisc = [
             {

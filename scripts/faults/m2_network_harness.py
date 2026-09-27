@@ -182,19 +182,21 @@ def compile_config(scenario: dict[str, Any]) -> dict[str, Any]:
 
 
 def _find_kind(value: Any, kind: str) -> dict[str, Any] | None:
+    matches = _find_kinds(value, kind)
+    return matches[0] if matches else None
+
+
+def _find_kinds(value: Any, kind: str) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
     if isinstance(value, dict):
         if value.get("kind") == kind:
-            return value
+            matches.append(value)
         for child in value.values():
-            found = _find_kind(child, kind)
-            if found is not None:
-                return found
+            matches.extend(_find_kinds(child, kind))
     elif isinstance(value, list):
         for child in value:
-            found = _find_kind(child, kind)
-            if found is not None:
-                return found
-    return None
+            matches.extend(_find_kinds(child, kind))
+    return matches
 
 
 def _has_key_value(value: Any, key: str, expected: Any) -> bool:
@@ -258,9 +260,13 @@ def normalize_tc_state(
     netem = _find_kind(qdiscs, "netem")
     if netem is None:
         fail("tc readback has no netem qdisc")
+    if netem.get("parent") != "1:1":
+        fail("netem qdisc is not attached to impaired band 1:1")
     prio = _find_kind(qdiscs, "prio")
     if prio is None:
         fail("tc readback has no scoped prio qdisc")
+    if prio.get("handle") != "1:":
+        fail("scoped prio qdisc must use handle 1:")
     prio_options = prio.get("options") or {}
     if not isinstance(prio_options, dict):
         fail("prio options readback is not an object")
@@ -268,17 +274,21 @@ def normalize_tc_state(
         fail("scoped prio qdisc must expose three bands")
     if prio_options.get("priomap") != BYPASS_PRIOMAP:
         fail("unmatched traffic is not pinned to the bypass band")
-    if _find_kind(filters, "flower") is None:
-        fail("tc readback has no flower classifier")
-    if not _has_key_value(filters, "src_port", MEDIA_PORT):
+    flowers = _find_kinds(filters, "flower")
+    if len(flowers) != 1:
+        fail("tc readback must contain exactly one flower classifier")
+    flower = flowers[0]
+    if not _has_key_value(flower, "src_port", MEDIA_PORT):
         fail("flower readback is not scoped to media source port")
-    if not _has_key_value(filters, "ip_proto", "tcp"):
+    if not _has_key_value(flower, "ip_proto", "tcp"):
         fail("flower readback is not scoped to TCP")
     if not (
-        _has_key_value(filters, "eth_type", "ipv4")
-        or _has_key_value(filters, "protocol", "ip")
+        _has_key_value(flower, "eth_type", "ipv4")
+        or _has_key_value(flower, "protocol", "ip")
     ):
         fail("flower readback is not scoped to IPv4")
+    if not _has_key_value(flower, "classid", "1:1"):
+        fail("media flower classifier is not directed to impaired band 1:1")
 
     options = netem.get("options") or {}
     if not isinstance(options, dict):
