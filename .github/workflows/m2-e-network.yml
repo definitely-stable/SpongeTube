@@ -298,7 +298,7 @@ jobs:
               HARNESS_PID=$!
               for attempt in {1..80}; do
                 if [[ -s "$case_root/harness/fault-harness-events.json" ]] &&
-                   jq -e '.events[-1].operation == "FAULT_APPLIED"'                      "$case_root/harness/fault-harness-events.json" >/dev/null 2>&1; then
+                   jq -e '.events[-1].operation == "FAULT_ARMED"'                      "$case_root/harness/fault-harness-events.json" >/dev/null 2>&1; then
                   break
                 fi
                 if ! kill -0 "$HARNESS_PID" 2>/dev/null; then

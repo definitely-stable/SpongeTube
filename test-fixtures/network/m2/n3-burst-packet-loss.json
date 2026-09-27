@@ -14,7 +14,10 @@
       "parameters": {
         "lossPpm": 1000000,
         "durationMs": 1500,
-        "scope": "MEDIA_PATH_ONLY"
+        "scope": "MEDIA_PATH_ONLY",
+        "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP"
       }
     }
   ],

@@ -15,7 +15,10 @@
         "delayUs": 100000,
         "jitterUs": 30000,
         "delayCorrelationPpm": 250000,
-        "scope": "MEDIA_PATH_ONLY"
+        "scope": "MEDIA_PATH_ONLY",
+        "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP"
       }
     }
   ],
