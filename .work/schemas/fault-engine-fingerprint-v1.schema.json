@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/fault-engine-fingerprint-v1.schema.json",
+  "title": "SpongeTube M2 NETWORK Fault Engine Fingerprint v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runner",
+    "toolchain",
+    "offloads",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runner": {
+      "type": "object",
+      "required": [
+        "imageOs",
+        "imageVersion",
+        "osId",
+        "osVersionId",
+        "kernelRelease",
+        "kernelMachine"
+      ],
+      "properties": {
+        "imageOs": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "osId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "osVersionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kernelRelease": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kernelMachine": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "toolchain": {
+      "type": "object",
+      "required": [
+        "tcVersion",
+        "tcSourceSha256",
+        "ethtoolVersion"
+      ],
+      "properties": {
+        "tcVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tcSourceSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "ethtoolVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "offloads": {
+      "type": "object",
+      "required": [
+        "gro",
+        "gso",
+        "tso"
+      ],
+      "properties": {
+        "gro": {
+          "type": "boolean",
+          "const": false
+        },
+        "gso": {
+          "type": "boolean",
+          "const": false
+        },
+        "tso": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false
+}

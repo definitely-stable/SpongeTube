@@ -57,6 +57,60 @@ tc_ns() {
   sudo -n ip netns exec "$NS" "$TC_BIN" "$@"
 }
 
+require_ethtool() {
+  command -v ethtool >/dev/null || {
+    echo "ethtool is required for canonical NETWORK packetization control" >&2
+    exit 2
+  }
+}
+
+ethtool_ns() {
+  sudo -n ip netns exec "$NS" ethtool "$@"
+}
+
+inspect_offloads() {
+  require_ethtool
+  local raw
+  raw="$(ethtool_ns -k "$LAB_IF")"
+  python3 - "$raw" <<'PY'
+import json, sys
+wanted = {
+    "generic-receive-offload": "gro",
+    "generic-segmentation-offload": "gso",
+    "tcp-segmentation-offload": "tso",
+}
+values = {}
+for line in sys.argv[1].splitlines():
+    if ":" not in line:
+        continue
+    key, rest = line.strip().split(":", 1)
+    if key not in wanted:
+        continue
+    token = rest.strip().split()[0]
+    if token not in {"on", "off"}:
+        raise SystemExit(f"unexpected ethtool state for {key}: {rest!r}")
+    values[wanted[key]] = token == "on"
+missing = sorted(set(wanted.values()) - set(values))
+if missing:
+    raise SystemExit(f"missing ethtool offload state: {missing}")
+print(json.dumps(values, sort_keys=True))
+PY
+}
+
+prepare_fidelity() {
+  require_ethtool
+  ethtool_ns -K "$LAB_IF" gro off gso off tso off
+  local state
+  state="$(inspect_offloads)"
+  python3 - "$state" <<'PY'
+import json, sys
+state = json.loads(sys.argv[1])
+enabled = sorted(key for key, value in state.items() if value)
+if enabled:
+    raise SystemExit(f"packetization offloads still enabled: {enabled}")
+PY
+}
+
 clear_root() {
   tc_ns qdisc del dev "$LAB_IF" root 2>/dev/null || true
 }
@@ -147,6 +201,12 @@ case "$COMMAND" in
     ;;
   inspect-filter)
     inspect_filter
+    ;;
+  prepare-fidelity)
+    prepare_fidelity
+    ;;
+  inspect-offloads)
+    inspect_offloads
     ;;
   remove)
     clear_root
