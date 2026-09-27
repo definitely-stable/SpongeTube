@@ -176,36 +176,13 @@
     "normalizedObject": {
       "type": "object",
       "additionalProperties": {
-        "$ref": "#/$defs/normalizedValue"
+        "type": [
+          "integer",
+          "string",
+          "boolean",
+          "null"
+        ]
       }
-    },
-    "normalizedValue": {
-      "oneOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/normalizedValue"
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/normalizedValue"
-          }
-        }
-      ]
     }
   }
 }
