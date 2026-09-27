@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "scenarioFamily": "N2",
+  "variant": "HIGH_RTT_JITTER",
+  "primaryPlane": "NETWORK",
+  "deliveryFaults": [],
+  "transportFaults": [],
+  "networkFaults": [
+    {
+      "faultId": "media-path-delay-jitter",
+      "plane": "NETWORK",
+      "kind": "HIGH_RTT_JITTER",
+      "stochastic": true,
+      "parameters": {
+        "delayUs": 100000,
+        "jitterUs": 30000,
+        "delayCorrelationPpm": 250000,
+        "scope": "MEDIA_PATH_ONLY",
+        "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP"
+      }
+    }
+  ],
+  "providerFaults": [],
+  "routeFaults": [],
+  "storageFaults": [],
+  "randomSeed": 424242,
+  "requiresActualDefaultNetwork": false
+}

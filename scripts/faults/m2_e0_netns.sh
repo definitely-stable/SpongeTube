@@ -51,8 +51,20 @@ teardown() {
   if namespace_exists; then
     sudo -n ip netns delete "$NS"
   fi
+
+  # Deleting the namespace normally destroys the host-side veth peer as well.
+  # Avoid a check-then-delete race if that peer disappears asynchronously:
+  # "already absent" is success, but a link that remains after the delete
+  # attempt is still a hard cleanup failure.
+  sudo -n ip link delete "$HOST_IF" 2>/dev/null || true
+
+  if namespace_exists; then
+    echo "namespace survived teardown: $NS" >&2
+    return 1
+  fi
   if host_link_exists; then
-    sudo -n ip link delete "$HOST_IF"
+    echo "veth survived teardown: $HOST_IF" >&2
+    return 1
   fi
 }
 

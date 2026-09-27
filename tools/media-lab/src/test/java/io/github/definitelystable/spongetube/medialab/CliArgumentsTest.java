@@ -29,6 +29,7 @@ class CliArgumentsTest {
 
         assertEquals(MediaLabProfile.N0, config.profile());
         assertEquals(0, config.dataPort());
+        assertEquals("127.0.0.1", config.dataBindAddress());
         assertEquals(8, config.dataWorkers());
         assertEquals(0, config.controlPort());
         assertEquals(2, config.controlWorkers());
@@ -105,6 +106,7 @@ class CliArgumentsTest {
                 "--trace=" + temp.resolve("explicit-trace.jsonl"),
                 "--session-id=explicit-1",
                 "--data-port=18081",
+                "--data-bind-address=192.0.2.2",
                 "--data-workers=6",
                 "--control-port=18082",
                 "--control-workers=3",
@@ -112,6 +114,7 @@ class CliArgumentsTest {
         });
 
         assertEquals(18081, config.dataPort());
+        assertEquals("192.0.2.2", config.dataBindAddress());
         assertEquals(6, config.dataWorkers());
         assertEquals(18082, config.controlPort());
         assertEquals(3, config.controlWorkers());
@@ -299,6 +302,7 @@ class CliArgumentsTest {
     void usageDocumentsProviderOptions() {
         String usage = CliArguments.usage();
 
+        assertTrue(usage.contains("--data-bind-address=127.0.0.1"));
         assertTrue(usage.contains("--provider-variant=<VARIANT>"));
         assertTrue(usage.contains("--provider-wall-clock-epoch-ms=<ms>"));
         assertTrue(usage.contains("HTTP_403_BARE"));

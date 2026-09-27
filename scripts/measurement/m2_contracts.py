@@ -1178,11 +1178,12 @@ def validate_m2e_harness_binding(plane: str, harness_id: str, tool_id: str) -> N
 # ---------------------------------------------------------------------------
 
 # Subsystem schemas added by the current M2 owning slice (M2.md section 16).
-# M2-E owns exactly the three schemas below; every schema accepted by an
-# earlier slice is registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
+# M2-E owns the schemas below; every schema accepted by an earlier slice is
+# registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
 M2_SLICE_SCHEMAS = frozenset({
     "fault-harness-events-v1.schema.json",
     "network-calibration-v1.schema.json",
+    "fault-engine-fingerprint-v1.schema.json",
     "fault-verification-summary-v1.schema.json",
 })
 

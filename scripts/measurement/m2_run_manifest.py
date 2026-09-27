@@ -43,12 +43,27 @@ def utc_now() -> str:
 def build(args: argparse.Namespace) -> dict[str, Any]:
     scenario = load_object(args.scenario)
     validate_scenario_semantics(scenario)
-    if scenario.get("primaryPlane") != "TRANSPORT":
-        raise ValueError("E2 run manifest producer requires primaryPlane TRANSPORT")
+    plane = scenario.get("primaryPlane")
+    if plane not in {"TRANSPORT", "NETWORK"}:
+        raise ValueError("M2-E run manifest producer requires TRANSPORT or NETWORK primaryPlane")
+    harness_binding = {
+        "TRANSPORT": ("sponge-transport-harness", "transport"),
+        "NETWORK": ("sponge-network-harness", "network"),
+    }[plane]
 
     git_commit = args.git_commit.strip()
     if len(git_commit) != 40 or any(ch not in "0123456789abcdef" for ch in git_commit):
         raise ValueError("git commit must be a lowercase 40-character SHA")
+
+    runtime = {
+        "executor": "HttpRangeFetchExecutor",
+        "media3": "1.11.1",
+    }
+    fingerprint = getattr(args, "fault_engine_fingerprint", None)
+    if plane == "NETWORK":
+        if fingerprint is None:
+            raise ValueError("NETWORK run requires --fault-engine-fingerprint")
+        runtime["faultEngineFingerprintSha256"] = sha256_file(fingerprint)
 
     manifest = {
         "schemaVersion": 1,
@@ -74,8 +89,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         },
         "faultHarnesses": [
             {
-                "plane": "TRANSPORT",
-                "harnessId": "sponge-transport-harness",
+                "plane": plane,
+                "harnessId": harness_binding[0],
                 "harnessVersion": "1",
             }
         ],
@@ -89,17 +104,16 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             "api": args.device_api,
             "kind": "ANDROID_EMULATOR",
         },
-        "runtime": {
-            "executor": "HttpRangeFetchExecutor",
-            "media3": "1.11.1",
-        },
+        "runtime": runtime,
         "clockDomains": [
             "ANDROID_MONOTONIC",
             "HOST_MEDIA_LAB_MONOTONIC",
             "HOST_FAULT_MONOTONIC",
         ],
         "limitations": [
-            "API 36 emulator correctness and fault-attribution evidence; not representative transport performance."
+            "API 36 emulator correctness and fault-attribution evidence; not representative "
+            + harness_binding[1]
+            + " performance."
         ],
     }
 
@@ -119,6 +133,7 @@ def main() -> int:
     parser.add_argument("--git-commit", required=True)
     parser.add_argument("--fixture-manifest", required=True, type=pathlib.Path)
     parser.add_argument("--device-api", required=True, type=int)
+    parser.add_argument("--fault-engine-fingerprint", type=pathlib.Path)
     parser.add_argument("--created-at-utc")
     args = parser.parse_args()
 

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "scenarioFamily": "N5",
+  "variant": "BURST_LOSS",
+  "primaryPlane": "NETWORK",
+  "deliveryFaults": [],
+  "transportFaults": [],
+  "networkFaults": [
+    {
+      "faultId": "media-path-loss",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS",
+      "stochastic": true,
+      "parameters": {
+        "lossPpm": 20000,
+        "burstCorrelationPpm": 250000,
+        "scope": "MEDIA_PATH_ONLY",
+        "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP"
+      }
+    }
+  ],
+  "providerFaults": [],
+  "routeFaults": [],
+  "storageFaults": [],
+  "randomSeed": 424242,
+  "requiresActualDefaultNetwork": false
+}

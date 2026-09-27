@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "runner": {
+    "imageOs": "ubuntu24",
+    "imageVersion": "20260920.314.1",
+    "osId": "ubuntu",
+    "osVersionId": "24.04",
+    "kernelRelease": "6.17.0-example",
+    "kernelMachine": "x86_64"
+  },
+  "toolchain": {
+    "tcVersion": "tc utility, iproute2-6.6.0",
+    "tcSourceSha256": "8738c804afd09f0bf756937f0c3de23117832a98d8cbbf50386cf5005cd613ce",
+    "ethtoolVersion": "ethtool version 6.11"
+  },
+  "offloads": {
+    "gro": false,
+    "gso": false,
+    "tso": false
+  },
+  "limitations": [
+    "Contract example only; not produced by a real run."
+  ]
+}

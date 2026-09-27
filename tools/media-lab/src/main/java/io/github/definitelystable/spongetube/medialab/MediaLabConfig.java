@@ -18,9 +18,11 @@ record MediaLabConfig(
         Long noProgressStartAfterMs,
         int writeQuantumBytes,
         ProviderVariant providerVariant,
-        Long providerWallClockEpochMs) {
+        Long providerWallClockEpochMs,
+        String dataBindAddress) {
 
     static final int DEFAULT_WRITE_QUANTUM_BYTES = 8 * 1024;
+    static final String DEFAULT_DATA_BIND_ADDRESS = "127.0.0.1";
 
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
@@ -49,7 +51,39 @@ record MediaLabConfig(
                 noProgressStartAfterMs,
                 writeQuantumBytes,
                 null,
-                null);
+                null,
+                DEFAULT_DATA_BIND_ADDRESS);
+    }
+
+    MediaLabConfig(
+            Path fixtureRoot,
+            Path tracePath,
+            String sessionId,
+            MediaLabProfile profile,
+            int dataPort,
+            int dataWorkers,
+            int controlPort,
+            int controlWorkers,
+            Long referencePlaybackBitrateBps,
+            Long noProgressStartAfterMs,
+            int writeQuantumBytes,
+            ProviderVariant providerVariant,
+            Long providerWallClockEpochMs) {
+        this(
+                fixtureRoot,
+                tracePath,
+                sessionId,
+                profile,
+                dataPort,
+                dataWorkers,
+                controlPort,
+                controlWorkers,
+                referencePlaybackBitrateBps,
+                noProgressStartAfterMs,
+                writeQuantumBytes,
+                providerVariant,
+                providerWallClockEpochMs,
+                DEFAULT_DATA_BIND_ADDRESS);
     }
 
     MediaLabConfig {
@@ -57,6 +91,11 @@ record MediaLabConfig(
         tracePath = Objects.requireNonNull(tracePath, "tracePath").toAbsolutePath().normalize();
         sessionId = Objects.requireNonNull(sessionId, "sessionId");
         profile = Objects.requireNonNull(profile, "profile");
+        dataBindAddress = Objects.requireNonNull(dataBindAddress, "dataBindAddress").trim();
+        if (dataBindAddress.isEmpty() || dataBindAddress.length() > 128) {
+            throw new IllegalArgumentException(
+                    "data-bind-address must be a non-empty address literal/name up to 128 characters");
+        }
 
         if (!Files.isDirectory(fixtureRoot)) {
             throw new IllegalArgumentException("Fixture root is not a directory: " + fixtureRoot);
