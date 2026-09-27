@@ -135,6 +135,21 @@ def android(args: argparse.Namespace) -> None:
         if android_doc.get(key) != value:
             raise SystemExit(f"android evidence mismatch for {key}: {android_doc.get(key)!r}")
 
+    qdiscs = load_json(args.impairment_readback)
+    if not any(
+        isinstance(item, dict) and item.get("kind") == "netem"
+        for item in qdiscs
+    ):
+        raise SystemExit("Android E0 media-path qdisc readback is missing netem")
+
+    packets_before = int(pathlib.Path(args.media_packets_before).read_text(encoding="utf-8").strip())
+    packets_after = int(pathlib.Path(args.media_packets_after).read_text(encoding="utf-8").strip())
+    if packets_after <= packets_before:
+        raise SystemExit(
+            f"namespace media veth did not carry Android response packets: "
+            f"{packets_before} -> {packets_after}"
+        )
+
     markers = {
         "adbHealthyBefore": marker_ok(args.adb_before, "device"),
         "adbHealthyDuring": marker_ok(args.adb_during, "device"),
@@ -171,6 +186,13 @@ def android(args: argparse.Namespace) -> None:
                 "mediaLabReachableFromHost": True,
             },
             "isolation": markers,
+            "scopedMediaImpairment": {
+                "qdiscReadback": True,
+                "mediaVethTxPacketsBefore": packets_before,
+                "mediaVethTxPacketsAfter": packets_after,
+                "mediaVethTxPacketDelta": packets_after - packets_before,
+                "mediaTraversedScopedQdisc": True,
+            },
             "portableEvidencePrivacyClean": True,
             "status": "PASS",
         },
@@ -200,6 +222,9 @@ def parse() -> argparse.Namespace:
     p_android.add_argument("--output", required=True)
     p_android.add_argument("--android-evidence", required=True)
     p_android.add_argument("--api", type=int, required=True)
+    p_android.add_argument("--impairment-readback", required=True)
+    p_android.add_argument("--media-packets-before", required=True)
+    p_android.add_argument("--media-packets-after", required=True)
     for name in (
         "adb-before",
         "adb-during",
