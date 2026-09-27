@@ -1,5 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine.route
 
+import io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding
+
 /**
  * Platform truth value for one route capability (.work/milestones/M2.md 8.2).
  *
@@ -110,6 +112,11 @@ internal sealed interface DefaultRouteState {
 internal data class RouteObservation(
     val sequence: Long,
     val state: DefaultRouteState,
+    /**
+     * Execution-only binding for the current AVAILABLE platform route.
+     * Evidence serializers intentionally ignore it.
+     */
+    val binding: ExternalRouteBinding? = null,
 )
 
 internal enum class RouteSignalSource {
@@ -140,7 +147,10 @@ internal sealed interface RouteSignal {
     val kind: RouteSignalKind
     val routeRef: PlatformRouteRef?
 
-    data class Available(override val routeRef: PlatformRouteRef) : RouteSignal {
+    data class Available(
+        override val routeRef: PlatformRouteRef,
+        val binding: ExternalRouteBinding? = null,
+    ) : RouteSignal {
         override val source get() = RouteSignalSource.DEFAULT_NETWORK_CALLBACK
         override val kind get() = RouteSignalKind.AVAILABLE
     }
@@ -179,10 +189,11 @@ internal sealed interface RouteSignal {
     data class LegacySnapshot(
         override val routeRef: PlatformRouteRef?,
         val capabilities: ObservedRouteCapabilities?,
+        val binding: ExternalRouteBinding? = null,
     ) : RouteSignal {
         init {
-            require(routeRef != null || capabilities == null) {
-                "capabilities require an active network"
+            require(routeRef != null || (capabilities == null && binding == null)) {
+                "capabilities/binding require an active network"
             }
         }
 
@@ -194,7 +205,16 @@ internal sealed interface RouteSignal {
      * API 24+ one-time `activeNetwork` lookup after registration, outside any
      * callback. It only resolves INITIALIZING; it carries no capabilities.
      */
-    data class BootstrapSnapshot(override val routeRef: PlatformRouteRef?) : RouteSignal {
+    data class BootstrapSnapshot(
+        override val routeRef: PlatformRouteRef?,
+        val binding: ExternalRouteBinding? = null,
+    ) : RouteSignal {
+        init {
+            require(routeRef != null || binding == null) {
+                "binding requires an active network"
+            }
+        }
+
         override val source get() = RouteSignalSource.BOOTSTRAP_ACTIVE_NETWORK
         override val kind get() = RouteSignalKind.BOOTSTRAP_SNAPSHOT
     }

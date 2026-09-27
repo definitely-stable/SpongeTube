@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
+import io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
 
 /** Why an external attempt was permitted; an open, typed label. */
@@ -19,12 +20,17 @@ internal value class RecoveryPermitReason(val value: String) {
 }
 
 /**
- * Permission to open the next physical attempt. Carries no Android type; a
- * route-aware gate (M2-F) may attach the `routeEpoch` it evaluated.
+ * Permission to open the next physical attempt. Carries no Android type.
+ *
+ * M2-F attaches both the evaluated [routeEpoch] and an opaque
+ * [routeBinding]. The binding is execution context only: it pins the physical
+ * open to the platform route that was actually evaluated and closes the
+ * permit-to-socket default-route race.
  */
 internal data class RecoveryAttemptPermit(
     val routeEpoch: Long?,
     val reason: RecoveryPermitReason,
+    val routeBinding: ExternalRouteBinding? = null,
 ) {
     init {
         require(routeEpoch == null || routeEpoch >= 1)

@@ -12,6 +12,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
+import io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -82,22 +85,47 @@ internal const val SUSPENDED_API_FLOOR = 28
 private fun NetworkCapabilities.toObserved(): ObservedRouteCapabilities =
     mapRouteCapabilities(Build.VERSION.SDK_INT, ::hasCapability)
 
-/** Process-local, bounded Network -> opaque ref map. Never persisted. */
+/**
+ * Process-local Android Network identity plus an opaque execution binding.
+ * The raw Network never leaves this file and is never serialized.
+ */
+private data class PlatformRouteIdentity(
+    val ref: PlatformRouteRef,
+    val binding: ExternalRouteBinding,
+)
+
+private class AndroidExternalRouteBinding(
+    private val network: Network,
+) : ExternalRouteBinding {
+    override fun openConnection(url: URL): HttpURLConnection =
+        network.openConnection(url) as? HttpURLConnection
+            ?: error("Android Network returned a non-HTTP connection")
+
+    override fun toString(): String = "AndroidExternalRouteBinding"
+}
+
+/** Process-local, bounded Network -> opaque identity map. Never persisted. */
 private class PlatformRouteRefs {
     private val lock = Any()
     private var lastOrdinal = 0L
-    private val refs = object : LinkedHashMap<Network, PlatformRouteRef>(16, 0.75f, true) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<Network, PlatformRouteRef>,
-        ): Boolean = size > MAX_TRACKED_NETWORKS
-    }
+    private val refs =
+        object : LinkedHashMap<Network, PlatformRouteIdentity>(16, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<Network, PlatformRouteIdentity>,
+            ): Boolean = size > MAX_TRACKED_NETWORKS
+        }
 
-    fun refFor(network: Network): PlatformRouteRef = synchronized(lock) {
+    fun routeFor(network: Network): PlatformRouteIdentity = synchronized(lock) {
         refs.getOrPut(network) {
             lastOrdinal += 1
-            PlatformRouteRef.ofOrdinal(lastOrdinal)
+            PlatformRouteIdentity(
+                ref = PlatformRouteRef.ofOrdinal(lastOrdinal),
+                binding = AndroidExternalRouteBinding(network),
+            )
         }
     }
+
+    fun refFor(network: Network): PlatformRouteRef = routeFor(network).ref
 
     private companion object {
         const val MAX_TRACKED_NETWORKS = 32
@@ -118,7 +146,8 @@ private class DefaultNetworkCallbackPlatform(
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            sink?.offer(RouteSignal.Available(refs.refFor(network)))
+            val route = refs.routeFor(network)
+            sink?.offer(RouteSignal.Available(route.ref, route.binding))
         }
 
         override fun onCapabilitiesChanged(
@@ -166,7 +195,8 @@ private class DefaultNetworkCallbackPlatform(
      */
     override fun bootstrap(sink: RouteSignalSink) {
         val active = connectivity.activeNetwork
-        sink.offer(RouteSignal.BootstrapSnapshot(active?.let(refs::refFor)))
+        val route = active?.let(refs::routeFor)
+        sink.offer(RouteSignal.BootstrapSnapshot(route?.ref, route?.binding))
     }
 
     override fun unregister() {
@@ -234,10 +264,12 @@ private class LegacyConnectivityActionPlatform(
             }
             val capabilities = connectivity.getNetworkCapabilities(first)
             if (first == connectivity.activeNetwork) {
+                val route = refs.routeFor(first)
                 sink.offer(
                     RouteSignal.LegacySnapshot(
-                        routeRef = refs.refFor(first),
+                        routeRef = route.ref,
                         capabilities = capabilities?.toObserved(),
+                        binding = route.binding,
                     ),
                 )
                 return

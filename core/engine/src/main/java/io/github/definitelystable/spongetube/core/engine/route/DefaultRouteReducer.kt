@@ -42,13 +42,14 @@ internal class DefaultRouteReducer(
 ) {
     private var state: DefaultRouteState = DefaultRouteState.Initializing
     private var currentRef: PlatformRouteRef? = null
+    private var currentBinding: io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding? = null
     private var lastEpoch = 0L
     private var sequence = 0L
     private var started = false
     private var stopped = false
 
     val current: RouteObservation
-        get() = RouteObservation(sequence, state)
+        get() = RouteObservation(sequence, state, currentBinding)
 
     fun start(elapsedRealtimeNs: Long): RouteObservation {
         check(!started) { "route reducer already started" }
@@ -80,7 +81,7 @@ internal class DefaultRouteReducer(
         checkRunning()
         val epochBefore = epochOf(state)
         val disposition = when (signal) {
-            is RouteSignal.Available -> available(signal.routeRef)
+            is RouteSignal.Available -> available(signal.routeRef, signal.binding)
             is RouteSignal.CapabilitiesChanged -> onCurrent(signal.routeRef) { current ->
                 current.copy(
                     capabilitiesReceived = true,
@@ -128,11 +129,17 @@ internal class DefaultRouteReducer(
         )
     }
 
-    private fun available(ref: PlatformRouteRef): RouteEventDisposition {
+    private fun available(
+        ref: PlatformRouteRef,
+        binding: io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding?,
+    ): RouteEventDisposition {
         if (isCurrent(ref)) {
+            if (binding != null) {
+                currentBinding = binding
+            }
             return RouteEventDisposition.UNCHANGED
         }
-        beginEpoch(ref, capabilities = null)
+        beginEpoch(ref, capabilities = null, binding = binding)
         return RouteEventDisposition.APPLIED
     }
 
@@ -149,8 +156,11 @@ internal class DefaultRouteReducer(
                     ?.let(RouteCapabilities.UNKNOWN::withObserved)
                     ?: RouteCapabilities.UNKNOWN,
             )
+            if (signal.binding != null) {
+                currentBinding = signal.binding
+            }
         } else {
-            beginEpoch(ref, signal.capabilities)
+            beginEpoch(ref, signal.capabilities, signal.binding)
         }
         return RouteEventDisposition.APPLIED
     }
@@ -163,7 +173,7 @@ internal class DefaultRouteReducer(
         if (ref == null) {
             becomeUnavailable()
         } else {
-            beginEpoch(ref, capabilities = null)
+            beginEpoch(ref, capabilities = null, binding = signal.binding)
         }
         return RouteEventDisposition.APPLIED
     }
@@ -180,9 +190,14 @@ internal class DefaultRouteReducer(
     }
 
     /** New default network: new epoch, and nothing of the old epoch survives. */
-    private fun beginEpoch(ref: PlatformRouteRef, capabilities: ObservedRouteCapabilities?) {
+    private fun beginEpoch(
+        ref: PlatformRouteRef,
+        capabilities: ObservedRouteCapabilities?,
+        binding: io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding? = null,
+    ) {
         lastEpoch += 1
         currentRef = ref
+        currentBinding = binding
         state = DefaultRouteState.Available(
             routeEpoch = lastEpoch,
             capabilitiesReceived = capabilities != null,
@@ -193,6 +208,7 @@ internal class DefaultRouteReducer(
 
     private fun becomeUnavailable() {
         currentRef = null
+        currentBinding = null
         state = DefaultRouteState.Unavailable
     }
 
@@ -230,7 +246,7 @@ internal class DefaultRouteReducer(
                 stateAfter = state,
             ),
         )
-        return RouteObservation(sequence, state)
+        return RouteObservation(sequence, state, currentBinding)
     }
 
     private fun epochOf(state: DefaultRouteState): Long? =
