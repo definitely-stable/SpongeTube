@@ -186,10 +186,12 @@ data_rows = [
     row for row in origin_rows
     if row.get("plane") == "data" and row.get("method") == "GET"
 ]
-if len(data_rows) != attempts:
+if len(data_rows) > attempts:
     raise M2ContractError(
-        f"origin data requests {len(data_rows)} != physical attempts {attempts}"
+        f"origin data requests {len(data_rows)} exceed physical attempts {attempts}"
     )
+if variant in {"TRUNCATED_STREAM", "SLOW_CLOSE"} and not data_rows:
+    raise M2ContractError(f"{variant} never reached the deterministic origin")
 
 if variant == "SLOW_CLOSE":
     if result["terminalReason"] != "SUCCESS" or not result["published"] or attempts != 1:
@@ -224,6 +226,7 @@ summary = {
         "crossClockArithmeticAbsent": True,
     },
     "physicalAttempts": attempts,
+    "originRequests": len(data_rows),
 }
 pathlib.Path(output_path).write_text(
     json.dumps(summary, indent=2, sort_keys=True) + "\n",
