@@ -65,7 +65,7 @@ class RouteVpnFeasibilityVpnService : VpnService() {
             .setSession("SpongeTube M2-F0")
             .setMtu(MTU)
             .addAddress(VPN_CLIENT_ADDRESS, VPN_PREFIX_LENGTH)
-            .addRoute(SYNTHETIC_MEDIA_NETWORK, SYNTHETIC_MEDIA_PREFIX_LENGTH)
+            .addRoute(IPV4_DEFAULT_ROUTE, IPV4_DEFAULT_PREFIX_LENGTH)
             .setUnderlyingNetworks(arrayOf(underlying))
             .establish()
             ?: error("VpnService.Builder.establish returned null")
@@ -118,8 +118,8 @@ class RouteVpnFeasibilityVpnService : VpnService() {
         const val KEY_REFLECTED_BYTES = "reflectedBytes"
         const val SYNTHETIC_MEDIA_HOST = "203.0.113.2"
 
-        private const val SYNTHETIC_MEDIA_NETWORK = "203.0.113.0"
-        private const val SYNTHETIC_MEDIA_PREFIX_LENGTH = 24
+        private const val IPV4_DEFAULT_ROUTE = "0.0.0.0"
+        private const val IPV4_DEFAULT_PREFIX_LENGTH = 0
         private const val VPN_CLIENT_ADDRESS = "198.51.100.2"
         private const val VPN_PREFIX_LENGTH = 24
         private const val MTU = 1500
