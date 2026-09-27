@@ -146,6 +146,7 @@ jobs:
 
   android-api36-topology:
     name: android-api36-topology
+    needs: host-feasibility
     runs-on: ubuntu-24.04
     timeout-minutes: 35
 
@@ -268,6 +269,13 @@ jobs:
           fi
           printf 'ok\n' > "$root/health/media-reverse-absent.txt"
 
+          bash scripts/faults/m2_e0_netns.sh tx-packets \
+            > "$root/evidence/media-packets-before.txt"
+          bash scripts/faults/m2_e0_netns.sh apply-topology
+          bash scripts/faults/m2_e0_netns.sh assert-topology-readback
+          bash scripts/faults/m2_e0_netns.sh inspect-qdisc \
+            > "$root/evidence/active-media-qdisc.json"
+
           (
             set -euo pipefail
             samples=0
@@ -289,6 +297,19 @@ jobs:
             -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.M2E0TopologyAndroidTest \
             -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e0.mediaBaseUrl="http://${media_addr}:${media_port}" \
             -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e0.controlBaseUrl=http://127.0.0.1:18083
+
+          bash scripts/faults/m2_e0_netns.sh tx-packets \
+            > "$root/evidence/media-packets-after.txt"
+          python3 - \
+            "$root/evidence/media-packets-before.txt" \
+            "$root/evidence/media-packets-after.txt" <<'PY'
+          import pathlib, sys
+          before = int(pathlib.Path(sys.argv[1]).read_text().strip())
+          after = int(pathlib.Path(sys.argv[2]).read_text().strip())
+          if after <= before:
+              raise SystemExit(f"media veth packet counter did not advance: {before} -> {after}")
+          PY
+          bash scripts/faults/m2_e0_netns.sh remove-probe
 
           touch "$root/health/stop-monitor"
           wait "$HEALTH_PID"
@@ -322,6 +343,9 @@ jobs:
             --output "$root/evidence/topology-feasibility.json" \
             --android-evidence "$root/evidence/android-topology.json" \
             --api 36 \
+            --impairment-readback "$root/evidence/active-media-qdisc.json" \
+            --media-packets-before "$root/evidence/media-packets-before.txt" \
+            --media-packets-after "$root/evidence/media-packets-after.txt" \
             --adb-before "$root/health/adb-before.txt" \
             --adb-during "$root/health/adb-during.txt" \
             --adb-after "$root/health/adb-after.txt" \
