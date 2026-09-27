@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/fault-harness-events-v1.schema.json",
+  "title": "SpongeTube M2-E Fault Harness Events v1",
+  "description": "Raw host-fault-domain observations from exactly one owning TRANSPORT or NETWORK harness. This artifact never declares acceptance PASS; semantic ownership and scenario matching are independently verified.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioHash",
+    "harness",
+    "clockDomain",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "harness": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "toolId",
+        "toolVersion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolId": {
+          "type": "string",
+          "enum": [
+            "toxiproxy",
+            "netem"
+          ]
+        },
+        "toolVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "HOST_FAULT_MONOTONIC"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "elapsedRealtimeNs",
+        "faultEventId",
+        "faultId",
+        "plane",
+        "kind",
+        "operation",
+        "direction",
+        "scope",
+        "parameters",
+        "observedStateHash",
+        "result"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "elapsedRealtimeNs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "faultEventId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]*$"
+        },
+        "faultId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "plane": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "TRANSPORT",
+            "NETWORK",
+            null
+          ]
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "HARNESS_STARTED",
+            "FAULT_ARMED",
+            "FAULT_APPLIED",
+            "FAULT_REMOVED",
+            "HARNESS_STOPPED"
+          ]
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "UPSTREAM",
+            "DOWNSTREAM",
+            "BIDIRECTIONAL",
+            "NONE"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "const": "MEDIA_DATA_ONLY"
+        },
+        "parameters": {
+          "$ref": "#/$defs/normalizedObject"
+        },
+        "observedStateHash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "APPLIED",
+            "REMOVED",
+            "FAILED"
+          ]
+        }
+      }
+    },
+    "normalizedObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/normalizedValue"
+      }
+    },
+    "normalizedValue": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/normalizedValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/normalizedValue"
+          }
+        }
+      ]
+    }
+  }
+}
