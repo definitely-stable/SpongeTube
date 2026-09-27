@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/network-calibration-v1.schema.json",
+  "title": "SpongeTube M2 Network Calibration v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioHash",
+    "harnessId",
+    "harnessVersion",
+    "clockDomain",
+    "expectedConfig",
+    "observedConfig",
+    "scopeProof",
+    "qdiscCounters",
+    "probeSummary",
+    "cleanup",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "harnessId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "harnessVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "HOST_FAULT_MONOTONIC"
+    },
+    "expectedConfig": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "string",
+          "boolean"
+        ]
+      }
+    },
+    "observedConfig": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "string",
+          "boolean"
+        ]
+      }
+    },
+    "scopeProof": {
+      "type": "object",
+      "required": [
+        "mediaPacketsBefore",
+        "mediaPacketsAfter",
+        "mediaBytesBefore",
+        "mediaBytesAfter",
+        "controlPacketsBefore",
+        "controlPacketsAfter",
+        "adbHealthyBefore",
+        "adbHealthyDuring",
+        "adbHealthyAfter"
+      ],
+      "properties": {
+        "mediaPacketsBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediaPacketsAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediaBytesBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediaBytesAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "controlPacketsBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "controlPacketsAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "adbHealthyBefore": {
+          "type": "boolean"
+        },
+        "adbHealthyDuring": {
+          "type": "boolean"
+        },
+        "adbHealthyAfter": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "qdiscCounters": {
+      "type": "object",
+      "required": [
+        "packets",
+        "bytes",
+        "drops",
+        "overlimits",
+        "requeues"
+      ],
+      "properties": {
+        "packets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drops": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "overlimits": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requeues": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "probeSummary": {
+      "type": "object",
+      "required": [
+        "sampleCount",
+        "successCount",
+        "failureCount",
+        "timeoutCount",
+        "minDurationNs",
+        "maxDurationNs"
+      ],
+      "properties": {
+        "sampleCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "successCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failureCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeoutCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minDurationNs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxDurationNs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "cleanup": {
+      "type": "object",
+      "required": [
+        "qdiscRemoved",
+        "filtersRemoved",
+        "namespaceRemoved",
+        "proxiesRemoved",
+        "toxicsRemoved"
+      ],
+      "properties": {
+        "qdiscRemoved": {
+          "type": "boolean"
+        },
+        "filtersRemoved": {
+          "type": "boolean"
+        },
+        "namespaceRemoved": {
+          "type": "boolean"
+        },
+        "proxiesRemoved": {
+          "type": "boolean"
+        },
+        "toxicsRemoved": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
