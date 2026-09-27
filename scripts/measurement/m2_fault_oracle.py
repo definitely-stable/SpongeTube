@@ -564,6 +564,55 @@ def validate_network_effect(variant: str, counters: Mapping[str, Any]) -> None:
         require(packets > 0, "netem qdisc saw no transmitted media packets")
 
 
+def verify_network_markers(
+    args: argparse.Namespace,
+    calibration: Mapping[str, Any],
+) -> None:
+    """Independently re-check raw health/cleanup markers retained by CI.
+
+    network-calibration-v1 is a producer artifact, not an oracle. The oracle
+    therefore reads the original marker files itself and requires the
+    calibration projection to agree with them.
+    """
+
+    raw_adb = {
+        "adbHealthyBefore": marker(args.adb_before, "device"),
+        "adbHealthyDuring": marker(args.adb_during, "device"),
+        "adbHealthyAfter": marker(args.adb_after, "device"),
+    }
+    require(all(raw_adb.values()), "raw ADB health proof is incomplete")
+
+    raw_control = {
+        "before": marker(args.control_before, "ok"),
+        "during": marker(args.control_during, "ok"),
+        "after": marker(args.control_after, "ok"),
+    }
+    require(all(raw_control.values()), "raw Media Lab control health proof is incomplete")
+
+    scope = calibration.get("scopeProof") or {}
+    for key, value in raw_adb.items():
+        require(
+            scope.get(key) is value,
+            f"calibration {key} does not match the raw ADB marker",
+        )
+
+    raw_cleanup = {
+        "qdiscRemoved": marker(args.qdisc_clean, "ok"),
+        "filtersRemoved": marker(args.filter_clean, "ok"),
+        "namespaceRemoved": marker(args.namespace_clean, "ok"),
+        "proxiesRemoved": marker(args.transport_tool_absent, "ok"),
+        "toxicsRemoved": marker(args.transport_tool_absent, "ok"),
+    }
+    require(all(raw_cleanup.values()), "raw NETWORK cleanup proof is incomplete")
+    require(
+        calibration.get("cleanup") == raw_cleanup,
+        "network calibration cleanup does not match raw cleanup markers",
+    )
+
+    require(marker(args.media_reverse_absent, "ok"), "NETWORK media path used adb reverse")
+    require(marker(args.artifact_collection, "ok"), "NETWORK artifact collection failed")
+
+
 def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     scenario = load_object(args.scenario)
     manifest = load_object(args.run_manifest)
@@ -699,6 +748,7 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     require(calibration.get("expectedConfig") == expected_tool, "calibration expectedConfig mismatch")
     require(calibration.get("observedConfig") == observed, "calibration observedConfig mismatch")
 
+    verify_network_markers(args, calibration)
     scope = calibration.get("scopeProof") or {}
     require(scope.get("mediaPacketsAfter", 0) > scope.get("mediaPacketsBefore", -1), "media packet counter did not advance")
     require(scope.get("mediaBytesAfter", 0) > scope.get("mediaBytesBefore", -1), "media byte counter did not advance")
@@ -746,8 +796,6 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     ]
     require(len(data_rows) <= attempts, "origin requests exceed physical attempts")
 
-    require(marker(args.media_reverse_absent, "ok"), "NETWORK media path used adb reverse")
-    require(marker(args.artifact_collection, "ok"), "NETWORK artifact collection failed")
     for document in (scenario, manifest, harness, clean, calibration, fingerprint, result):
         scan_evidence_privacy(document)
 
@@ -837,8 +885,21 @@ def main(argv: list[str] | None = None) -> int:
     network.add_argument("--fetch", required=True, type=pathlib.Path)
     network.add_argument("--network-result", required=True, type=pathlib.Path)
     network.add_argument("--origin", required=True, type=pathlib.Path)
-    network.add_argument("--media-reverse-absent", required=True, type=pathlib.Path)
-    network.add_argument("--artifact-collection", required=True, type=pathlib.Path)
+    for name in (
+        "adb-before",
+        "adb-during",
+        "adb-after",
+        "control-before",
+        "control-during",
+        "control-after",
+        "qdisc-clean",
+        "filter-clean",
+        "namespace-clean",
+        "transport-tool-absent",
+        "media-reverse-absent",
+        "artifact-collection",
+    ):
+        network.add_argument(f"--{name}", required=True, type=pathlib.Path)
     network.add_argument("--output", required=True, type=pathlib.Path)
 
     args = parser.parse_args(argv)

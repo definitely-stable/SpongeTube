@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -71,6 +73,8 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
         broken["randomSeed"] = None
         with self.assertRaises(Exception):
             harness.compile_config(broken)
+        with self.assertRaises(Exception):
+            oracle.expected_network_fault(broken)
 
     def test_deterministic_blackout_rejects_seed(self):
         broken = scenario("n3-burst-packet-loss.json")
@@ -203,6 +207,49 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
         }]
         with self.assertRaises(Exception):
             oracle.normalize_network_tc_state(qdisc, filters, "BURST_PACKET_LOSS")
+
+    def test_raw_network_markers_are_independently_rechecked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+
+            def write(name, value):
+                path = root / name
+                path.write_text(value + "\n", encoding="utf-8")
+                return path
+
+            args = argparse.Namespace(
+                adb_before=write("adb-before.txt", "device"),
+                adb_during=write("adb-during.txt", "device"),
+                adb_after=write("adb-after.txt", "device"),
+                control_before=write("control-before.txt", "ok"),
+                control_during=write("control-during.txt", "ok"),
+                control_after=write("control-after.txt", "ok"),
+                qdisc_clean=write("qdisc-clean.txt", "ok"),
+                filter_clean=write("filter-clean.txt", "ok"),
+                namespace_clean=write("namespace-clean.txt", "ok"),
+                transport_tool_absent=write("transport-tool-absent.txt", "ok"),
+                media_reverse_absent=write("media-reverse-absent.txt", "ok"),
+                artifact_collection=write("artifact-collection.txt", "ok"),
+            )
+            calibration = {
+                "scopeProof": {
+                    "adbHealthyBefore": True,
+                    "adbHealthyDuring": True,
+                    "adbHealthyAfter": True,
+                },
+                "cleanup": {
+                    "qdiscRemoved": True,
+                    "filtersRemoved": True,
+                    "namespaceRemoved": True,
+                    "proxiesRemoved": True,
+                    "toxicsRemoved": True,
+                },
+            }
+
+            oracle.verify_network_markers(args, calibration)
+            args.control_during.write_text("failed\n", encoding="utf-8")
+            with self.assertRaises(Exception):
+                oracle.verify_network_markers(args, calibration)
 
     def test_raw_addresses_never_enter_network_config(self):
         encoded = json.dumps(harness.compile_config(scenario("n5-burst-loss.json")))
