@@ -36,10 +36,10 @@ PROXY_NAME = "m2e-media"
 TOXIC_NAME = "m2e-fault"
 
 VARIANTS = {
-    "TRANSPORT_READ_TIMEOUT": ("timeout", "downstream", {"timeout": 0}),
-    "TRANSPORT_RESET": ("reset_peer", "downstream", {"timeout": 0}),
-    "TRUNCATED_STREAM": ("limit_data", "downstream", None),
-    "SLOW_CLOSE": ("slow_close", "downstream", None),
+    "TRANSPORT_READ_TIMEOUT": ("READ_TIMEOUT", "timeout", "downstream", {"timeout": 0}),
+    "TRANSPORT_RESET": ("RESET_PEER", "reset_peer", "downstream", {"timeout": 0}),
+    "TRUNCATED_STREAM": ("LIMIT_DATA", "limit_data", "downstream", None),
+    "SLOW_CLOSE": ("SLOW_CLOSE", "slow_close", "downstream", None),
 }
 
 
@@ -58,8 +58,19 @@ def transport_fault(scenario: dict[str, Any]) -> dict[str, Any]:
     if len(faults) != 1:
         raise M2ContractError("transport harness requires exactly one TRANSPORT fault")
     fault = faults[0]
-    if scenario.get("networkFaults"):
-        raise M2ContractError("transport harness may not own NETWORK faults")
+    for field in (
+        "deliveryFaults",
+        "networkFaults",
+        "providerFaults",
+        "routeFaults",
+        "storageFaults",
+    ):
+        if scenario.get(field):
+            raise M2ContractError(
+                f"canonical transport harness run may not contain faults in {field}"
+            )
+    if fault.get("stochastic") is not False or scenario.get("randomSeed") is not None:
+        raise M2ContractError("canonical E2 TRANSPORT faults are deterministic and seedless")
     validate_m2e_harness_binding("TRANSPORT", HARNESS_ID, TOOL_ID)
     return fault
 
@@ -69,9 +80,19 @@ def compile_toxic(scenario: dict[str, Any]) -> tuple[str, str, dict[str, int]]:
     variant = scenario.get("variant")
     if variant not in VARIANTS:
         raise M2ContractError(f"unsupported M2-E transport variant {variant!r}")
-    toxic_type, stream, fixed = VARIANTS[variant]
+    expected_kind, toxic_type, stream, fixed = VARIANTS[variant]
+    if fault.get("kind") != expected_kind:
+        raise M2ContractError(
+            f"{variant} requires fault kind {expected_kind}, got {fault.get('kind')!r}"
+        )
     params = fault.get("parameters") or {}
+    if params.get("direction") != stream.upper():
+        raise M2ContractError(f"{variant} requires direction {stream.upper()}")
+    if params.get("scope") != "MEDIA_DATA_ONLY":
+        raise M2ContractError(f"{variant} requires MEDIA_DATA_ONLY scope")
     if fixed is not None:
+        if params.get("timeoutMs") != 0:
+            raise M2ContractError(f"{variant} requires timeoutMs=0")
         attributes = dict(fixed)
     elif variant == "TRUNCATED_STREAM":
         value = params.get("limitBytes")
@@ -222,6 +243,13 @@ def stop(args: argparse.Namespace) -> None:
     evidence_path = pathlib.Path(args.evidence)
     state_path = pathlib.Path(args.state)
     doc = read_document(evidence_path)
+    expected_hash = scenario_sha256(scenario)
+    if doc.get("runId") != args.run_id:
+        raise M2ContractError("stop runId does not match started harness")
+    if doc.get("sessionId") != args.session_id:
+        raise M2ContractError("stop sessionId does not match started harness")
+    if doc.get("scenarioHash") != expected_hash:
+        raise M2ContractError("stop scenario does not match started harness")
 
     toxi.remove_toxic(args.api, PROXY_NAME, TOXIC_NAME)
     clean_proxy = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))

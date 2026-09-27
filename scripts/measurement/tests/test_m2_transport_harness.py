@@ -73,6 +73,40 @@ class M2TransportHarnessContractTest(unittest.TestCase):
         with self.assertRaises(Exception):
             harness.compile_toxic(broken)
 
+    def test_variant_kind_direction_and_scope_must_match(self):
+        broken = scenario("n6-transport-reset.json")
+        broken["transportFaults"][0]["kind"] = "READ_TIMEOUT"
+        with self.assertRaises(Exception):
+            harness.compile_toxic(broken)
+
+        broken = scenario("n6-transport-reset.json")
+        broken["transportFaults"][0]["parameters"]["direction"] = "UPSTREAM"
+        with self.assertRaises(Exception):
+            harness.compile_toxic(broken)
+
+        broken = scenario("n6-transport-reset.json")
+        broken["transportFaults"][0]["parameters"]["scope"] = "CONTROL"
+        with self.assertRaises(Exception):
+            harness.compile_toxic(broken)
+
+    def test_delivery_or_seeded_transport_mix_is_rejected(self):
+        broken = scenario("n6-transport-reset.json")
+        broken["deliveryFaults"] = [{
+            "faultId": "delivery",
+            "plane": "DELIVERY",
+            "kind": "PACED",
+            "stochastic": False,
+            "parameters": {},
+        }]
+        with self.assertRaises(Exception):
+            harness.compile_toxic(broken)
+
+        broken = scenario("n6-transport-reset.json")
+        broken["transportFaults"][0]["stochastic"] = True
+        broken["randomSeed"] = 424242
+        with self.assertRaises(Exception):
+            harness.compile_toxic(broken)
+
     def test_normalized_proxy_state_excludes_addresses(self):
         raw = {
             "name": "m2e-media",
