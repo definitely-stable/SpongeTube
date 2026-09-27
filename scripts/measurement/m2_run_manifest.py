@@ -55,6 +55,16 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     if len(git_commit) != 40 or any(ch not in "0123456789abcdef" for ch in git_commit):
         raise ValueError("git commit must be a lowercase 40-character SHA")
 
+    runtime = {
+        "executor": "HttpRangeFetchExecutor",
+        "media3": "1.11.1",
+    }
+    fingerprint = getattr(args, "fault_engine_fingerprint", None)
+    if plane == "NETWORK":
+        if fingerprint is None:
+            raise ValueError("NETWORK run requires --fault-engine-fingerprint")
+        runtime["faultEngineFingerprintSha256"] = sha256_file(fingerprint)
+
     manifest = {
         "schemaVersion": 1,
         "runId": args.run_id,
@@ -94,10 +104,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             "api": args.device_api,
             "kind": "ANDROID_EMULATOR",
         },
-        "runtime": {
-            "executor": "HttpRangeFetchExecutor",
-            "media3": "1.11.1",
-        },
+        "runtime": runtime,
         "clockDomains": [
             "ANDROID_MONOTONIC",
             "HOST_MEDIA_LAB_MONOTONIC",
@@ -126,6 +133,7 @@ def main() -> int:
     parser.add_argument("--git-commit", required=True)
     parser.add_argument("--fixture-manifest", required=True, type=pathlib.Path)
     parser.add_argument("--device-api", required=True, type=int)
+    parser.add_argument("--fault-engine-fingerprint", type=pathlib.Path)
     parser.add_argument("--created-at-utc")
     args = parser.parse_args()
 

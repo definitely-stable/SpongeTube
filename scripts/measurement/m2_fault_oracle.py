@@ -200,6 +200,29 @@ def verify_transport(args: argparse.Namespace) -> dict[str, Any]:
     require(harness_meta.get("toolVersion") == "2.12.0", "unexpected Toxiproxy version")
     require(harness.get("clockDomain") == "HOST_FAULT_MONOTONIC", "wrong harness clock domain")
 
+    fingerprint_sha = hashlib.sha256(args.engine_fingerprint.read_bytes()).hexdigest()
+    require(
+        (manifest.get("runtime") or {}).get("faultEngineFingerprintSha256") == fingerprint_sha,
+        "run manifest is not bound to the fault-engine fingerprint",
+    )
+    locked_tc = load_object(ROOT / "tools" / "fault-harness" / "toolchain.lock.json")["netem"]["labTc"]
+    toolchain = fingerprint.get("toolchain") or {}
+    require(
+        toolchain.get("tcSourceSha256") == locked_tc.get("sha256"),
+        "fault-engine tc source SHA does not match toolchain lock",
+    )
+    require(
+        str(toolchain.get("tcVersion", "")).startswith(f"tc utility, iproute2-{locked_tc.get('version')}"),
+        "fault-engine tc version does not match toolchain lock",
+    )
+    require(
+        fingerprint.get("offloads") == {"gro": False, "gso": False, "tso": False},
+        "canonical NETWORK packetization offloads are not disabled",
+    )
+    runner = fingerprint.get("runner") or {}
+    require(bool(runner.get("kernelRelease")), "fault-engine kernel release missing")
+    require(bool(runner.get("imageVersion")), "fault-engine runner image version missing")
+
     events = harness.get("events") or []
     require(len(events) == 5, "canonical transport lifecycle must contain five events")
     require(
@@ -562,6 +585,7 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     filters = json.loads(args.filter_state.read_text(encoding="utf-8"))
     clean = load_object(args.clean_state)
     calibration = load_object(args.calibration)
+    fingerprint = load_object(args.engine_fingerprint)
     failures = load_object(args.failures)
     result = load_object(args.network_result)
     fetch_rows = load_jsonl(args.fetch)
@@ -570,6 +594,7 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     validate_schema("m2-run-manifest-v1.schema.json", manifest)
     validate_schema("fault-harness-events-v1.schema.json", harness)
     validate_schema("network-calibration-v1.schema.json", calibration)
+    validate_schema("fault-engine-fingerprint-v1.schema.json", fingerprint)
     validate_run_manifest_semantics(manifest, scenario)
     fault, config = expected_network_fault(scenario)
 
@@ -712,7 +737,7 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
 
     require(marker(args.media_reverse_absent, "ok"), "NETWORK media path used adb reverse")
     require(marker(args.artifact_collection, "ok"), "NETWORK artifact collection failed")
-    for document in (scenario, manifest, harness, clean, calibration, result):
+    for document in (scenario, manifest, harness, clean, calibration, fingerprint, result):
         scan_evidence_privacy(document)
 
     seed_bound = True
@@ -795,6 +820,7 @@ def main(argv: list[str] | None = None) -> int:
     network.add_argument("--filter-state", required=True, type=pathlib.Path)
     network.add_argument("--clean-state", required=True, type=pathlib.Path)
     network.add_argument("--calibration", required=True, type=pathlib.Path)
+    network.add_argument("--engine-fingerprint", required=True, type=pathlib.Path)
     network.add_argument("--failures", required=True, type=pathlib.Path)
     network.add_argument("--budget", required=True, type=pathlib.Path)
     network.add_argument("--fetch", required=True, type=pathlib.Path)
