@@ -39,7 +39,11 @@ are not accepted as canonical NETWORK evidence.
 Use Linux `tc/netem` on an isolated namespace/veth media path. Network faults
 include delay/jitter, packet loss, corruption, duplication, reordering and
 rate. Stochastic configurations use the persisted M2 scenario seed where the
-kernel primitive supports one.
+kernel primitive supports one. Direction, IP family and L4 protocol are part of
+the resolved NETWORK scenario identity rather than implicit harness defaults.
+Seed read-back proves that the requested seed reached netem; correlated netem
+modes are not treated as bit-for-bit effect replay unless that stronger property
+is separately demonstrated.
 
 Never attach the M2 qdisc globally to runner loopback or the runner's primary
 network interface. ADB, Media Lab control, fault-control traffic and artifact
@@ -81,7 +85,7 @@ URLs, shell commands or credentials.
 
 ## Consequences
 
-M2-E gains reproducible and attributable laboratory causes without adding a
-new production networking dependency or a second retry owner. Emulator results
+M2-E gains reproducibly configured and attributable laboratory causes without
+adding a new production networking dependency or a second retry owner. Emulator results
 remain correctness/fault-attribution evidence only; transport selection and
 representative performance conclusions remain M2-G.
