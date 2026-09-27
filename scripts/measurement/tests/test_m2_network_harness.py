@@ -3,6 +3,7 @@ import json
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 FAULTS = ROOT / "scripts" / "faults"
@@ -25,6 +26,8 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
         cases = {
             "n2-high-rtt-jitter.json": {
                 "direction": "DOWNSTREAM",
+                "ipFamily": "IPV4",
+                "l4Protocol": "TCP",
                 "scope": "MEDIA_DATA_ONLY",
                 "delayUs": 100000,
                 "jitterUs": 30000,
@@ -33,12 +36,16 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
             },
             "n3-burst-packet-loss.json": {
                 "direction": "DOWNSTREAM",
+                "ipFamily": "IPV4",
+                "l4Protocol": "TCP",
                 "scope": "MEDIA_DATA_ONLY",
                 "lossPpm": 1000000,
                 "durationMs": 1500,
             },
             "n5-burst-loss.json": {
                 "direction": "DOWNSTREAM",
+                "ipFamily": "IPV4",
+                "l4Protocol": "TCP",
                 "scope": "MEDIA_DATA_ONLY",
                 "lossPpm": 20000,
                 "burstCorrelationPpm": 250000,
@@ -105,6 +112,26 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
         with self.assertRaises(Exception):
             harness.compile_config(broken)
 
+        for key, bad in (("direction", "UPSTREAM"), ("ipFamily", "IPV6"), ("l4Protocol", "UDP")):
+            broken = scenario("n5-burst-loss.json")
+            broken["networkFaults"][0]["parameters"][key] = bad
+            with self.subTest(key=key), self.assertRaises(Exception):
+                harness.compile_config(broken)
+            with self.subTest(key=key + "-oracle"), self.assertRaises(Exception):
+                oracle.expected_network_fault(broken)
+
+    def test_blackout_rendezvous_waits_for_first_drop(self):
+        qdisc_before = [{"kind": "netem", "drops": 0}]
+        qdisc_after = [{"kind": "netem", "drops": 1}]
+        with mock.patch.object(harness, "inspect", side_effect=[(qdisc_before, []), (qdisc_after, [])]), mock.patch.object(harness.time, "sleep"):
+            observed, _ = harness.wait_for_first_effect(0, timeout_ms=1000)
+        self.assertEqual(1, harness._qdisc_stat(harness._find_kind(observed, "netem"), "drops"))
+
+    def test_blackout_effect_accepts_drop_only_qdisc_stats(self):
+        oracle.validate_network_effect("BURST_PACKET_LOSS", {"packets": 0, "drops": 1})
+        with self.assertRaises(Exception):
+            oracle.validate_network_effect("BURST_PACKET_LOSS", {"packets": 0, "drops": 0})
+
     def test_independent_tc_normalization_derives_integer_units(self):
         qdisc = [
             {"kind": "prio", "handle": "1:"},
@@ -132,6 +159,8 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
         self.assertEqual(
             {
                 "direction": "DOWNSTREAM",
+                "ipFamily": "IPV4",
+                "l4Protocol": "TCP",
                 "scope": "MEDIA_DATA_ONLY",
                 "mediaPortScoped": True,
                 "delayUs": 100000,

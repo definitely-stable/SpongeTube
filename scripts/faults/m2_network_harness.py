@@ -33,6 +33,10 @@ HARNESS_VERSION = "1"
 TOOL_ID = "netem"
 TOOL_VERSION = "iproute2-6.6.0"
 MEDIA_PORT = 18081
+NETWORK_DIRECTION = "DOWNSTREAM"
+NETWORK_IP_FAMILY = "IPV4"
+NETWORK_L4_PROTOCOL = "TCP"
+PULSE_ARM_TIMEOUT_MS = 30_000
 
 VARIANTS = {
     "HIGH_RTT_JITTER": "HIGH_RTT_JITTER",
@@ -102,8 +106,15 @@ def network_fault(scenario: dict[str, Any]) -> dict[str, Any]:
         fail(f"unsupported M2-E network variant {scenario.get('variant')!r}")
     if fault.get("kind") != VARIANTS[scenario["variant"]]:
         fail("network variant/kind mismatch")
-    if (fault.get("parameters") or {}).get("scope") != "MEDIA_PATH_ONLY":
+    params = fault.get("parameters") or {}
+    if params.get("scope") != "MEDIA_PATH_ONLY":
         fail("NETWORK scenario requires MEDIA_PATH_ONLY scenario scope")
+    if params.get("direction") != NETWORK_DIRECTION:
+        fail("NETWORK scenario direction must be DOWNSTREAM")
+    if params.get("ipFamily") != NETWORK_IP_FAMILY:
+        fail("NETWORK scenario ipFamily must be IPV4")
+    if params.get("l4Protocol") != NETWORK_L4_PROTOCOL:
+        fail("NETWORK scenario l4Protocol must be TCP")
     validate_m2e_harness_binding("NETWORK", HARNESS_ID, TOOL_ID)
     return fault
 
@@ -115,7 +126,9 @@ def compile_config(scenario: dict[str, Any]) -> dict[str, Any]:
     seed = scenario.get("randomSeed")
 
     base: dict[str, Any] = {
-        "direction": "DOWNSTREAM",
+        "direction": NETWORK_DIRECTION,
+        "ipFamily": NETWORK_IP_FAMILY,
+        "l4Protocol": NETWORK_L4_PROTOCOL,
         "scope": "MEDIA_DATA_ONLY",
     }
     if variant == "HIGH_RTT_JITTER":
@@ -211,6 +224,31 @@ def _us(value: Any, name: str) -> int:
     return result
 
 
+def _qdisc_stat(entry: dict[str, Any] | None, name: str) -> int:
+    if not isinstance(entry, dict):
+        return 0
+    for container in (entry, entry.get("stats") or {}, entry.get("stats2") or {}):
+        if isinstance(container, dict):
+            value = container.get(name)
+            if isinstance(value, int) and not isinstance(value, bool):
+                return max(0, value)
+    return 0
+
+
+def wait_for_first_effect(
+    baseline_drops: int,
+    *,
+    timeout_ms: int = PULSE_ARM_TIMEOUT_MS,
+) -> tuple[Any, Any]:
+    deadline = time.monotonic_ns() + timeout_ms * 1_000_000
+    while time.monotonic_ns() < deadline:
+        qdiscs, filters = inspect()
+        if _qdisc_stat(_find_kind(qdiscs, "netem"), "drops") > baseline_drops:
+            return qdiscs, filters
+        time.sleep(0.01)
+    fail(f"NETWORK pulse saw no matching media drop within {timeout_ms} ms")
+
+
 def normalize_tc_state(
     qdiscs: Any,
     filters: Any,
@@ -227,13 +265,20 @@ def normalize_tc_state(
         fail("flower readback is not scoped to media source port")
     if not _has_key_value(filters, "ip_proto", "tcp"):
         fail("flower readback is not scoped to TCP")
+    if not (
+        _has_key_value(filters, "eth_type", "ipv4")
+        or _has_key_value(filters, "protocol", "ip")
+    ):
+        fail("flower readback is not scoped to IPv4")
 
     options = netem.get("options") or {}
     if not isinstance(options, dict):
         fail("netem options readback is not an object")
 
     state: dict[str, Any] = {
-        "direction": "DOWNSTREAM",
+        "direction": NETWORK_DIRECTION,
+        "ipFamily": NETWORK_IP_FAMILY,
+        "l4Protocol": NETWORK_L4_PROTOCOL,
         "scope": "MEDIA_DATA_ONLY",
         "mediaPortScoped": True,
     }
@@ -373,29 +418,16 @@ def event_parameters(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def start_common(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+def start_common(
+    args: argparse.Namespace,
+    *,
+    defer_applied: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], Any]:
     scenario = load(args.scenario)
     fault = network_fault(scenario)
     config = compile_config(scenario)
     document = new_document(args, scenario)
-    append_event(
-        document,
-        fault,
-        operation="HARNESS_STARTED",
-        direction="NONE",
-        parameters={},
-        state=None,
-        result="OK",
-    )
-    append_event(
-        document,
-        fault,
-        operation="FAULT_ARMED",
-        direction="DOWNSTREAM",
-        parameters=event_parameters(config),
-        state=None,
-        result="OK",
-    )
+    append_event(document, fault, operation="HARNESS_STARTED", direction="NONE", parameters={}, state=None, result="OK")
     qdisc, filters, observed = apply_config(scenario, config)
     write(args.qdisc_state, qdisc)
     write(args.filter_state, filters)
@@ -403,67 +435,85 @@ def start_common(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, An
     append_event(
         document,
         fault,
-        operation="FAULT_APPLIED",
-        direction="DOWNSTREAM",
+        operation="FAULT_ARMED",
+        direction=NETWORK_DIRECTION,
         parameters=event_parameters(config),
-        state=observed,
-        result="APPLIED",
+        state=None,
+        result="OK",
     )
+    if not defer_applied:
+        append_event(
+            document,
+            fault,
+            operation="FAULT_APPLIED",
+            direction=NETWORK_DIRECTION,
+            parameters=event_parameters(config),
+            state=observed,
+            result="APPLIED",
+        )
     write(args.evidence, document)
-    return scenario, config, document
+    return scenario, config, document, observed, qdisc
 
 
-def finish(
-    args: argparse.Namespace,
-    scenario: dict[str, Any],
-    document: dict[str, Any],
-) -> None:
+def finish(args: argparse.Namespace, scenario: dict[str, Any], document: dict[str, Any]) -> None:
     fault = network_fault(scenario)
     final_qdisc, _ = inspect()
     write(args.final_qdisc_state, final_qdisc)
     helper(["remove"])
     helper(["assert-clean"])
     clean = {"filters": 0, "netem": 0, "prio": 0}
-    append_event(
-        document,
-        fault,
-        operation="FAULT_REMOVED",
-        direction="DOWNSTREAM",
-        parameters={},
-        state=clean,
-        result="REMOVED",
-    )
-    append_event(
-        document,
-        fault,
-        operation="HARNESS_STOPPED",
-        direction="NONE",
-        parameters={},
-        state=clean,
-        result="OK",
-    )
+    append_event(document, fault, operation="FAULT_REMOVED", direction=NETWORK_DIRECTION, parameters={}, state=clean, result="REMOVED")
+    append_event(document, fault, operation="HARNESS_STOPPED", direction="NONE", parameters={}, state=clean, result="OK")
     write(args.clean_state, clean)
     write(args.evidence, document)
 
 
 def start(args: argparse.Namespace) -> None:
-    scenario, _, _ = start_common(args)
+    scenario = load(args.scenario)
     if scenario["variant"] == "BURST_PACKET_LOSS":
         fail("BURST_PACKET_LOSS must use pulse so duration belongs to the harness")
+    start_common(args)
 
 
 def pulse(args: argparse.Namespace) -> None:
-    scenario, config, document = start_common(args)
+    scenario = load(args.scenario)
     if scenario["variant"] != "BURST_PACKET_LOSS":
         fail("pulse is reserved for BURST_PACKET_LOSS")
-    target_ns = int(config["durationMs"]) * 1_000_000
-    deadline = time.monotonic_ns() + target_ns
-    while True:
-        remaining = deadline - time.monotonic_ns()
-        if remaining <= 0:
-            break
-        time.sleep(min(remaining / 1_000_000_000, 0.05))
-    finish(args, scenario, document)
+
+    scenario, config, document, observed, armed_qdisc = start_common(args, defer_applied=True)
+    baseline_drops = _qdisc_stat(_find_kind(armed_qdisc, "netem"), "drops")
+    try:
+        applied_qdisc, applied_filters = wait_for_first_effect(baseline_drops)
+        write(args.qdisc_state, applied_qdisc)
+        write(args.filter_state, applied_filters)
+        applied_observed = normalize_tc_state(applied_qdisc, applied_filters, scenario["variant"])
+        if applied_observed != observed:
+            fail("NETWORK configuration changed between arm and first effect")
+        append_event(
+            document,
+            network_fault(scenario),
+            operation="FAULT_APPLIED",
+            direction=NETWORK_DIRECTION,
+            parameters=event_parameters(config),
+            state=applied_observed,
+            result="APPLIED",
+        )
+        write(args.evidence, document)
+
+        deadline = time.monotonic_ns() + int(config["durationMs"]) * 1_000_000
+        while True:
+            remaining = deadline - time.monotonic_ns()
+            if remaining <= 0:
+                break
+            time.sleep(min(remaining / 1_000_000_000, 0.05))
+        finish(args, scenario, document)
+    except BaseException:
+        try:
+            helper(["remove"])
+            helper(["assert-clean"])
+            write(args.clean_state, {"filters": 0, "netem": 0, "prio": 0})
+        finally:
+            raise
 
 
 def stop(args: argparse.Namespace) -> None:

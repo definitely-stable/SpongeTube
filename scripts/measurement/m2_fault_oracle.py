@@ -378,10 +378,18 @@ def expected_network_fault(
     require(fault.get("plane") == "NETWORK", "network fault plane mismatch")
     params = fault.get("parameters") or {}
     require(params.get("scope") == "MEDIA_PATH_ONLY", "NETWORK scenario scope mismatch")
+    require(params.get("direction") == "DOWNSTREAM", "NETWORK scenario direction mismatch")
+    require(params.get("ipFamily") == "IPV4", "NETWORK scenario ipFamily mismatch")
+    require(params.get("l4Protocol") == "TCP", "NETWORK scenario l4Protocol mismatch")
     variant = scenario.get("variant")
     seed = scenario.get("randomSeed")
 
-    config: dict[str, Any] = {"direction": "DOWNSTREAM", "scope": "MEDIA_DATA_ONLY"}
+    config: dict[str, Any] = {
+        "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP",
+        "scope": "MEDIA_DATA_ONLY",
+    }
     if variant == "HIGH_RTT_JITTER":
         require(fault.get("kind") == "HIGH_RTT_JITTER", "N2 fault kind mismatch")
         require(fault.get("stochastic") is True, "N2 jitter must be stochastic")
@@ -484,11 +492,18 @@ def normalize_network_tc_state(
         _contains_key_value(filters, "ip_proto", "tcp"),
         "flower classifier is not restricted to TCP",
     )
+    require(
+        _contains_key_value(filters, "eth_type", "ipv4")
+        or _contains_key_value(filters, "protocol", "ip"),
+        "flower classifier is not restricted to IPv4",
+    )
     options = netem.get("options") or {}
     require(isinstance(options, Mapping), "netem options must be an object")
 
     state: dict[str, Any] = {
         "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP",
         "scope": "MEDIA_DATA_ONLY",
         "mediaPortScoped": True,
     }
@@ -526,6 +541,17 @@ def _network_tool_config(config: Mapping[str, Any]) -> dict[str, Any]:
     result = {key: value for key, value in config.items() if key != "durationMs"}
     result["mediaPortScoped"] = True
     return result
+
+
+def validate_network_effect(variant: str, counters: Mapping[str, Any]) -> None:
+    packets = int(counters.get("packets", 0))
+    drops = int(counters.get("drops", 0))
+    require(packets >= 0 and drops >= 0, "negative netem counters")
+    if variant == "BURST_PACKET_LOSS":
+        require(drops > 0, "100% blackout produced no qdisc drops")
+        require(packets + drops > 0, "netem qdisc observed no matching media effect")
+    else:
+        require(packets > 0, "netem qdisc saw no transmitted media packets")
 
 
 def verify_network(args: argparse.Namespace) -> dict[str, Any]:
@@ -648,9 +674,7 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
         "ADB was not healthy across NETWORK fault",
     )
     counters = calibration.get("qdiscCounters") or {}
-    require(counters.get("packets", 0) > 0, "netem qdisc saw no media packets")
-    if scenario["variant"] == "BURST_PACKET_LOSS":
-        require(counters.get("drops", 0) > 0, "100% blackout produced no qdisc drops")
+    validate_network_effect(str(scenario["variant"]), counters)
     require(all((calibration.get("cleanup") or {}).values()), "NETWORK cleanup is incomplete")
 
     failure_rows = failures.get("failures") or []
@@ -676,6 +700,9 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     require(result.get("terminalReason") == "SUCCESS", "canonical NETWORK scenario did not recover")
     require(result.get("published") is True, "canonical NETWORK scenario did not publish complete media")
     require(result.get("failureCount") == len(failure_rows), "network result/failure count mismatch")
+    if scenario["variant"] == "BURST_PACKET_LOSS":
+        require(attempts >= 2, "N3 blackout did not force a recovery attempt")
+        require(len(failure_rows) >= 1, "N3 blackout produced no runtime failure evidence")
 
     data_rows = [
         row for row in origin_rows
@@ -717,7 +744,8 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
             "M2-ACC-09": all(checks.values()),
         },
         "limitations": [
-            "API 36 emulator correctness and packet-fault attribution evidence; not representative network performance."
+            "API 36 emulator correctness and packet-fault attribution evidence; not representative network performance.",
+            "Seed binding is verified. Correlated netem modes are not claimed to reproduce an identical per-packet effect sequence from the seed alone.",
         ],
     }
     validate_schema("fault-verification-summary-v1.schema.json", summary)
