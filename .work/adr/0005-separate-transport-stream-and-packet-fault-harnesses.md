@@ -47,7 +47,10 @@ is separately demonstrated.
 
 Never attach the M2 qdisc globally to runner loopback or the runner's primary
 network interface. ADB, Media Lab control, fault-control traffic and artifact
-collection remain outside the impaired media path.
+collection remain outside the impaired media path. Canonical NETWORK runs
+disable GRO/GSO/TSO only on the isolated lab veth and read the state back before
+fault injection; they record the runner image, kernel, pinned tc source and
+offload state as `fault-engine-fingerprint-v1`.
 
 ### Media Lab
 
@@ -60,8 +63,9 @@ origin in the proven namespace topology.
 
 The resolved `m2-scenario-v1` is authoritative input. The harness emits
 `fault-harness-events-v1`; NETWORK runs additionally emit
-`network-calibration-v1`. An independent oracle emits
-`fault-verification-summary-v1`.
+`network-calibration-v1` and `fault-engine-fingerprint-v1`. The
+`m2-run-manifest-v1` binds the fingerprint SHA-256. An independent oracle
+emits `fault-verification-summary-v1`.
 
 All harness timestamps use `HOST_FAULT_MONOTONIC`. Android and host absolute
 monotonic values are never compared arithmetically; cross-domain joins use

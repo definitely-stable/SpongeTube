@@ -14,6 +14,7 @@ on:
       - ".work/adr/0005-separate-transport-stream-and-packet-fault-harnesses.md"
       - ".work/schemas/fault-harness-events-v1.schema.json"
       - ".work/schemas/network-calibration-v1.schema.json"
+      - ".work/schemas/fault-engine-fingerprint-v1.schema.json"
       - ".work/schemas/fault-verification-summary-v1.schema.json"
   push:
     branches: [ main ]
@@ -87,6 +88,9 @@ jobs:
           trap cleanup EXIT
 
           bash scripts/faults/m2_e0_netns.sh prepare
+          bash scripts/faults/netem_control.sh prepare-fidelity
+          test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
+          python3 scripts/faults/m2_network_environment.py             --tc-bin "$M2_TC_BIN"             --tc-source-sha "$tools/iproute2-source.sha256"             --runner-image-os "$ImageOS"             --runner-image-version "$ImageVersion"             --output "$root/fault-engine-fingerprint.json"
 
           run_host_case() {
             local mode="$1"
@@ -264,6 +268,9 @@ jobs:
             mkdir -p "$case_root"/{server,android,harness,health,verified}
 
             bash scripts/faults/m2_e0_netns.sh prepare
+            bash scripts/faults/netem_control.sh prepare-fidelity
+            test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
+            python3 scripts/faults/m2_network_environment.py               --tc-bin "$M2_TC_BIN"               --tc-source-sha "$tools/iproute2-source.sha256"               --runner-image-os "$ImageOS"               --runner-image-version "$ImageVersion"               --output "$case_root/fault-engine-fingerprint.json"
             local ns media_addr
             ns="$(bash scripts/faults/m2_e0_netns.sh namespace)"
             media_addr="$(bash scripts/faults/m2_e0_netns.sh media-address)"
@@ -298,7 +305,7 @@ jobs:
 
             scope_snapshot "$case_root/scope-before.json"
 
-            python3 scripts/measurement/m2_run_manifest.py               --scenario "$scenario"               --output "$case_root/m2-run-manifest.json"               --run-id "m2-e-$case_id"               --session-id "m2-e-$case_id-session"               --git-commit "$GIT_SHA"               --fixture-manifest test-fixtures/media/manifest.json               --device-api 36
+            python3 scripts/measurement/m2_run_manifest.py               --scenario "$scenario"               --output "$case_root/m2-run-manifest.json"               --run-id "m2-e-$case_id"               --session-id "m2-e-$case_id-session"               --git-commit "$GIT_SHA"               --fixture-manifest test-fixtures/media/manifest.json               --device-api 36               --fault-engine-fingerprint "$case_root/fault-engine-fingerprint.json"
 
             local common=(
               --scenario "$scenario"
@@ -379,7 +386,7 @@ jobs:
 
             python3 scripts/faults/m2_network_calibration.py               --scenario "$scenario"               --run-manifest "$case_root/m2-run-manifest.json"               --harness "$case_root/harness/fault-harness-events.json"               --qdisc-final "$case_root/harness/qdisc-final.json"               --filter-state "$case_root/harness/filter.json"               --network-result "$case_root/android/network-result.json"               --scope-before "$case_root/scope-before.json"               --scope-after "$case_root/scope-after.json"               --health-dir "$case_root/health"               --output "$case_root/network-calibration.json"
 
-            bash scripts/ci/verify-m2-e-network-evidence.sh               "$case_root/android"               "$scenario"               "$trace"               "$case_root/harness/fault-harness-events.json"               "$case_root/harness/qdisc-final.json"               "$case_root/harness/filter.json"               "$case_root/harness/netem-clean-state.json"               "$case_root/network-calibration.json"               "$case_root/m2-run-manifest.json"               "$case_root/health"               "$case_root/verified"
+            bash scripts/ci/verify-m2-e-network-evidence.sh               "$case_root/android"               "$scenario"               "$trace"               "$case_root/harness/fault-harness-events.json"               "$case_root/harness/qdisc-final.json"               "$case_root/harness/filter.json"               "$case_root/harness/netem-clean-state.json"               "$case_root/network-calibration.json"               "$case_root/m2-run-manifest.json"               "$case_root/fault-engine-fingerprint.json"               "$case_root/health"               "$case_root/verified"
           }
 
           run_case start HIGH_RTT_JITTER n2-high-rtt-jitter.json n2-high-rtt-jitter
