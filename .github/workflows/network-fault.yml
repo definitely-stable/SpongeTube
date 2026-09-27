@@ -33,7 +33,7 @@ jobs:
   host-capability:
     name: m2-e0-host-capability
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -49,19 +49,29 @@ jobs:
           test "$(uname -m)" = "x86_64"
           sudo -n true
 
-          root="build/m2-e0/host"
-          tooling="build/m2-e0/tooling"
+          root="$PWD/build/m2-e0/host"
+          tooling="$PWD/build/m2-e0/tooling"
           rm -rf "$root" "$tooling"
           mkdir -p "$root" "$tooling"
 
+          uname -r > "$root/kernel-release.txt"
+          tc -Version > "$root/system-tc-version.txt" 2>&1
+
+          bash scripts/faults/install_iproute2_tc.sh "$tooling" > "$root/tc.json"
+          TC_BIN="$tooling/tc"
+
+          run_netem() {
+            sudo env SPONGE_TC_BIN="$TC_BIN"               bash scripts/faults/netem_apply.sh "$@"
+          }
+
           cleanup_netns() {
-            sudo bash scripts/faults/netem_apply.sh teardown || true
+            run_netem teardown || true
           }
           trap cleanup_netns EXIT
 
-          sudo bash scripts/faults/netem_apply.sh prepare
-          sudo bash scripts/faults/netem_apply.sh seed-probe > "$root/netem-seed.json"
-          sudo bash scripts/faults/netem_apply.sh filter-probe > "$root/filter.json"
+          run_netem prepare
+          run_netem seed-probe > "$root/netem-seed.json"
+          run_netem filter-probe > "$root/filter.json"
 
           cleanup_netns
           trap - EXIT
@@ -83,7 +93,7 @@ jobs:
     name: m2-e0-api36-topology
     needs: host-capability
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -120,8 +130,16 @@ jobs:
           set -euo pipefail
 
           root="$PWD/build/m2-e0/android-topology"
-          rm -rf "$root"
-          mkdir -p "$root/android"
+          tooling="$PWD/build/m2-e0/android-tooling"
+          rm -rf "$root" "$tooling"
+          mkdir -p "$root/android" "$tooling"
+
+          bash scripts/faults/install_iproute2_tc.sh "$tooling" > "$root/tc.json"
+          TC_BIN="$tooling/tc"
+
+          run_netem() {
+            sudo env SPONGE_TC_BIN="$TC_BIN"               bash scripts/faults/netem_apply.sh "$@"
+          }
 
           media_pid=""
           control_pid=""
@@ -145,7 +163,7 @@ jobs:
             adb reverse --remove tcp:18083 >/dev/null 2>&1 || true
             stop_pid "$control_pid"
             stop_pid "$lab_pid"
-            sudo bash scripts/faults/netem_apply.sh teardown >/dev/null 2>&1 || true
+            run_netem teardown >/dev/null 2>&1 || true
             stop_pid "$media_pid"
           }
           trap emergency_cleanup EXIT
@@ -161,7 +179,7 @@ jobs:
           control_pid=$!
           printf '%s\n' "$control_pid" > "$root/control.pid"
 
-          sudo bash scripts/faults/netem_apply.sh prepare
+          run_netem prepare
           sudo ip netns exec sponge-m2e-e0             python3 "$PWD/scripts/faults/e0_probe_server.py"               --bind=198.18.0.2               --port=18081               --role=media               --log="$root/media-requests.jsonl"               > "$root/media.out"               2> "$root/media.err" &
           media_pid=$!
           printf '%s\n' "$media_pid" > "$root/media.pid"
@@ -182,43 +200,36 @@ jobs:
           done
 
           [[ "$(adb get-state)" == "device" ]]
-          adb_before=true
           curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
-          media_lab_before=true
 
           adb reverse tcp:18083 tcp:18083
           reverse_state="$(adb reverse --list)"
           grep -q 'tcp:18083' <<<"$reverse_state"
           ! grep -q 'tcp:18081' <<<"$reverse_state"
-          control_reverse_present=true
-          media_reverse_absent=true
 
-          sudo bash scripts/faults/netem_apply.sh apply
-          sudo bash scripts/faults/netem_apply.sh inspect > "$root/qdisc-before.json"
+          run_netem apply
+          run_netem inspect > "$root/qdisc-before.json"
 
           [[ "$(adb get-state)" == "device" ]]
-          adb_during=true
           curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
-          media_lab_during=true
 
           ./gradlew --dependency-verification=strict             :core:engine:connectedDebugAndroidTest             -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.FaultTopologyAndroidTest             -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e.mediaBaseUrl=http://198.18.0.2:18081             -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e.controlBaseUrl=http://127.0.0.1:18083
 
-          sudo bash scripts/faults/netem_apply.sh inspect > "$root/qdisc-after.json"
+          run_netem inspect > "$root/qdisc-after.json"
 
           [[ "$(adb get-state)" == "device" ]]
-          adb_after=true
           curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
-          media_lab_after=true
 
           source_file="$(find core/engine/build/outputs/connected_android_test_additional_output             -type f -path '*/m2-e0-topology/evidence.json' -print -quit)"
           test -n "$source_file"
           cp "$source_file" "$root/android/evidence.json"
 
-          python3 - "$root/host-state.json" <<PY
+          python3 - "$root/host-state.json" <<'PY'
           import json
+          import sys
           from pathlib import Path
 
-          Path("$root/host-state.json").write_text(json.dumps({
+          Path(sys.argv[1]).write_text(json.dumps({
               "schemaVersion": 1,
               "adbBefore": True,
               "adbDuring": True,
@@ -231,17 +242,17 @@ jobs:
           }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
 
-          sudo bash scripts/faults/netem_apply.sh remove
+          run_netem remove
           adb reverse --remove tcp:18083
           stop_pid "$control_pid"
           control_pid=""
           stop_pid "$lab_pid"
           lab_pid=""
-          sudo bash scripts/faults/netem_apply.sh teardown
+          run_netem teardown
           stop_pid "$media_pid"
           media_pid=""
 
-          sudo bash scripts/faults/netem_apply.sh cleanup-state > "$root/cleanup-base.json"
+          run_netem cleanup-state > "$root/cleanup-base.json"
 
           reverse_clean=true
           if adb reverse --list | grep -Eq 'tcp:18081|tcp:18083'; then
@@ -280,8 +291,14 @@ jobs:
         shell: bash
         run: |
           set +e
+          TC_BIN="$PWD/build/m2-e0/android-tooling/tc"
           adb reverse --remove tcp:18083 >/dev/null 2>&1
-          sudo bash scripts/faults/netem_apply.sh teardown >/dev/null 2>&1
+          if [[ -x "$TC_BIN" ]]; then
+            sudo env SPONGE_TC_BIN="$TC_BIN"               bash scripts/faults/netem_apply.sh teardown >/dev/null 2>&1
+          else
+            sudo ip netns del sponge-m2e-e0 >/dev/null 2>&1
+            sudo ip link del m2e0-host >/dev/null 2>&1
+          fi
           for pid_file in             build/m2-e0/android-topology/control.pid             build/m2-e0/android-topology/media-lab.pid             build/m2-e0/android-topology/media.pid; do
             if [[ -s "$pid_file" ]]; then
               kill "$(cat "$pid_file")" >/dev/null 2>&1 || true

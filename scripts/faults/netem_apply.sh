@@ -8,12 +8,28 @@ HOST_CIDR="198.18.0.1/30"
 NS_CIDR="198.18.0.2/30"
 MEDIA_PORT="18081"
 SEED="424242"
+TC_BIN="${SPONGE_TC_BIN:-tc}"
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
     echo "netem_apply.sh must run as root" >&2
     exit 2
   fi
+  if [[ "$TC_BIN" == */* ]]; then
+    [[ -x "$TC_BIN" ]] || {
+      echo "SPONGE_TC_BIN is not executable: $TC_BIN" >&2
+      exit 2
+    }
+  else
+    command -v "$TC_BIN" >/dev/null 2>&1 || {
+      echo "tc executable not found: $TC_BIN" >&2
+      exit 2
+    }
+  fi
+}
+
+tc_ns() {
+  ip netns exec "$NS" "$TC_BIN" "$@"
 }
 
 ns_exists() {
@@ -56,33 +72,37 @@ prepare() {
 
 remove_fault() {
   if ns_exists; then
-    ip netns exec "$NS" tc qdisc del dev "$NS_IF" root 2>/dev/null || true
-    ip netns exec "$NS" tc qdisc del dev "$NS_IF" clsact 2>/dev/null || true
+    tc_ns qdisc del dev "$NS_IF" root 2>/dev/null || true
+    tc_ns qdisc del dev "$NS_IF" clsact 2>/dev/null || true
   fi
 }
 
 apply_fault() {
   ns_exists
-  ip netns exec "$NS" tc qdisc replace dev "$NS_IF" root handle 1: netem     delay 2ms 1ms 10% seed "$SEED"
+  # E0 is topology/capability proof, not an acceptance impairment profile.
+  # A fixed delay drives packets through netem while the explicit seed proves
+  # the kernel/userspace seed contract without introducing random packet loss.
+  tc_ns qdisc replace dev "$NS_IF" root handle 1: netem     delay 2ms seed "$SEED"
 }
 
 inspect_fault() {
   ns_exists
-  ip netns exec "$NS" tc -s -j qdisc show dev "$NS_IF"
+  tc_ns -s -j qdisc show dev "$NS_IF"
 }
 
 probe_seed() {
-  apply_fault
+  ns_exists
+  tc_ns qdisc replace dev "$NS_IF" root handle 1: netem     loss random 1% seed "$SEED"
   inspect_fault
-  ip netns exec "$NS" tc qdisc del dev "$NS_IF" root
+  tc_ns qdisc del dev "$NS_IF" root
 }
 
 probe_filter() {
   ns_exists
-  ip netns exec "$NS" tc qdisc add dev "$NS_IF" clsact
-  ip netns exec "$NS" tc filter add dev "$NS_IF" egress protocol ip pref 10     flower ip_proto tcp src_port "$MEDIA_PORT" action gact pass
-  ip netns exec "$NS" tc -j filter show dev "$NS_IF" egress
-  ip netns exec "$NS" tc qdisc del dev "$NS_IF" clsact
+  tc_ns qdisc add dev "$NS_IF" clsact
+  tc_ns filter add dev "$NS_IF" egress protocol ip pref 10     flower ip_proto tcp src_port "$MEDIA_PORT" action gact pass
+  tc_ns -j filter show dev "$NS_IF" egress
+  tc_ns qdisc del dev "$NS_IF" clsact
 }
 
 cleanup_state() {
@@ -91,7 +111,7 @@ cleanup_state() {
   local netem_present=false
   if ns_exists; then
     namespace_present=true
-    if ip netns exec "$NS" tc -j qdisc show dev "$NS_IF" 2>/dev/null |
+    if tc_ns -j qdisc show dev "$NS_IF" 2>/dev/null |
       grep -q '"kind":"netem"'; then
       netem_present=true
     fi
