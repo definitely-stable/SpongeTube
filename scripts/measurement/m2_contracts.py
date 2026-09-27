@@ -1158,17 +1158,16 @@ def scan_evidence_privacy(document: Any, path: str = "$") -> None:
 # ---------------------------------------------------------------------------
 
 # Subsystem schemas added by the current M2 owning slice (M2.md section 16).
-# M2-D owns exactly the four schemas below; every schema accepted by an
-# earlier slice is registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
+# M2-E owns exactly the three fault-harness schemas below; every schema
+# accepted by an earlier slice is registered in ACCEPTED_M2_SCHEMA_SHA256.
 M2_SLICE_SCHEMAS = frozenset({
-    "failure-decision-events-v2.schema.json",
-    "delivery-binding-events-v1.schema.json",
-    "provider-fault-events-v1.schema.json",
-    "provider-verification-summary-v1.schema.json",
+    "fault-harness-events-v1.schema.json",
+    "network-calibration-v1.schema.json",
+    "fault-verification-summary-v1.schema.json",
 })
 
-# SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
-# M2-C). A later slice adds a new versioned schema instead of rewriting these.
+# SHA-256 of M2 schemas already accepted by an earlier slice (M2-A..M2-D).
+# A later slice adds a new versioned schema instead of rewriting these.
 ACCEPTED_M2_SCHEMA_SHA256 = {
     "m2-run-manifest-v1.schema.json":
         "b9d034b36c845bd58e957b1332c29e885420b6e65e72aa63706ead9fe6ead9d3",
@@ -1188,6 +1187,14 @@ ACCEPTED_M2_SCHEMA_SHA256 = {
         "682bb6418fb72663edc056533f985bfd859d63e1935f0d9903887887feac1c74",
     "recovery-verification-summary-v1.schema.json":
         "8e20c4c08f4885666f1a329cf46dfcd2bc628727c0e44eabf7875297c99baaff",
+    "failure-decision-events-v2.schema.json":
+        "eb9ecf8a8325f2eaf55eca374848e4844a09c788675ff2461797990416e29287",
+    "delivery-binding-events-v1.schema.json":
+        "423c4e3fd367458f0b43270f5a4262141e1a0268b5e3587c5443ee68977417c5",
+    "provider-fault-events-v1.schema.json":
+        "dda2d215359a87816db62826316746f01725443d8dad98a8ba0e2c0d6ad7df2d",
+    "provider-verification-summary-v1.schema.json":
+        "e42a3eb40d1a17ccdda98de80af9e20bae3c5955d2e92bff5d7bb4d30121b432",
 }
 
 # SHA-256 of every pre-M2 (M0/M1) schema at M2-A. M2 work must add a new
