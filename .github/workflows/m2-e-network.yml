@@ -1,0 +1,388 @@
+name: M2-E Network Fault Harness
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/m2-e-network.yml"
+      - "core/engine/**"
+      - "tools/media-lab/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/verify-m2-e-network-evidence.sh"
+      - "test-fixtures/network/m2/**"
+      - ".work/milestones/M2.md"
+      - ".work/adr/0005-separate-transport-stream-and-packet-fault-harnesses.md"
+      - ".work/schemas/fault-harness-events-v1.schema.json"
+      - ".work/schemas/network-calibration-v1.schema.json"
+      - ".work/schemas/fault-verification-summary-v1.schema.json"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-e-network.yml"
+      - "core/engine/**"
+      - "tools/media-lab/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/verify-m2-e-network-evidence.sh"
+      - "test-fixtures/network/m2/**"
+  workflow_dispatch:
+  schedule:
+    - cron: "19 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-e-network-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-contract:
+    name: host-network-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Verify compiler and Media Lab bind seam
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover             -s scripts/measurement/tests             -p 'test_m2_*network*.py'
+          ./gradlew --dependency-verification=strict --configuration-cache             :tools:media-lab:test
+
+      - name: Exercise pinned tc against all canonical NETWORK profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="$PWD/build/m2-e-network/host"
+          tools="$RUNNER_TEMP/m2-e-network-tools"
+          rm -rf "$root" "$tools"
+          mkdir -p "$root" "$tools"
+
+          bash scripts/faults/install_iproute2_tc.sh "$tools"             > "$root/tc-version.txt"
+          export M2_TC_BIN="$tools/tc"
+
+          cleanup() {
+            bash scripts/faults/netem_control.sh remove >/dev/null 2>&1 || true
+            bash scripts/faults/m2_e0_netns.sh teardown >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          bash scripts/faults/m2_e0_netns.sh prepare
+
+          run_host_case() {
+            local mode="$1"
+            local fixture="$2"
+            local case_id="$3"
+            local scenario="$PWD/test-fixtures/network/m2/$fixture"
+            local case_root="$root/$case_id"
+            local common=(
+              --scenario "$scenario"
+              --evidence "$case_root/fault-harness-events.json"
+              --qdisc-state "$case_root/qdisc-applied.json"
+              --filter-state "$case_root/filter.json"
+              --final-qdisc-state "$case_root/qdisc-final.json"
+              --active-state "$case_root/netem-active-state.json"
+              --clean-state "$case_root/netem-clean-state.json"
+              --run-id "m2-e-$case_id"
+              --session-id "m2-e-$case_id-session"
+            )
+            mkdir -p "$case_root"
+
+            python3 scripts/faults/m2_network_harness.py "$mode" "${common[@]}"
+            if [[ "$mode" == "start" ]]; then
+              python3 scripts/faults/m2_network_harness.py stop "${common[@]}"
+            fi
+            bash scripts/faults/netem_control.sh assert-clean
+            jq -e '.events | length == 5' "$case_root/fault-harness-events.json"
+          }
+
+          run_host_case start n2-high-rtt-jitter.json n2-high-rtt-jitter
+          run_host_case pulse n3-burst-packet-loss.json n3-burst-packet-loss
+          run_host_case start n5-burst-loss.json n5-burst-loss
+
+          bash scripts/faults/m2_e0_netns.sh teardown
+          bash scripts/faults/m2_e0_netns.sh assert-clean
+          trap - EXIT
+
+      - name: Keep M2 recovery/provider regressions green
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/verify-m2-c-recovery-evidence.sh host             build/m2-e-network/regression/m2-c
+          bash scripts/ci/verify-m2-d-provider-evidence.sh host             build/m2-e-network/regression/m2-d
+
+      - name: Upload host NETWORK evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-e-network-host
+          path: build/m2-e-network/
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-api36:
+    name: android-api36-network
+    needs: host-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Build Android NETWORK target and Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict --configuration-cache             :core:engine:assembleDebug             :core:engine:assembleDebugAndroidTest             :tools:media-lab:installDist
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh             36             m2e-network-api36             build/m2-e-network/android/device
+
+      - name: Run canonical NETWORK scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="$PWD/build/m2-e-network/android"
+          tools="$RUNNER_TEMP/m2-e-network-tools"
+          mkdir -p "$root" "$tools"
+
+          bash scripts/faults/install_iproute2_tc.sh "$tools"             > "$root/tc-version.txt"
+          export M2_TC_BIN="$tools/tc"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          LAB_BIN="$(realpath "$LAB_BIN")"
+
+          LAB_PID=""
+          HARNESS_PID=""
+
+          stop_pid() {
+            local pid="${1:-}"
+            [[ -n "$pid" ]] || return 0
+            if kill -0 "$pid" 2>/dev/null; then
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            fi
+          }
+
+          cleanup() {
+            stop_pid "$HARNESS_PID"
+            stop_pid "$LAB_PID"
+            bash scripts/faults/netem_control.sh remove >/dev/null 2>&1 || true
+            bash scripts/faults/m2_e0_netns.sh teardown >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          scope_snapshot() {
+            local output="$1"
+            local ns lab_if
+            ns="$(bash scripts/faults/m2_e0_netns.sh namespace)"
+            lab_if="$(bash scripts/faults/m2_e0_netns.sh lab-interface)"
+            local media_packets media_bytes control_packets
+            media_packets="$(sudo -n ip netns exec "$ns" cat "/sys/class/net/$lab_if/statistics/tx_packets")"
+            media_bytes="$(sudo -n ip netns exec "$ns" cat "/sys/class/net/$lab_if/statistics/tx_bytes")"
+            control_packets="$(sudo -n ip netns exec "$ns" cat /sys/class/net/lo/statistics/tx_packets)"
+            python3 - "$output" "$media_packets" "$media_bytes" "$control_packets" <<'PY'
+          import json, pathlib, sys
+          output, packets, bytes_, control = sys.argv[1:]
+          pathlib.Path(output).write_text(json.dumps({
+              "mediaPackets": int(packets),
+              "mediaBytes": int(bytes_),
+              "controlPackets": int(control),
+          }, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          }
+
+          run_case() {
+            local mode="$1"
+            local variant="$2"
+            local fixture="$3"
+            local case_id="$4"
+            local case_root="$root/$case_id"
+            local scenario="$PWD/test-fixtures/network/m2/$fixture"
+            local trace="$PWD/$case_root/origin-requests.jsonl"
+
+            rm -rf "$case_root"
+            mkdir -p "$case_root"/{server,android,harness,health,verified}
+
+            bash scripts/faults/m2_e0_netns.sh prepare
+            local ns media_addr
+            ns="$(bash scripts/faults/m2_e0_netns.sh namespace)"
+            media_addr="$(bash scripts/faults/m2_e0_netns.sh media-address)"
+
+            sudo -n ip netns exec "$ns"               env JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:/usr/bin:/bin"               "$LAB_BIN" serve                 "--fixture-root=$PWD/test-fixtures/media"                 "--trace=$trace"                 "--session-id=m2-e-$case_id-session"                 --profile=N0                 --data-bind-address="$media_addr"                 --data-port=18081                 --control-port=18082               > "$case_root/server/media-lab.out"               2> "$case_root/server/media-lab.err" &
+            LAB_PID=$!
+
+            for attempt in {1..60}; do
+              if curl --fail --silent                    "http://$media_addr:18081/fixtures/F1/segment-1-00001.m4s"                    -o /dev/null &&
+                 sudo -n ip netns exec "$ns"                    curl --fail --silent http://127.0.0.1:18082/__lab/config                    > "$case_root/server/config.json"; then
+                break
+              fi
+              [[ "$attempt" -lt 60 ]] || {
+                cat "$case_root/server/media-lab.err" >&2 || true
+                return 1
+              }
+              sleep 0.1
+            done
+
+            adb get-state > "$case_root/health/adb-before.txt"
+            grep -Fxq device "$case_root/health/adb-before.txt"
+            sudo -n ip netns exec "$ns"               curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
+            printf 'ok\n' > "$case_root/health/control-before.txt"
+
+            if adb reverse --list | grep -Eq 'tcp:18081([[:space:]]|$)'; then
+              echo "NETWORK media-under-test unexpectedly uses adb reverse" >&2
+              return 1
+            fi
+            printf 'ok\n' > "$case_root/health/media-reverse-absent.txt"
+
+            scope_snapshot "$case_root/scope-before.json"
+
+            python3 scripts/measurement/m2_run_manifest.py               --scenario "$scenario"               --output "$case_root/m2-run-manifest.json"               --run-id "m2-e-$case_id"               --session-id "m2-e-$case_id-session"               --git-commit "$GIT_SHA"               --fixture-manifest test-fixtures/media/manifest.json               --device-api 36
+
+            local common=(
+              --scenario "$scenario"
+              --evidence "$case_root/harness/fault-harness-events.json"
+              --qdisc-state "$case_root/harness/qdisc-applied.json"
+              --filter-state "$case_root/harness/filter.json"
+              --final-qdisc-state "$case_root/harness/qdisc-final.json"
+              --active-state "$case_root/harness/netem-active-state.json"
+              --clean-state "$case_root/harness/netem-clean-state.json"
+              --run-id "m2-e-$case_id"
+              --session-id "m2-e-$case_id-session"
+            )
+
+            if [[ "$mode" == "pulse" ]]; then
+              python3 scripts/faults/m2_network_harness.py pulse "${common[@]}"                 > "$case_root/harness/pulse.out"                 2> "$case_root/harness/pulse.err" &
+              HARNESS_PID=$!
+              for attempt in {1..80}; do
+                if [[ -s "$case_root/harness/fault-harness-events.json" ]] &&
+                   jq -e '.events[-1].operation == "FAULT_APPLIED"'                      "$case_root/harness/fault-harness-events.json" >/dev/null 2>&1; then
+                  break
+                fi
+                if ! kill -0 "$HARNESS_PID" 2>/dev/null; then
+                  cat "$case_root/harness/pulse.err" >&2 || true
+                  return 1
+                fi
+                [[ "$attempt" -lt 80 ]] || return 1
+                sleep 0.025
+              done
+            else
+              python3 scripts/faults/m2_network_harness.py start "${common[@]}"
+            fi
+
+            adb get-state > "$case_root/health/adb-during.txt"
+            grep -Fxq device "$case_root/health/adb-during.txt"
+            sudo -n ip netns exec "$ns"               curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
+            printf 'ok\n' > "$case_root/health/control-during.txt"
+
+            ./gradlew --dependency-verification=strict               :core:engine:connectedDebugAndroidTest               -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.NetworkFaultAndroidTest               -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e.networkBaseUrl="http://$media_addr:18081"               -Pandroid.testInstrumentationRunnerArguments.spongetube.m2e.scenario="$variant"
+
+            if [[ "$mode" == "pulse" ]]; then
+              wait "$HARNESS_PID"
+              HARNESS_PID=""
+            else
+              python3 scripts/faults/m2_network_harness.py stop "${common[@]}"
+            fi
+
+            adb get-state > "$case_root/health/adb-after.txt"
+            grep -Fxq device "$case_root/health/adb-after.txt"
+            sudo -n ip netns exec "$ns"               curl --fail --silent http://127.0.0.1:18082/__lab/config >/dev/null
+            printf 'ok\n' > "$case_root/health/control-after.txt"
+
+            scope_snapshot "$case_root/scope-after.json"
+
+            local source_dir
+            source_dir="$(find core/engine/build/outputs/connected_android_test_additional_output               -type d -path "*/m2-e-network/$case_id" -print -quit)"
+            test -n "$source_dir"
+            cp -R "$source_dir/." "$case_root/android/"
+            printf 'ok\n' > "$case_root/health/artifact-collection.txt"
+
+            bash scripts/faults/netem_control.sh assert-clean
+            printf 'ok\n' > "$case_root/health/qdisc-clean.txt"
+            printf 'ok\n' > "$case_root/health/filter-clean.txt"
+
+            if pgrep -x toxiproxy-server >/dev/null 2>&1; then
+              echo "Toxiproxy unexpectedly present in NETWORK run" >&2
+              return 1
+            fi
+            printf 'ok\n' > "$case_root/health/transport-tool-absent.txt"
+
+            stop_pid "$LAB_PID"
+            LAB_PID=""
+
+            test -s "$trace"
+
+            bash scripts/faults/m2_e0_netns.sh teardown
+            bash scripts/faults/m2_e0_netns.sh assert-clean
+            printf 'ok\n' > "$case_root/health/namespace-clean.txt"
+
+            python3 scripts/faults/m2_network_calibration.py               --scenario "$scenario"               --run-manifest "$case_root/m2-run-manifest.json"               --harness "$case_root/harness/fault-harness-events.json"               --qdisc-final "$case_root/harness/qdisc-final.json"               --filter-state "$case_root/harness/filter.json"               --network-result "$case_root/android/network-result.json"               --scope-before "$case_root/scope-before.json"               --scope-after "$case_root/scope-after.json"               --health-dir "$case_root/health"               --output "$case_root/network-calibration.json"
+
+            bash scripts/ci/verify-m2-e-network-evidence.sh               "$case_root/android"               "$scenario"               "$trace"               "$case_root/harness/fault-harness-events.json"               "$case_root/harness/qdisc-final.json"               "$case_root/harness/filter.json"               "$case_root/harness/netem-clean-state.json"               "$case_root/network-calibration.json"               "$case_root/m2-run-manifest.json"               "$case_root/health"               "$case_root/verified"
+          }
+
+          run_case start HIGH_RTT_JITTER n2-high-rtt-jitter.json n2-high-rtt-jitter
+          run_case pulse BURST_PACKET_LOSS n3-burst-packet-loss.json n3-burst-packet-loss
+          run_case start BURST_LOSS n5-burst-loss.json n5-burst-loss
+
+          adb get-state | grep -Fxq device
+          bash scripts/faults/m2_e0_netns.sh assert-clean
+          trap - EXIT
+
+      - name: Upload Android NETWORK evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-e-network-api36
+          path: |
+            build/m2-e-network/android/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/outputs/connected_android_test_additional_output/
+            core/engine/build/reports/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: adb emu kill || true

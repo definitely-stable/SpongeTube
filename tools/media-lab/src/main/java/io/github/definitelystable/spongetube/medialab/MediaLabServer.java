@@ -107,10 +107,13 @@ final class MediaLabServer implements AutoCloseable {
             ensureArtifactsAbsent(config);
 
             InetAddress loopback = InetAddress.getByName("127.0.0.1");
+            InetAddress dataAddress = InetAddress.getByName(config.dataBindAddress());
 
+            // Data may be exposed on the isolated M2-E namespace address. Control deliberately
+            // remains loopback-only so network impairment can never capture lab control traffic.
             // Bind both listeners before creating evidence artifacts. A partial bind failure must
             // not leave an empty trace that could be mistaken for a valid scenario session.
-            dataServer = HttpServer.create(new InetSocketAddress(loopback, config.dataPort()), 0);
+            dataServer = HttpServer.create(new InetSocketAddress(dataAddress, config.dataPort()), 0);
             controlServer = HttpServer.create(new InetSocketAddress(loopback, config.controlPort()), 0);
 
             dataExecutor = newFixedThreadPool(config.dataWorkers(), "media-lab-data-");

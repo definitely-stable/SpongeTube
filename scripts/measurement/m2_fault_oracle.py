@@ -355,6 +355,376 @@ def verify_transport(args: argparse.Namespace) -> dict[str, Any]:
     return summary
 
 
+
+def expected_network_fault(
+    scenario: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Independently compile frozen NETWORK semantics for verification."""
+    validate_scenario_semantics(scenario)
+    require(scenario.get("primaryPlane") == "NETWORK", "primaryPlane must be NETWORK")
+    faults = scenario.get("networkFaults")
+    require(isinstance(faults, list) and len(faults) == 1, "exactly one NETWORK fault required")
+    for field in (
+        "deliveryFaults",
+        "transportFaults",
+        "providerFaults",
+        "routeFaults",
+        "storageFaults",
+    ):
+        require(not scenario.get(field), f"canonical E3 run contains non-NETWORK faults in {field}")
+
+    fault = faults[0]
+    require(isinstance(fault, dict), "network fault must be an object")
+    require(fault.get("plane") == "NETWORK", "network fault plane mismatch")
+    params = fault.get("parameters") or {}
+    require(params.get("scope") == "MEDIA_PATH_ONLY", "NETWORK scenario scope mismatch")
+    variant = scenario.get("variant")
+    seed = scenario.get("randomSeed")
+
+    config: dict[str, Any] = {"direction": "DOWNSTREAM", "scope": "MEDIA_DATA_ONLY"}
+    if variant == "HIGH_RTT_JITTER":
+        require(fault.get("kind") == "HIGH_RTT_JITTER", "N2 fault kind mismatch")
+        require(fault.get("stochastic") is True, "N2 jitter must be stochastic")
+        require(seed == 424242, "N2 jitter seed must be 424242")
+        require(params.get("delayUs") == 100000, "N2 delayUs mismatch")
+        require(params.get("jitterUs") == 30000, "N2 jitterUs mismatch")
+        require(params.get("delayCorrelationPpm") == 250000, "N2 correlation mismatch")
+        config.update(
+            delayUs=100000,
+            jitterUs=30000,
+            delayCorrelationPpm=250000,
+            randomSeed=424242,
+        )
+    elif variant == "BURST_PACKET_LOSS":
+        require(fault.get("kind") == "BURST_PACKET_LOSS", "N3 fault kind mismatch")
+        require(fault.get("stochastic") is False, "N3 blackout must be deterministic")
+        require(seed is None, "N3 blackout must be seedless")
+        require(params.get("lossPpm") == 1000000, "N3 lossPpm mismatch")
+        require(params.get("durationMs") == 1500, "N3 duration mismatch")
+        config.update(lossPpm=1000000, durationMs=1500)
+    elif variant == "BURST_LOSS":
+        require(fault.get("kind") == "BURST_LOSS", "N5 fault kind mismatch")
+        require(fault.get("stochastic") is True, "N5 burst loss must be stochastic")
+        require(seed == 424242, "N5 seed must be 424242")
+        require(params.get("lossPpm") == 20000, "N5 lossPpm mismatch")
+        require(params.get("burstCorrelationPpm") == 250000, "N5 correlation mismatch")
+        config.update(
+            lossPpm=20000,
+            burstCorrelationPpm=250000,
+            randomSeed=424242,
+        )
+    else:
+        raise FaultOracleError(f"unsupported NETWORK variant {variant!r}")
+
+    validate_m2e_harness_binding("NETWORK", "sponge-network-harness", "netem")
+    return fault, config
+
+
+def _find_kind(value: Any, kind: str) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        if value.get("kind") == kind:
+            return value
+        for child in value.values():
+            found = _find_kind(child, kind)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_kind(child, kind)
+            if found is not None:
+                return found
+    return None
+
+
+def _contains_key_value(value: Any, key: str, expected: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get(key) == expected:
+            return True
+        return any(_contains_key_value(child, key, expected) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_key_value(child, key, expected) for child in value)
+    return False
+
+
+def _fraction_to_ppm(value: Any, name: str) -> int:
+    require(
+        isinstance(value, (int, float)) and not isinstance(value, bool),
+        f"{name} readback must be numeric",
+    )
+    ppm = round(float(value) * 1_000_000)
+    require(0 <= ppm <= 1_000_000, f"{name} readback outside [0,1]")
+    return ppm
+
+
+def _seconds_to_us(value: Any, name: str) -> int:
+    require(
+        isinstance(value, (int, float)) and not isinstance(value, bool),
+        f"{name} readback must be numeric",
+    )
+    microseconds = round(float(value) * 1_000_000)
+    require(microseconds >= 0, f"{name} readback is negative")
+    return microseconds
+
+
+def normalize_network_tc_state(
+    qdiscs: Any,
+    filters: Any,
+    variant: str,
+) -> dict[str, Any]:
+    """Normalize raw pinned tc JSON without importing the harness implementation."""
+    netem = _find_kind(qdiscs, "netem")
+    require(netem is not None, "raw qdisc readback has no netem")
+    require(_find_kind(qdiscs, "prio") is not None, "raw qdisc readback has no scoped prio")
+    require(_find_kind(filters, "flower") is not None, "raw filter readback has no flower")
+    require(
+        _contains_key_value(filters, "src_port", 18081),
+        "flower classifier is not restricted to media source port",
+    )
+    require(
+        _contains_key_value(filters, "ip_proto", "tcp"),
+        "flower classifier is not restricted to TCP",
+    )
+    options = netem.get("options") or {}
+    require(isinstance(options, Mapping), "netem options must be an object")
+
+    state: dict[str, Any] = {
+        "direction": "DOWNSTREAM",
+        "scope": "MEDIA_DATA_ONLY",
+        "mediaPortScoped": True,
+    }
+    if variant == "HIGH_RTT_JITTER":
+        delay = options.get("delay") or {}
+        require(isinstance(delay, Mapping), "N2 delay readback missing")
+        state.update(
+            delayUs=_seconds_to_us(delay.get("delay"), "delay"),
+            jitterUs=_seconds_to_us(delay.get("jitter"), "jitter"),
+            delayCorrelationPpm=_fraction_to_ppm(
+                delay.get("correlation"), "delay correlation"
+            ),
+            randomSeed=int(options.get("seed", -1)),
+        )
+    elif variant == "BURST_PACKET_LOSS":
+        loss = options.get("loss-random") or {}
+        require(isinstance(loss, Mapping), "N3 loss readback missing")
+        state.update(lossPpm=_fraction_to_ppm(loss.get("loss"), "loss"))
+    elif variant == "BURST_LOSS":
+        loss = options.get("loss-random") or {}
+        require(isinstance(loss, Mapping), "N5 loss readback missing")
+        state.update(
+            lossPpm=_fraction_to_ppm(loss.get("loss"), "loss"),
+            burstCorrelationPpm=_fraction_to_ppm(
+                loss.get("correlation"), "loss correlation"
+            ),
+            randomSeed=int(options.get("seed", -1)),
+        )
+    else:
+        raise FaultOracleError(f"unsupported NETWORK variant {variant!r}")
+    return state
+
+
+def _network_tool_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    result = {key: value for key, value in config.items() if key != "durationMs"}
+    result["mediaPortScoped"] = True
+    return result
+
+
+def verify_network(args: argparse.Namespace) -> dict[str, Any]:
+    scenario = load_object(args.scenario)
+    manifest = load_object(args.run_manifest)
+    harness = load_object(args.harness)
+    qdisc = json.loads(args.qdisc_state.read_text(encoding="utf-8"))
+    filters = json.loads(args.filter_state.read_text(encoding="utf-8"))
+    clean = load_object(args.clean_state)
+    calibration = load_object(args.calibration)
+    failures = load_object(args.failures)
+    result = load_object(args.network_result)
+    fetch_rows = load_jsonl(args.fetch)
+    origin_rows = load_jsonl(args.origin)
+
+    validate_schema("m2-run-manifest-v1.schema.json", manifest)
+    validate_schema("fault-harness-events-v1.schema.json", harness)
+    validate_schema("network-calibration-v1.schema.json", calibration)
+    validate_run_manifest_semantics(manifest, scenario)
+    fault, config = expected_network_fault(scenario)
+
+    expected_hash = scenario_sha256(scenario)
+    for name, value in (
+        ("manifest", manifest["scenario"]["hash"]),
+        ("harness", harness.get("scenarioHash")),
+        ("calibration", calibration.get("scenarioHash")),
+    ):
+        require(value == expected_hash, f"{name} scenario hash mismatch")
+    require(harness.get("runId") == manifest.get("runId"), "harness/manifest runId mismatch")
+    require(harness.get("sessionId") == manifest.get("sessionId"), "harness/manifest sessionId mismatch")
+    require(calibration.get("runId") == manifest.get("runId"), "calibration/manifest runId mismatch")
+    require(calibration.get("sessionId") == manifest.get("sessionId"), "calibration/manifest sessionId mismatch")
+
+    meta = harness.get("harness") or {}
+    validate_m2e_harness_binding(
+        "NETWORK",
+        str(meta.get("harnessId")),
+        str(meta.get("toolId")),
+    )
+    require(meta.get("harnessVersion") == "1", "unexpected network harness version")
+    require(meta.get("toolVersion") == "iproute2-6.6.0", "unexpected netem tc version")
+    require(harness.get("clockDomain") == "HOST_FAULT_MONOTONIC", "wrong harness clock domain")
+
+    events = harness.get("events") or []
+    require(len(events) == 5, "canonical NETWORK lifecycle must contain five events")
+    require(
+        [event.get("sequence") for event in events] == [1, 2, 3, 4, 5],
+        "NETWORK fault event sequence is not contiguous",
+    )
+    expected_ops = [
+        "HARNESS_STARTED",
+        "FAULT_ARMED",
+        "FAULT_APPLIED",
+        "FAULT_REMOVED",
+        "HARNESS_STOPPED",
+    ]
+    require([event.get("operation") for event in events] == expected_ops, "unexpected NETWORK lifecycle")
+    timestamps = [event.get("elapsedRealtimeNs") for event in events]
+    require(
+        all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in timestamps),
+        "invalid NETWORK HOST_FAULT_MONOTONIC timestamp",
+    )
+    require(
+        all(b >= a for a, b in zip(timestamps, timestamps[1:])),
+        "NETWORK HOST_FAULT_MONOTONIC time regressed",
+    )
+
+    for event in events:
+        require(event.get("plane") == "NETWORK", "network harness emitted a non-NETWORK event")
+        require(event.get("faultId") == fault.get("faultId"), "NETWORK faultId mismatch")
+        require(event.get("kind") == fault.get("kind"), "NETWORK fault kind mismatch")
+        require(event.get("scope") == "MEDIA_DATA_ONLY", "NETWORK scope mismatch")
+
+    expected_params = {
+        key: value
+        for key, value in config.items()
+        if key not in {"direction", "scope"}
+    }
+    require(events[0].get("direction") == "NONE", "HARNESS_STARTED direction mismatch")
+    require(events[1].get("direction") == "DOWNSTREAM", "FAULT_ARMED direction mismatch")
+    require(events[2].get("direction") == "DOWNSTREAM", "FAULT_APPLIED direction mismatch")
+    require(events[4].get("direction") == "NONE", "HARNESS_STOPPED direction mismatch")
+    require(events[1].get("parameters") == expected_params, "FAULT_ARMED parameters mismatch")
+    require(events[2].get("parameters") == expected_params, "FAULT_APPLIED parameters mismatch")
+    require(events[2].get("result") == "APPLIED", "NETWORK fault was not reported applied")
+    require(events[3].get("result") == "REMOVED", "NETWORK fault was not reported removed")
+    require(events[4].get("result") == "OK", "NETWORK harness did not stop cleanly")
+
+    observed = normalize_network_tc_state(qdisc, filters, str(scenario["variant"]))
+    expected_tool = _network_tool_config(config)
+    require(observed == expected_tool, f"NETWORK tc readback mismatch: {observed!r}")
+    require(
+        events[2].get("observedStateHash") == canonical_hash(observed),
+        "NETWORK FAULT_APPLIED observed state hash mismatch",
+    )
+    require(clean == {"filters": 0, "netem": 0, "prio": 0}, "NETWORK clean state mismatch")
+    require(
+        events[4].get("observedStateHash") == canonical_hash(clean),
+        "NETWORK HARNESS_STOPPED state hash mismatch",
+    )
+
+    if scenario["variant"] == "BURST_PACKET_LOSS":
+        duration_ns = timestamps[3] - timestamps[2]
+        require(duration_ns >= 1_500_000_000, "N3 blackout ended before durationMs=1500")
+
+    require(calibration.get("harnessId") == "sponge-network-harness", "calibration harness mismatch")
+    require(calibration.get("harnessVersion") == "1", "calibration harness version mismatch")
+    require(calibration.get("clockDomain") == "HOST_FAULT_MONOTONIC", "calibration clock mismatch")
+    require(calibration.get("expectedConfig") == expected_tool, "calibration expectedConfig mismatch")
+    require(calibration.get("observedConfig") == observed, "calibration observedConfig mismatch")
+
+    scope = calibration.get("scopeProof") or {}
+    require(scope.get("mediaPacketsAfter", 0) > scope.get("mediaPacketsBefore", -1), "media packet counter did not advance")
+    require(scope.get("mediaBytesAfter", 0) > scope.get("mediaBytesBefore", -1), "media byte counter did not advance")
+    require(scope.get("controlPacketsAfter", 0) > scope.get("controlPacketsBefore", -1), "control loopback counter did not advance")
+    require(
+        scope.get("adbHealthyBefore") is True
+        and scope.get("adbHealthyDuring") is True
+        and scope.get("adbHealthyAfter") is True,
+        "ADB was not healthy across NETWORK fault",
+    )
+    counters = calibration.get("qdiscCounters") or {}
+    require(counters.get("packets", 0) > 0, "netem qdisc saw no media packets")
+    if scenario["variant"] == "BURST_PACKET_LOSS":
+        require(counters.get("drops", 0) > 0, "100% blackout produced no qdisc drops")
+    require(all((calibration.get("cleanup") or {}).values()), "NETWORK cleanup is incomplete")
+
+    failure_rows = failures.get("failures") or []
+    require(isinstance(failure_rows, list), "failure rows must be an array")
+    for row in failure_rows:
+        observation = row.get("observation") or {}
+        require(
+            observation.get("plane") == "TRANSPORT",
+            "NETWORK cause was incorrectly materialized as a runtime packet-loss observation",
+        )
+        require(
+            row.get("classification") == "TRANSIENT_TRANSPORT",
+            "NETWORK-induced socket failure was not classified transient transport",
+        )
+        require(
+            (row.get("decision") or {}).get("kind") not in PROVIDER_ACTIONS,
+            "pure NETWORK fault triggered provider action",
+        )
+
+    attempts = sum(1 for row in fetch_rows if row.get("event") == "ATTEMPT_STARTED")
+    require(1 <= attempts <= 4, f"NETWORK run used invalid attempt count {attempts}")
+    require(result.get("physicalAttempts") == attempts, "network result/fetch attempt mismatch")
+    require(result.get("terminalReason") == "SUCCESS", "canonical NETWORK scenario did not recover")
+    require(result.get("published") is True, "canonical NETWORK scenario did not publish complete media")
+    require(result.get("failureCount") == len(failure_rows), "network result/failure count mismatch")
+
+    data_rows = [
+        row for row in origin_rows
+        if row.get("plane") == "data" and row.get("method") == "GET"
+    ]
+    require(len(data_rows) <= attempts, "origin requests exceed physical attempts")
+
+    require(marker(args.media_reverse_absent, "ok"), "NETWORK media path used adb reverse")
+    require(marker(args.artifact_collection, "ok"), "NETWORK artifact collection failed")
+    for document in (scenario, manifest, harness, clean, calibration, result):
+        scan_evidence_privacy(document)
+
+    seed_bound = True
+    if "randomSeed" in expected_tool:
+        seed_bound = observed.get("randomSeed") == expected_tool["randomSeed"]
+
+    checks = {
+        "scenarioIdentity": True,
+        "faultOwnership": True,
+        "toolStateMatches": True,
+        "mediaPathTraversed": True,
+        "controlPathUnimpaired": True,
+        "seedBound": seed_bound,
+        "cleanupComplete": True,
+        "privacyClean": True,
+        "crossClockArithmeticAbsent": True,
+    }
+    summary = {
+        "schemaVersion": 1,
+        "runId": manifest["runId"],
+        "sessionId": manifest["sessionId"],
+        "scenarioHash": expected_hash,
+        "status": "PASS",
+        "primaryPlane": "NETWORK",
+        "checks": checks,
+        "gates": {
+            "M2-ACC-01": True,
+            "M2-ACC-02": True,
+            "M2-ACC-09": all(checks.values()),
+        },
+        "limitations": [
+            "API 36 emulator correctness and packet-fault attribution evidence; not representative network performance."
+        ],
+    }
+    validate_schema("fault-verification-summary-v1.schema.json", summary)
+    scan_evidence_privacy(summary)
+    return summary
+
+
 def add_marker_arguments(parser: argparse.ArgumentParser) -> None:
     for name in (
         "adb-before",
@@ -388,10 +758,28 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("--media-packets-after", required=True, type=pathlib.Path)
     verify.add_argument("--output", required=True, type=pathlib.Path)
     add_marker_arguments(verify)
+
+    network = sub.add_parser("verify-network")
+    network.add_argument("--scenario", required=True, type=pathlib.Path)
+    network.add_argument("--run-manifest", required=True, type=pathlib.Path)
+    network.add_argument("--harness", required=True, type=pathlib.Path)
+    network.add_argument("--qdisc-state", required=True, type=pathlib.Path)
+    network.add_argument("--filter-state", required=True, type=pathlib.Path)
+    network.add_argument("--clean-state", required=True, type=pathlib.Path)
+    network.add_argument("--calibration", required=True, type=pathlib.Path)
+    network.add_argument("--failures", required=True, type=pathlib.Path)
+    network.add_argument("--budget", required=True, type=pathlib.Path)
+    network.add_argument("--fetch", required=True, type=pathlib.Path)
+    network.add_argument("--network-result", required=True, type=pathlib.Path)
+    network.add_argument("--origin", required=True, type=pathlib.Path)
+    network.add_argument("--media-reverse-absent", required=True, type=pathlib.Path)
+    network.add_argument("--artifact-collection", required=True, type=pathlib.Path)
+    network.add_argument("--output", required=True, type=pathlib.Path)
+
     args = parser.parse_args(argv)
 
     try:
-        summary = verify_transport(args)
+        summary = verify_transport(args) if args.command == "verify-transport" else verify_network(args)
     except (FaultOracleError, M2ContractError, ValueError) as error:
         print(f"M2-E fault verification failed: {error}", file=sys.stderr)
         return 1

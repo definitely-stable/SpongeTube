@@ -41,6 +41,7 @@ final class CliArguments {
                         "session-id",
                         "profile",
                         "data-port",
+                        "data-bind-address",
                         "data-workers",
                         "control-port",
                         "control-workers",
@@ -60,6 +61,9 @@ final class CliArguments {
         String sessionId = required(values, "session-id");
 
         int dataPort = parseInt(values.getOrDefault("data-port", "0"), "data-port");
+        String dataBindAddress = values.getOrDefault(
+                "data-bind-address",
+                MediaLabConfig.DEFAULT_DATA_BIND_ADDRESS);
         int dataWorkers = parseInt(values.getOrDefault("data-workers", "8"), "data-workers");
         int controlPort = parseInt(values.getOrDefault("control-port", "0"), "control-port");
         int controlWorkers = parseInt(values.getOrDefault("control-workers", "2"), "control-workers");
@@ -88,7 +92,8 @@ final class CliArguments {
                 noProgressStartAfterMs,
                 writeQuantumBytes,
                 providerVariant,
-                providerWallClockEpochMs);
+                providerWallClockEpochMs,
+                dataBindAddress);
     }
 
     static String usage() {
@@ -100,6 +105,7 @@ final class CliArguments {
                     --session-id=<id> \
                     [--profile=N0|N1|N4|N4R|N8|N9|N10] \
                     [--data-port=0] \
+                    [--data-bind-address=127.0.0.1] \
                     [--data-workers=8] \
                     [--control-port=0] \
                     [--control-workers=2] \
