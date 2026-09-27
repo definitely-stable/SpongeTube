@@ -200,29 +200,6 @@ def verify_transport(args: argparse.Namespace) -> dict[str, Any]:
     require(harness_meta.get("toolVersion") == "2.12.0", "unexpected Toxiproxy version")
     require(harness.get("clockDomain") == "HOST_FAULT_MONOTONIC", "wrong harness clock domain")
 
-    fingerprint_sha = hashlib.sha256(args.engine_fingerprint.read_bytes()).hexdigest()
-    require(
-        (manifest.get("runtime") or {}).get("faultEngineFingerprintSha256") == fingerprint_sha,
-        "run manifest is not bound to the fault-engine fingerprint",
-    )
-    locked_tc = load_object(ROOT / "tools" / "fault-harness" / "toolchain.lock.json")["netem"]["labTc"]
-    toolchain = fingerprint.get("toolchain") or {}
-    require(
-        toolchain.get("tcSourceSha256") == locked_tc.get("sha256"),
-        "fault-engine tc source SHA does not match toolchain lock",
-    )
-    require(
-        str(toolchain.get("tcVersion", "")).startswith(f"tc utility, iproute2-{locked_tc.get('version')}"),
-        "fault-engine tc version does not match toolchain lock",
-    )
-    require(
-        fingerprint.get("offloads") == {"gro": False, "gso": False, "tso": False},
-        "canonical NETWORK packetization offloads are not disabled",
-    )
-    runner = fingerprint.get("runner") or {}
-    require(bool(runner.get("kernelRelease")), "fault-engine kernel release missing")
-    require(bool(runner.get("imageVersion")), "fault-engine runner image version missing")
-
     events = harness.get("events") or []
     require(len(events) == 5, "canonical transport lifecycle must contain five events")
     require(
@@ -619,6 +596,30 @@ def verify_network(args: argparse.Namespace) -> dict[str, Any]:
     require(meta.get("harnessVersion") == "1", "unexpected network harness version")
     require(meta.get("toolVersion") == "iproute2-6.6.0", "unexpected netem tc version")
     require(harness.get("clockDomain") == "HOST_FAULT_MONOTONIC", "wrong harness clock domain")
+
+    fingerprint_sha = hashlib.sha256(args.engine_fingerprint.read_bytes()).hexdigest()
+    require(
+        (manifest.get("runtime") or {}).get("faultEngineFingerprintSha256") == fingerprint_sha,
+        "run manifest is not bound to the fault-engine fingerprint",
+    )
+    locked_tc = load_object(ROOT / "tools" / "fault-harness" / "toolchain.lock.json")["netem"]["labTc"]
+    toolchain = fingerprint.get("toolchain") or {}
+    require(
+        toolchain.get("tcSourceSha256") == locked_tc.get("sha256"),
+        "fault-engine tc source SHA does not match toolchain lock",
+    )
+    require(
+        str(toolchain.get("tcVersion", "")).startswith(f"tc utility, iproute2-{locked_tc.get('version')}"),
+        "fault-engine tc version does not match toolchain lock",
+    )
+    require(
+        fingerprint.get("offloads") == {"gro": False, "gso": False, "tso": False},
+        "canonical NETWORK packetization offloads are not disabled",
+    )
+    runner = fingerprint.get("runner") or {}
+    require(bool(runner.get("kernelRelease")), "fault-engine kernel release missing")
+    require(bool(runner.get("imageVersion")), "fault-engine runner image version missing")
+
 
     events = harness.get("events") or []
     require(len(events) == 5, "canonical NETWORK lifecycle must contain five events")
