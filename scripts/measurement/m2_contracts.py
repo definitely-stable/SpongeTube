@@ -1153,18 +1153,37 @@ def scan_evidence_privacy(document: Any, path: str = "$") -> None:
         _require(not _IPV6.search(document), f"{path}: raw IPv6 address retained")
 
 
+# M2-E frozen external harness ownership. The tool is part of experiment
+# identity/evidence, never production runtime.
+M2E_HARNESS_BINDINGS = {
+    "TRANSPORT": ("sponge-transport-harness", "toxiproxy"),
+    "NETWORK": ("sponge-network-harness", "netem"),
+}
+
+
+def validate_m2e_harness_binding(plane: str, harness_id: str, tool_id: str) -> None:
+    _require(
+        plane in M2E_HARNESS_BINDINGS,
+        f"M2-E harness plane must be TRANSPORT or NETWORK, got {plane!r}",
+    )
+    expected = M2E_HARNESS_BINDINGS[plane]
+    _require(
+        (harness_id, tool_id) == expected,
+        f"{plane} must use harness/tool {expected}, got {(harness_id, tool_id)}",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Historical M0/M1 contracts are immutable (falsification item 18)
 # ---------------------------------------------------------------------------
 
 # Subsystem schemas added by the current M2 owning slice (M2.md section 16).
-# M2-D owns exactly the four schemas below; every schema accepted by an
+# M2-E owns exactly the three schemas below; every schema accepted by an
 # earlier slice is registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
 M2_SLICE_SCHEMAS = frozenset({
-    "failure-decision-events-v2.schema.json",
-    "delivery-binding-events-v1.schema.json",
-    "provider-fault-events-v1.schema.json",
-    "provider-verification-summary-v1.schema.json",
+    "fault-harness-events-v1.schema.json",
+    "network-calibration-v1.schema.json",
+    "fault-verification-summary-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
@@ -1188,6 +1207,14 @@ ACCEPTED_M2_SCHEMA_SHA256 = {
         "682bb6418fb72663edc056533f985bfd859d63e1935f0d9903887887feac1c74",
     "recovery-verification-summary-v1.schema.json":
         "8e20c4c08f4885666f1a329cf46dfcd2bc628727c0e44eabf7875297c99baaff",
+    "failure-decision-events-v2.schema.json":
+        "88be035237ad1771af4ad552760bb3463a9ba1fb6e7cb20d592b887f17c8886e",
+    "delivery-binding-events-v1.schema.json":
+        "1ec60498b4bf773703d699fdd28857c5e384caceb7ae4180b2e306f25044ab50",
+    "provider-fault-events-v1.schema.json":
+        "f42af47c6416b42d59c746477c6d19de67fca6059647ea7fbc4197d98b583c11",
+    "provider-verification-summary-v1.schema.json":
+        "c82f6ad712e1262217f6b2b324c8f847c45478782571f5bd667b437e2541c5f1",
 }
 
 # SHA-256 of every pre-M2 (M0/M1) schema at M2-A. M2 work must add a new

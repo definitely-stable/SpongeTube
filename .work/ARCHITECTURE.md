@@ -87,6 +87,33 @@ Sponge Core contracts MUST NOT depend on provider-specific protocol vocabulary s
 
 Provider adapters normalize those details into stable media identity, playback requirements and provider/transport-independent fetch work. A new provider delivery protocol may require a new adapter/transport implementation, but it must not redefine already-published ExtentStore identity or CoverageIndex semantics.
 
+## 3.2 M2 external fault-lab boundary
+
+M2-E keeps fault injection outside production runtime:
+
+```text
+resolved m2-scenario-v1
+        |
+        +-- TRANSPORT -> pinned Toxiproxy -> media path
+        |
+        +-- NETWORK   -> scoped tc/netem -> media path
+                                      |
+                                  Media Lab
+                                      |
+                                  Android app
+```
+
+Toxiproxy/netem never own retries, stable identity or publication. Media Lab
+remains DELIVERY/PROVIDER. NETWORK evidence uses the isolated namespace/veth
+path proven by E0; media `adb reverse` and global host shaping are not
+canonical fault paths. ADB/control traffic stays outside the impairment path.
+
+Tool command success is not evidence: M2-E reads back normalized tool state,
+binds it to `m2-scenario-v1`, records `HOST_FAULT_MONOTONIC` evidence and
+proves teardown. Android/host clocks are joined only through correlation
+identities. Emulator results are correctness/fault-attribution evidence, not
+representative transport performance. See ADR-0005.
+
 ## 4. Core domain model
 
 ### 4.1 MediaAsset

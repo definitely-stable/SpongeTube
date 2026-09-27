@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/fault-harness-events-v1.schema.json",
+  "title": "SpongeTube M2 Fault Harness Events v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioHash",
+    "harness",
+    "clockDomain",
+    "events"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "harness": {
+      "type": "object",
+      "required": [
+        "harnessId",
+        "harnessVersion",
+        "toolId",
+        "toolVersion"
+      ],
+      "properties": {
+        "harnessId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "harnessVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "toolVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "clockDomain": {
+      "type": "string",
+      "const": "HOST_FAULT_MONOTONIC"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "elapsedRealtimeNs",
+          "faultEventId",
+          "faultId",
+          "plane",
+          "kind",
+          "operation",
+          "direction",
+          "scope",
+          "parameters",
+          "observedStateHash",
+          "result"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "elapsedRealtimeNs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "faultEventId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "faultId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "plane": {
+            "type": "string",
+            "enum": [
+              "TRANSPORT",
+              "NETWORK"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "HARNESS_STARTED",
+              "FAULT_ARMED",
+              "FAULT_APPLIED",
+              "FAULT_REMOVED",
+              "HARNESS_STOPPED"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "UPSTREAM",
+              "DOWNSTREAM",
+              "BIDIRECTIONAL",
+              "NONE"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "const": "MEDIA_DATA_ONLY"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "integer",
+                "string",
+                "boolean"
+              ]
+            }
+          },
+          "observedStateHash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "APPLIED",
+              "REMOVED",
+              "FAILED"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

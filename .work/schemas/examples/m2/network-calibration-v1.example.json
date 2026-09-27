@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-e-example-run",
+  "sessionId": "m2-e-example-session",
+  "scenarioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "harnessId": "sponge-network-harness",
+  "harnessVersion": "1",
+  "clockDomain": "HOST_FAULT_MONOTONIC",
+  "expectedConfig": {
+    "lossPpm": 20000,
+    "burstCorrelationPpm": 250000,
+    "randomSeed": 424242,
+    "scope": "MEDIA_DATA_ONLY"
+  },
+  "observedConfig": {
+    "lossPpm": 20000,
+    "burstCorrelationPpm": 250000,
+    "randomSeed": 424242,
+    "scope": "MEDIA_DATA_ONLY"
+  },
+  "scopeProof": {
+    "mediaPacketsBefore": 10,
+    "mediaPacketsAfter": 42,
+    "mediaBytesBefore": 1000,
+    "mediaBytesAfter": 64000,
+    "controlPacketsBefore": 4,
+    "controlPacketsAfter": 4,
+    "adbHealthyBefore": true,
+    "adbHealthyDuring": true,
+    "adbHealthyAfter": true
+  },
+  "qdiscCounters": {
+    "packets": 32,
+    "bytes": 63000,
+    "drops": 1,
+    "overlimits": 0,
+    "requeues": 0
+  },
+  "probeSummary": {
+    "sampleCount": 4,
+    "successCount": 3,
+    "failureCount": 1,
+    "timeoutCount": 1,
+    "minDurationNs": 1000000,
+    "maxDurationNs": 2000000000
+  },
+  "cleanup": {
+    "qdiscRemoved": true,
+    "filtersRemoved": true,
+    "namespaceRemoved": true,
+    "proxiesRemoved": true,
+    "toxicsRemoved": true
+  },
+  "limitations": [
+    "Contract example only; not produced by a real run."
+  ]
+}

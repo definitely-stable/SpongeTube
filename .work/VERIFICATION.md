@@ -106,7 +106,7 @@ Examples:
 - slow close;
 - connection-level data limit.
 
-A Toxiproxy-style mechanism is a candidate because its control plane is separate from proxied traffic and faults operate at the TCP stream boundary.
+M2-E selects pinned Toxiproxy 2.12.0 (ADR-0005) for canonical TRANSPORT faults only. Its packet-loss/latency/bandwidth-style toxics are not used to claim NETWORK-plane evidence.
 
 ### 4.3 Packet/network plane
 
@@ -121,7 +121,7 @@ Examples:
 - corruption;
 - rate/slot behavior.
 
-If `tc/netem` is selected, stochastic profiles record the explicit random seed. Do not shape the host loopback globally when that would also perturb ADB/control traffic; use a scoped interface/namespace/path or another isolated mechanism.
+M2-E selects Linux `tc/netem` (ADR-0005) on the E0-proven isolated namespace/veth media path. Stochastic profiles record and apply the explicit scenario seed. Global host loopback/primary-interface shaping is forbidden; ADB/control/artifact traffic remains outside the impairment path.
 
 ### 4.4 Provider plane
 
@@ -904,6 +904,7 @@ An artifact schema becomes canonical together with its owning producer and verif
 | M2-ACC-06 | Bounded Recovery Lineage | one RecoveryChain never receives implicit fresh budget across broker/Media3/route/refresh boundaries |
 | M2-ACC-07 | Mutable Binding Independence | delivery binding can be refreshed without changing stable work identity; incompatible rebinding fails closed |
 | M2-ACC-08 | Deterministic Provider Recovery | N8/N9/N10 deterministic provider scenarios have independently verified provider attribution, bounded recovery, Retry-After handling and binding refresh without immutable identity mutation |
+| M2-ACC-09 | Scoped Fault Harness Fidelity | resolved TRANSPORT/NETWORK faults are applied by exactly their owning scoped harness; tool readback, scenario/seed binding, media traversal, control isolation and cleanup are independently verified |
 
 Later M2 slices may add gate IDs; no fixed count is reserved.
 
@@ -963,6 +964,16 @@ fourteen scripted host cases make M2-ACC-07 and M2-ACC-08 each pass in at
 least one case (`n10-binding-expired-refresh` passes all four gates) and
 M2-ACC-05/06 keep passing under `sponge-recovery-v2`; the results are recorded
 in `.work/evidence/2026-09-26-m2-d-provider-recovery.md`.
+
+
+M2-E owns `fault-harness-events-v1`, `network-calibration-v1` and
+`fault-verification-summary-v1`. Its independent oracle is
+`scripts/measurement/m2_fault_oracle.py` once the producer is implemented.
+M2-ACC-01/02 become executable on real M2-E runs; M2-ACC-09 requires normalized
+tool-state readback, media-path counters, clean ADB/control paths, the persisted
+stochastic seed where applicable, and verified teardown. Harness command exit
+status alone never satisfies the gate. E0 (#86) proves topology feasibility
+only and is not acceptance evidence for M2-ACC-09.
 
 ### 23.3 Additional M2 evidence rules
 

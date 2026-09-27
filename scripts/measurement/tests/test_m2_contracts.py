@@ -36,6 +36,7 @@ from m2_contracts import (
     scenario_sha256,
     validate_delivery_rebinding,
     validate_failure_record,
+    validate_m2e_harness_binding,
     validate_persisted_identity_invariance,
     validate_recovery_ledger,
     validate_route_privacy_transition,
@@ -72,6 +73,15 @@ CONTRACTS = {
     ],
     "provider-verification-summary-v1.schema.json": [
         "provider-verification-summary-v1.example.json",
+    ],
+    "fault-harness-events-v1.schema.json": [
+        "fault-harness-events-v1.example.json",
+    ],
+    "network-calibration-v1.schema.json": [
+        "network-calibration-v1.example.json",
+    ],
+    "fault-verification-summary-v1.schema.json": [
+        "fault-verification-summary-v1.example.json",
     ],
 }
 
@@ -235,6 +245,36 @@ class M2SchemaContractTest(unittest.TestCase):
         m1 = load(SCHEMAS / "examples" / "m1" / "m1-run-manifest-v1.example.json")
         with self.assertRaises(SchemaContractError):
             validate_instance(schema(MANIFEST_SCHEMA), m1)
+
+
+class M2EFaultHarnessContractTest(unittest.TestCase):
+    def test_frozen_harness_bindings_accept_owning_tools(self):
+        validate_m2e_harness_binding(
+            "TRANSPORT", "sponge-transport-harness", "toxiproxy"
+        )
+        validate_m2e_harness_binding(
+            "NETWORK", "sponge-network-harness", "netem"
+        )
+
+    def test_network_fault_cannot_use_toxiproxy_as_owning_harness(self):
+        with self.assertRaises(M2ContractError):
+            validate_m2e_harness_binding(
+                "NETWORK", "sponge-transport-harness", "toxiproxy"
+            )
+
+    def test_transport_fault_cannot_use_netem_as_owning_harness(self):
+        with self.assertRaises(M2ContractError):
+            validate_m2e_harness_binding(
+                "TRANSPORT", "sponge-network-harness", "netem"
+            )
+
+    def test_route_or_provider_cannot_be_claimed_by_m2e_harness(self):
+        for plane in ("ROUTE", "PROVIDER", "DELIVERY", "STORAGE"):
+            with self.subTest(plane=plane):
+                with self.assertRaises(M2ContractError):
+                    validate_m2e_harness_binding(
+                        plane, "sponge-network-harness", "netem"
+                    )
 
 
 class M2HistoricalContractTest(unittest.TestCase):
