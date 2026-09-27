@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/fault-verification-summary-v1.schema.json",
+  "title": "SpongeTube M2 Fault Verification Summary v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioHash",
+    "status",
+    "primaryPlane",
+    "checks",
+    "gates",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "primaryPlane": {
+      "type": "string",
+      "enum": [
+        "TRANSPORT",
+        "NETWORK"
+      ]
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "scenarioIdentity",
+        "faultOwnership",
+        "toolStateMatches",
+        "mediaPathTraversed",
+        "controlPathUnimpaired",
+        "seedBound",
+        "cleanupComplete",
+        "privacyClean",
+        "crossClockArithmeticAbsent"
+      ],
+      "properties": {
+        "scenarioIdentity": {
+          "type": "boolean"
+        },
+        "faultOwnership": {
+          "type": "boolean"
+        },
+        "toolStateMatches": {
+          "type": "boolean"
+        },
+        "mediaPathTraversed": {
+          "type": "boolean"
+        },
+        "controlPathUnimpaired": {
+          "type": "boolean"
+        },
+        "seedBound": {
+          "type": "boolean"
+        },
+        "cleanupComplete": {
+          "type": "boolean"
+        },
+        "privacyClean": {
+          "type": "boolean"
+        },
+        "crossClockArithmeticAbsent": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gates": {
+      "type": "object",
+      "required": [
+        "M2-ACC-01",
+        "M2-ACC-02",
+        "M2-ACC-09"
+      ],
+      "properties": {
+        "M2-ACC-01": {
+          "type": "boolean"
+        },
+        "M2-ACC-02": {
+          "type": "boolean"
+        },
+        "M2-ACC-09": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
