@@ -101,6 +101,38 @@ remove_probe() {
   fi
 }
 
+apply_topology() {
+  namespace_exists || {
+    echo "namespace not prepared" >&2
+    exit 1
+  }
+  # Deterministic, non-lossy impairment for the Android E0 reachability proof.
+  # The qdisc lives only on the namespace media veth, so ADB/control stay out.
+  sudo -n ip netns exec "$NS"     "$TC_BIN" qdisc replace dev "$LAB_IF" root netem delay 1000us
+}
+
+assert_topology_readback() {
+  local qdisc_json
+  qdisc_json="$(inspect_qdisc)"
+  python3 - "$qdisc_json" <<'PY'
+import json, sys
+qdiscs = json.loads(sys.argv[1])
+if not any(
+    isinstance(entry, dict) and entry.get("kind") == "netem"
+    for entry in qdiscs
+):
+    raise SystemExit("missing active netem qdisc on namespace media veth")
+PY
+}
+
+tx_packets() {
+  namespace_exists || {
+    echo "namespace not prepared" >&2
+    exit 1
+  }
+  sudo -n ip netns exec "$NS" cat "/sys/class/net/$LAB_IF/statistics/tx_packets"
+}
+
 inspect_qdisc() {
   sudo -n ip netns exec "$NS" "$TC_BIN" -s -j qdisc show dev "$LAB_IF"
 }
@@ -155,6 +187,15 @@ case "$COMMAND" in
     ;;
   remove-probe)
     remove_probe
+    ;;
+  apply-topology)
+    apply_topology
+    ;;
+  assert-topology-readback)
+    assert_topology_readback
+    ;;
+  tx-packets)
+    tx_packets
     ;;
   inspect-qdisc)
     inspect_qdisc
