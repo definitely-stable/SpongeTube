@@ -3,6 +3,7 @@ import argparse
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -91,6 +92,32 @@ class M2FaultOracleContractTest(unittest.TestCase):
             manifest["faultHarnesses"],
         )
         self.assertIn("HOST_FAULT_MONOTONIC", manifest["clockDomains"])
+        self.assertNotIn("faultEngineFingerprintSha256", manifest["runtime"])
+
+    def test_network_run_manifest_requires_and_binds_engine_fingerprint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fingerprint = pathlib.Path(temporary) / "fault-engine.json"
+            fingerprint.write_text('{"schemaVersion":1}\n', encoding="utf-8")
+            args = argparse.Namespace(
+                scenario=FIXTURES / "n5-burst-loss.json",
+                run_id="m2-e-n5",
+                session_id="m2-e-n5-session",
+                git_commit="b" * 40,
+                fixture_manifest=ROOT / "test-fixtures" / "media" / "manifest.json",
+                device_api=36,
+                fault_engine_fingerprint=fingerprint,
+                created_at_utc="2026-09-27T17:00:00Z",
+            )
+            manifest = run_manifest.build(args)
+            self.assertEqual("NETWORK", manifest["scenario"]["primaryPlane"])
+            self.assertEqual(
+                run_manifest.sha256_file(fingerprint),
+                manifest["runtime"]["faultEngineFingerprintSha256"],
+            )
+
+            delattr(args, "fault_engine_fingerprint")
+            with self.assertRaises(ValueError):
+                run_manifest.build(args)
 
 
 if __name__ == "__main__":

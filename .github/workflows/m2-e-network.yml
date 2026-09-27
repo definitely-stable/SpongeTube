@@ -26,6 +26,7 @@ on:
       - "scripts/measurement/**"
       - "scripts/ci/verify-m2-e-network-evidence.sh"
       - "test-fixtures/network/m2/**"
+      - ".work/schemas/fault-engine-fingerprint-v1.schema.json"
   workflow_dispatch:
   schedule:
     - cron: "19 4 * * 1"
