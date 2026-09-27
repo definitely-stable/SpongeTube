@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "runId": "m2-e-example-run",
+  "sessionId": "m2-e-example-session",
+  "scenarioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "PASS",
+  "primaryPlane": "NETWORK",
+  "checks": {
+    "scenarioIdentity": true,
+    "faultOwnership": true,
+    "toolStateMatches": true,
+    "mediaPathTraversed": true,
+    "controlPathUnimpaired": true,
+    "seedBound": true,
+    "cleanupComplete": true,
+    "privacyClean": true,
+    "crossClockArithmeticAbsent": true
+  },
+  "gates": {
+    "M2-ACC-01": true,
+    "M2-ACC-02": true,
+    "M2-ACC-09": true
+  },
+  "limitations": [
+    "Contract example only; no runtime acceptance claim."
+  ]
+}
