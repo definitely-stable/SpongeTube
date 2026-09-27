@@ -380,7 +380,10 @@ jobs:
             printf 'ok\n' > "$case_root/health/qdisc-clean.txt"
             printf 'ok\n' > "$case_root/health/filter-clean.txt"
 
-            if pgrep -x toxiproxy-server >/dev/null 2>&1; then
+            # Linux comm is limited to 15 characters, so pgrep -x cannot
+            # reliably match the 16-character "toxiproxy-server" name.
+            # Match the executable token in the full command line instead.
+            if pgrep -f '(^|/)toxiproxy-server([[:space:]]|$)' >/dev/null 2>&1; then
               echo "Toxiproxy unexpectedly present in NETWORK run" >&2
               return 1
             fi
