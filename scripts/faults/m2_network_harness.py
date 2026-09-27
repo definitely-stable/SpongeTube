@@ -37,6 +37,7 @@ NETWORK_DIRECTION = "DOWNSTREAM"
 NETWORK_IP_FAMILY = "IPV4"
 NETWORK_L4_PROTOCOL = "TCP"
 PULSE_ARM_TIMEOUT_MS = 30_000
+BYPASS_PRIOMAP = [2] * 16
 
 VARIANTS = {
     "HIGH_RTT_JITTER": "HIGH_RTT_JITTER",
@@ -257,8 +258,16 @@ def normalize_tc_state(
     netem = _find_kind(qdiscs, "netem")
     if netem is None:
         fail("tc readback has no netem qdisc")
-    if _find_kind(qdiscs, "prio") is None:
+    prio = _find_kind(qdiscs, "prio")
+    if prio is None:
         fail("tc readback has no scoped prio qdisc")
+    prio_options = prio.get("options") or {}
+    if not isinstance(prio_options, dict):
+        fail("prio options readback is not an object")
+    if prio_options.get("bands") != 3:
+        fail("scoped prio qdisc must expose three bands")
+    if prio_options.get("priomap") != BYPASS_PRIOMAP:
+        fail("unmatched traffic is not pinned to the bypass band")
     if _find_kind(filters, "flower") is None:
         fail("tc readback has no flower classifier")
     if not _has_key_value(filters, "src_port", MEDIA_PORT):

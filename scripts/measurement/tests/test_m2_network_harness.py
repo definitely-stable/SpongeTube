@@ -134,7 +134,11 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
 
     def test_independent_tc_normalization_derives_integer_units(self):
         qdisc = [
-            {"kind": "prio", "handle": "1:"},
+            {
+                "kind": "prio",
+                "handle": "1:",
+                "options": {"bands": 3, "priomap": [2] * 16},
+            },
             {
                 "kind": "netem",
                 "handle": "10:",
@@ -171,6 +175,34 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
             },
             oracle.normalize_network_tc_state(qdisc, filters, "HIGH_RTT_JITTER"),
         )
+
+    def test_unmatched_prio_mapping_fails_closed(self):
+        qdisc = [
+            {
+                "kind": "prio",
+                "handle": "1:",
+                "options": {"bands": 3, "priomap": [1] + [2] * 15},
+            },
+            {
+                "kind": "netem",
+                "handle": "10:",
+                "parent": "1:1",
+                "options": {
+                    "loss-random": {"loss": 1.0, "correlation": 0.0},
+                    "seed": 7,
+                },
+            },
+        ]
+        filters = [{
+            "kind": "flower",
+            "protocol": "ip",
+            "options": {
+                "keys": {"ip_proto": "tcp", "src_port": 18081},
+                "classid": "1:1",
+            },
+        }]
+        with self.assertRaises(Exception):
+            oracle.normalize_network_tc_state(qdisc, filters, "BURST_PACKET_LOSS")
 
     def test_raw_addresses_never_enter_network_config(self):
         encoded = json.dumps(harness.compile_config(scenario("n5-burst-loss.json")))

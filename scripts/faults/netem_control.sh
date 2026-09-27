@@ -117,7 +117,10 @@ clear_root() {
 
 install_scoped_netem() {
   clear_root
-  tc_ns qdisc add dev "$LAB_IF" root handle 1: prio bands 3
+  # All unmatched skb priorities bypass band 1:1. Only the flower rule below
+  # may steer media responses into the impaired band.
+  tc_ns qdisc add dev "$LAB_IF" root handle 1: prio bands 3 \
+    priomap 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
   tc_ns qdisc add dev "$LAB_IF" parent 1:1 handle 10: netem "$@"
   tc_ns filter add dev "$LAB_IF" parent 1: protocol ip pref 10 flower     ip_proto tcp src_port "$MEDIA_PORT" flowid 1:1
 }

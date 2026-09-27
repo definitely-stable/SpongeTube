@@ -36,6 +36,8 @@ TRANSPORT_VARIANTS: dict[str, tuple[str, str, str]] = {
     "SLOW_CLOSE": ("SLOW_CLOSE", "slow_close", "DOWNSTREAM"),
 }
 
+BYPASS_PRIOMAP = [2] * 16
+
 PROVIDER_ACTIONS = {
     "REFRESH_DELIVERY_BINDING",
     "RERESOLVE_PROVIDER",
@@ -482,7 +484,15 @@ def normalize_network_tc_state(
     """Normalize raw pinned tc JSON without importing the harness implementation."""
     netem = _find_kind(qdiscs, "netem")
     require(netem is not None, "raw qdisc readback has no netem")
-    require(_find_kind(qdiscs, "prio") is not None, "raw qdisc readback has no scoped prio")
+    prio = _find_kind(qdiscs, "prio")
+    require(prio is not None, "raw qdisc readback has no scoped prio")
+    prio_options = prio.get("options") or {}
+    require(isinstance(prio_options, Mapping), "raw prio options must be an object")
+    require(prio_options.get("bands") == 3, "raw prio readback has unexpected band count")
+    require(
+        prio_options.get("priomap") == BYPASS_PRIOMAP,
+        "unmatched traffic is not pinned to the bypass band",
+    )
     require(_find_kind(filters, "flower") is not None, "raw filter readback has no flower")
     require(
         _contains_key_value(filters, "src_port", 18081),

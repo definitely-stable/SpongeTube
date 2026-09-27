@@ -129,6 +129,16 @@ jobs:
               done
               local media_addr
               media_addr="$(bash scripts/faults/m2_e0_netns.sh media-address)"
+
+              # A non-media response must stay in the bypass band and must not
+              # start the 100% blackout epoch.
+              curl --max-time 1 --silent "http://$media_addr:18082/" >/dev/null 2>&1 || true
+              sleep 0.1
+              kill -0 "$pulse_pid"
+              jq -e '.events[-1].operation == "FAULT_ARMED"'                 "$case_root/fault-harness-events.json" >/dev/null
+
+              # The media-port response is the only traffic allowed to enter
+              # band 1:1; it must trigger the first observed drop.
               curl --max-time 1 --silent "http://$media_addr:18081/" >/dev/null 2>&1 || true
               wait "$pulse_pid"
             else
