@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "CANDIDATE_E0",
+  "toxiproxy": {
+    "version": "2.12.0",
+    "asset": "toxiproxy-server-linux-amd64",
+    "downloadUrl": "https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/toxiproxy-server-linux-amd64",
+    "sha256": "556d891134a3c582dc1e1a3f7335fd55142e5965769855a00b944e13e48302fc"
+  },
+  "network": {
+    "runner": "ubuntu-24.04",
+    "requiredCapabilities": [
+      "passwordless-sudo",
+      "ip-netns",
+      "veth",
+      "tc-json",
+      "tc-flower",
+      "netem-seed"
+    ]
+  }
+}
