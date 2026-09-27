@@ -8,6 +8,7 @@ on:
       - "scripts/faults/**"
       - "scripts/ci/prepare-emulator.sh"
       - "tools/fault-harness/**"
+      - ".work/evidence/**"
       - "tools/media-lab/**"
       - "test-fixtures/media/**"
   workflow_dispatch:
