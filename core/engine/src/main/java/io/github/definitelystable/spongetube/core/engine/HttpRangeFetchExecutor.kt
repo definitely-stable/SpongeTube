@@ -71,7 +71,7 @@ internal class HttpRangeFetchExecutor(
         (statusCode: Int, header: (String) -> String?) -> ProviderSignal =
         { _, _ -> ProviderSignal.NONE },
     private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
-) : DeliveryBoundFetchAttemptExecutor {
+) : DeliveryBoundFetchAttemptExecutor, RouteBoundFetchAttemptExecutor {
     init {
         require(connectTimeoutMs > 0)
         require(readTimeoutMs > 0)
@@ -124,6 +124,7 @@ internal class HttpRangeFetchExecutor(
             emitChunk = emitChunk,
             resolveTarget = { targetFor(request) },
             bindingRevision = null,
+            routeBinding = null,
         )
 
     override suspend fun executeWithDeliveryBinding(
@@ -143,6 +144,34 @@ internal class HttpRangeFetchExecutor(
             emitChunk = emitChunk,
             resolveTarget = { bindingTargetFor?.invoke(request, deliveryBinding.material) },
             bindingRevision = deliveryBinding.revision,
+            routeBinding = null,
+        )
+
+    override suspend fun executeWithRouteBinding(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        routeBinding: ExternalRouteBinding,
+        deliveryBinding: DeliveryBindingSnapshot?,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition =
+        executeWithTarget(
+            request = request,
+            attempt = attempt,
+            onPhysicalAttemptStart = onPhysicalAttemptStart,
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+            resolveTarget = {
+                if (deliveryBinding == null) {
+                    targetFor(request)
+                } else {
+                    bindingTargetFor?.invoke(request, deliveryBinding.material)
+                }
+            },
+            bindingRevision = deliveryBinding?.revision,
+            routeBinding = routeBinding,
         )
 
     /**
@@ -159,6 +188,7 @@ internal class HttpRangeFetchExecutor(
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
         resolveTarget: () -> HttpRangeTarget?,
         bindingRevision: DeliveryBindingRevision?,
+        routeBinding: ExternalRouteBinding?,
     ): FetchAttemptDisposition {
         // These checks are local preflight. They must not consume
         // REMOTE_ATTEMPT because no socket/request exists yet.
@@ -180,7 +210,10 @@ internal class HttpRangeFetchExecutor(
         }
 
         return withContext(Dispatchers.IO) {
-            val connection = openConnection(target.url).apply {
+            val connection = (
+                routeBinding?.openConnection(target.url)
+                    ?: openConnection(target.url)
+                ).apply {
                 requestMethod = "GET"
                 connectTimeout = connectTimeoutMs
                 readTimeout = readTimeoutMs

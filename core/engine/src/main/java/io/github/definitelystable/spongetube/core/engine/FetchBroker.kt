@@ -93,18 +93,19 @@ internal class FetchBroker internal constructor(
      * exists if and only if the attempt is made. If it throws, the owner ends
      * as INTERNAL_FAILURE with zero attempts.
      *
-     * [deliveryBinding] is execution context, never identity: it is stored on
-     * the new owner only and a join never changes it. An owner carrying a
-     * binding is executed through [DeliveryBoundFetchAttemptExecutor]; an
-     * executor that does not implement it ends the owner as
-     * [FailureObservation.InternalFailure] with zero attempts and no
-     * admission, so a bound request is never sent unbound.
+     * [deliveryBinding] and [routeBinding] are execution context, never
+     * identity. A route-bound owner must be executed by
+     * [RouteBoundFetchAttemptExecutor]; unsupported executors fail closed with
+     * zero attempts, so an exact-route permit can never degrade into an
+     * ambient-default request. A caller that requires a route binding also
+     * cannot join a running owner on a different route.
      */
     internal suspend fun acquire(
         request: FetchRequest,
         consumer: FetchConsumer,
         admission: FetchAttemptAdmission? = null,
         deliveryBinding: DeliveryBindingSnapshot? = null,
+        routeBinding: ExternalRouteBinding? = null,
     ): FetchHandle {
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -127,11 +128,17 @@ internal class FetchBroker internal constructor(
                         initialConsumer = consumer,
                         admission = admission,
                         deliveryBinding = deliveryBinding,
+                        routeBinding = routeBinding,
                     )
                     active[request.fetchKey] = shared
                     created = shared
                 } else if (existing.state == SharedFetchState.RUNNING) {
                     ensureCompatible(existing, request)
+                    if (routeBinding != null && existing.routeBinding !== routeBinding) {
+                        throw IllegalStateException(
+                            "route-bound fetch cannot join an owner on a different route",
+                        )
+                    }
                     if (existing.consumers.containsKey(consumer.id)) {
                         throw FetchIdentityConflictException(
                             "consumer id already joined active fetch: " +
@@ -465,20 +472,39 @@ internal class FetchBroker internal constructor(
                     )
                 }
 
-                val binding = shared.deliveryBinding
-                val boundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
+                val deliveryBinding = shared.deliveryBinding
+                val routeBinding = shared.routeBinding
+                val routeBoundExecutor = executor as? RouteBoundFetchAttemptExecutor
+                val deliveryBoundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
                 disposition = when {
-                    binding != null && boundExecutor != null ->
-                        boundExecutor.executeWithDeliveryBinding(
+                    routeBinding != null && routeBoundExecutor != null ->
+                        routeBoundExecutor.executeWithRouteBinding(
                             request = shared.request,
                             attempt = attempt,
                             priority = shared.priority,
-                            deliveryBinding = binding,
+                            routeBinding = routeBinding,
+                            deliveryBinding = deliveryBinding,
                             onPhysicalAttemptStart = startPhysicalAttempt,
                             onTransportCorrelation = emitCorrelation,
                             emitChunk = emitChunk,
                         )
-                    binding != null ->
+                    routeBinding != null ->
+                        // Never strip a privacy route binding and fall back to
+                        // the ambient default network.
+                        FetchAttemptDisposition.Failure(
+                            FailureObservation.InternalFailure,
+                        )
+                    deliveryBinding != null && deliveryBoundExecutor != null ->
+                        deliveryBoundExecutor.executeWithDeliveryBinding(
+                            request = shared.request,
+                            attempt = attempt,
+                            priority = shared.priority,
+                            deliveryBinding = deliveryBinding,
+                            onPhysicalAttemptStart = startPhysicalAttempt,
+                            onTransportCorrelation = emitCorrelation,
+                            emitChunk = emitChunk,
+                        )
+                    deliveryBinding != null ->
                         // Execution context the executor cannot carry: never
                         // start an unbound request, fail with zero attempts.
                         FetchAttemptDisposition.Failure(
@@ -915,6 +941,24 @@ internal interface DeliveryBoundFetchAttemptExecutor : CorrelatingFetchAttemptEx
     ): FetchAttemptDisposition
 }
 
+/**
+ * Executor capability for an owner pinned to one exact external route (M2-F).
+ * [deliveryBinding] may coexist with the route binding; neither is stable work
+ * identity. Implementations must not silently fall back to an ambient default.
+ */
+internal interface RouteBoundFetchAttemptExecutor : CorrelatingFetchAttemptExecutor {
+    suspend fun executeWithRouteBinding(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        routeBinding: ExternalRouteBinding,
+        deliveryBinding: DeliveryBindingSnapshot?,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition
+}
+
 internal interface FetchPublishSink {
     suspend fun write(bytes: ByteArray)
 }
@@ -957,6 +1001,7 @@ private class SharedFetch(
     initialConsumer: FetchConsumer,
     val admission: FetchAttemptAdmission?,
     val deliveryBinding: DeliveryBindingSnapshot?,
+    val routeBinding: ExternalRouteBinding?,
 ) {
     val consumers = linkedMapOf(
         initialConsumer.id to initialConsumer,

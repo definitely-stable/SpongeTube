@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
 import android.os.SystemClock
+import io.github.definitelystable.spongetube.core.engine.ExternalRouteBinding
 import io.github.definitelystable.spongetube.core.engine.FetchAcquireDisposition
 import io.github.definitelystable.spongetube.core.engine.FetchAttemptAdmission
 import io.github.definitelystable.spongetube.core.engine.FetchBroker
@@ -318,8 +319,12 @@ internal class RecoveryCoordinator(
                     consumerKind = chain.effectivePriority.consumerKind
                 }
 
-                val outcome = runOwner(chain, ownerOrdinal, consumerKind)
-                    ?: return
+                val outcome = runOwner(
+                    chain,
+                    ownerOrdinal,
+                    consumerKind,
+                    permit.routeBinding,
+                ) ?: return
                 if (outcome.isSuccess) {
                     finish(
                         chain,
@@ -349,6 +354,7 @@ internal class RecoveryCoordinator(
         chain: RecoveryChain,
         ownerOrdinal: Int,
         consumerKind: FetchConsumerKind,
+        routeBinding: ExternalRouteBinding?,
     ): FetchOutcome? {
         val admitted = AtomicBoolean()
         // The binding is execution context, never identity: it is read outside
@@ -400,6 +406,7 @@ internal class RecoveryCoordinator(
                     }
                 },
                 deliveryBinding = binding,
+                routeBinding = routeBinding,
             )
         } catch (closedBroker: IllegalStateException) {
             if (closing) {
