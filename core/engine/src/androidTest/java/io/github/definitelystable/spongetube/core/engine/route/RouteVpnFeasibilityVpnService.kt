@@ -79,6 +79,10 @@ class RouteVpnFeasibilityVpnService : VpnService() {
         tunnel = established
         reflector = packetReflector
         packetReflector.start()
+        getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_READY, true)
+            .commit()
     }
 
     private fun stopProbeVpn() {
@@ -96,6 +100,7 @@ class RouteVpnFeasibilityVpnService : VpnService() {
                 .edit()
                 .putLong(KEY_REFLECTED_PACKETS, packetReflector.reflectedPackets())
                 .putLong(KEY_REFLECTED_BYTES, packetReflector.reflectedBytes())
+                .putBoolean(KEY_READY, false)
                 .commit()
         }
 
@@ -121,6 +126,7 @@ class RouteVpnFeasibilityVpnService : VpnService() {
         const val PREFERENCES = "m2_f0_vpn_probe"
         const val KEY_REFLECTED_PACKETS = "reflectedPackets"
         const val KEY_REFLECTED_BYTES = "reflectedBytes"
+        const val KEY_READY = "ready"
         const val SYNTHETIC_MEDIA_HOST = "203.0.113.2"
 
         private const val IPV4_DEFAULT_ROUTE = "0.0.0.0"
