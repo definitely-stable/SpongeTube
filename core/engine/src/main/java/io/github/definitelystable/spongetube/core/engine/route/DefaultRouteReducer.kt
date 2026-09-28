@@ -110,7 +110,8 @@ internal class DefaultRouteReducer(
                     RouteEventDisposition.STALE_IGNORED
                 }
             is RouteSignal.LegacySnapshot -> legacySnapshot(signal)
-            is RouteSignal.BootstrapSnapshot -> bootstrap(signal.routeRef)
+            is RouteSignal.BootstrapSnapshot ->
+                bootstrap(signal.routeRef, signal.executionBinding)
         }
         val observed = when (signal) {
             is RouteSignal.CapabilitiesChanged -> signal.capabilities
@@ -166,7 +167,10 @@ internal class DefaultRouteReducer(
         return RouteEventDisposition.APPLIED
     }
 
-    private fun bootstrap(ref: PlatformRouteRef?): RouteEventDisposition {
+    private fun bootstrap(
+        ref: PlatformRouteRef?,
+        executionBinding: RouteExecutionBinding?,
+    ): RouteEventDisposition {
         // A callback reduced earlier is fresher than this lookup.
         if (state != DefaultRouteState.Initializing) {
             return RouteEventDisposition.UNCHANGED
@@ -177,7 +181,7 @@ internal class DefaultRouteReducer(
             beginEpoch(
                 ref,
                 capabilities = null,
-                executionBinding = signal.executionBinding,
+                executionBinding = executionBinding,
             )
         }
         return RouteEventDisposition.APPLIED
