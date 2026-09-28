@@ -48,7 +48,7 @@ internal class DefaultRouteReducer(
     private var stopped = false
 
     val current: RouteObservation
-        get() = RouteObservation(sequence, state)
+        get() = RouteObservation(sequence, state, currentRef)
 
     fun start(elapsedRealtimeNs: Long): RouteObservation {
         check(!started) { "route reducer already started" }
@@ -230,7 +230,7 @@ internal class DefaultRouteReducer(
                 stateAfter = state,
             ),
         )
-        return RouteObservation(sequence, state)
+        return RouteObservation(sequence, state, currentRef)
     }
 
     private fun epochOf(state: DefaultRouteState): Long? =
