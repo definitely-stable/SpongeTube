@@ -1,6 +1,15 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
+import io.github.definitelystable.spongetube.core.engine.route.DefaultRouteState
+import io.github.definitelystable.spongetube.core.engine.route.ExternalFetchAction
+import io.github.definitelystable.spongetube.core.engine.route.ExternalFetchRouteReason
+import io.github.definitelystable.spongetube.core.engine.route.RouteEvidenceRecorder
+import io.github.definitelystable.spongetube.core.engine.route.RouteExecutionBinding
+import io.github.definitelystable.spongetube.core.engine.route.RouteObservation
+import io.github.definitelystable.spongetube.core.engine.route.SessionRouteGuard
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 
 /** Why an external attempt was permitted; an open, typed label. */
 @JvmInline
@@ -15,6 +24,8 @@ internal value class RecoveryPermitReason(val value: String) {
 
     companion object {
         val ALWAYS_PERMIT = RecoveryPermitReason("ALWAYS_PERMIT")
+        val ROUTE_READY = RecoveryPermitReason("ROUTE_READY")
+        val EXPLICIT_DIRECT_OVERRIDE = RecoveryPermitReason("EXPLICIT_DIRECT_OVERRIDE")
     }
 }
 
@@ -25,9 +36,13 @@ internal value class RecoveryPermitReason(val value: String) {
 internal data class RecoveryAttemptPermit(
     val routeEpoch: Long?,
     val reason: RecoveryPermitReason,
+    val routeBinding: RouteExecutionBinding? = null,
 ) {
     init {
         require(routeEpoch == null || routeEpoch >= 1)
+        require(routeBinding == null || routeEpoch != null) {
+            "route-bound permit requires a routeEpoch"
+        }
     }
 }
 
@@ -49,6 +64,58 @@ internal fun interface RecoveryAttemptGate {
                 routeEpoch = null,
                 reason = RecoveryPermitReason.ALWAYS_PERMIT,
             )
+        }
+    }
+}
+
+/**
+ * Fail-closed signal used when policy would allow an external attempt but the
+ * same route observation carries no executable binding. This is a contract
+ * violation, not a retryable network observation.
+ */
+internal class RouteExecutionBindingUnavailableException(
+    routeEpoch: Long,
+) : IllegalStateException("allowed route epoch $routeEpoch has no execution binding")
+
+/**
+ * M2-F route-aware gate.
+ *
+ * Every loop evaluates the current StateFlow value first. PAUSE waits only for
+ * a later observation sequence; there is no polling, delay or budget action.
+ * ALLOW returns the exact process-local binding carried by that observation.
+ */
+internal class RouteAwareRecoveryAttemptGate(
+    private val observations: StateFlow<RouteObservation>,
+    private val guard: SessionRouteGuard,
+    private val evidence: RouteEvidenceRecorder? = null,
+) : RecoveryAttemptGate {
+    override suspend fun awaitPermit(chainId: RecoveryChainId): RecoveryAttemptPermit {
+        var observation = observations.value
+        while (true) {
+            val decision = evidence?.evaluate(guard, observation)
+                ?: guard.evaluate(observation.state)
+
+            if (decision.action == ExternalFetchAction.ALLOW) {
+                val available = observation.state as? DefaultRouteState.Available
+                    ?: error("ALLOW requires an available default route")
+                val binding = observation.executionBinding
+                    ?: throw RouteExecutionBindingUnavailableException(available.routeEpoch)
+                val reason = when (decision.reason) {
+                    ExternalFetchRouteReason.ROUTE_READY ->
+                        RecoveryPermitReason.ROUTE_READY
+                    ExternalFetchRouteReason.EXPLICIT_DIRECT_OVERRIDE ->
+                        RecoveryPermitReason.EXPLICIT_DIRECT_OVERRIDE
+                    else -> error("ALLOW returned non-permit route reason: ${decision.reason}")
+                }
+                return RecoveryAttemptPermit(
+                    routeEpoch = available.routeEpoch,
+                    reason = reason,
+                    routeBinding = binding,
+                )
+            }
+
+            val evaluatedSequence = observation.sequence
+            observation = observations.first { it.sequence > evaluatedSequence }
         }
     }
 }

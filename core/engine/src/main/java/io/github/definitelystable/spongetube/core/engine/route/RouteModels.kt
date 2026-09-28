@@ -110,6 +110,11 @@ internal sealed interface DefaultRouteState {
 internal data class RouteObservation(
     val sequence: Long,
     val state: DefaultRouteState,
+    /**
+     * Process-local capability for the exact platform route represented by
+     * [state]. Deliberately excluded from stable identity and evidence.
+     */
+    val executionBinding: RouteExecutionBinding? = null,
 )
 
 internal enum class RouteSignalSource {
@@ -140,7 +145,10 @@ internal sealed interface RouteSignal {
     val kind: RouteSignalKind
     val routeRef: PlatformRouteRef?
 
-    data class Available(override val routeRef: PlatformRouteRef) : RouteSignal {
+    data class Available(
+        override val routeRef: PlatformRouteRef,
+        val executionBinding: RouteExecutionBinding? = null,
+    ) : RouteSignal {
         override val source get() = RouteSignalSource.DEFAULT_NETWORK_CALLBACK
         override val kind get() = RouteSignalKind.AVAILABLE
     }
@@ -179,10 +187,14 @@ internal sealed interface RouteSignal {
     data class LegacySnapshot(
         override val routeRef: PlatformRouteRef?,
         val capabilities: ObservedRouteCapabilities?,
+        val executionBinding: RouteExecutionBinding? = null,
     ) : RouteSignal {
         init {
             require(routeRef != null || capabilities == null) {
                 "capabilities require an active network"
+            }
+            require(routeRef != null || executionBinding == null) {
+                "route binding requires an active network"
             }
         }
 
@@ -194,7 +206,16 @@ internal sealed interface RouteSignal {
      * API 24+ one-time `activeNetwork` lookup after registration, outside any
      * callback. It only resolves INITIALIZING; it carries no capabilities.
      */
-    data class BootstrapSnapshot(override val routeRef: PlatformRouteRef?) : RouteSignal {
+    data class BootstrapSnapshot(
+        override val routeRef: PlatformRouteRef?,
+        val executionBinding: RouteExecutionBinding? = null,
+    ) : RouteSignal {
+        init {
+            require(routeRef != null || executionBinding == null) {
+                "route binding requires an active network"
+            }
+        }
+
         override val source get() = RouteSignalSource.BOOTSTRAP_ACTIVE_NETWORK
         override val kind get() = RouteSignalKind.BOOTSTRAP_SNAPSHOT
     }

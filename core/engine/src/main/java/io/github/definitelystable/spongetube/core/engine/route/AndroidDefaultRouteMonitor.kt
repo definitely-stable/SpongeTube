@@ -12,6 +12,8 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -83,21 +85,39 @@ private fun NetworkCapabilities.toObserved(): ObservedRouteCapabilities =
     mapRouteCapabilities(Build.VERSION.SDK_INT, ::hasCapability)
 
 /** Process-local, bounded Network -> opaque ref map. Never persisted. */
+private data class PlatformRouteHandle(
+    val ref: PlatformRouteRef,
+    val executionBinding: RouteExecutionBinding,
+)
+
+private class AndroidRouteExecutionBinding(
+    private val network: Network,
+) : RouteExecutionBinding {
+    override fun openConnection(url: URL): HttpURLConnection =
+        network.openConnection(url) as? HttpURLConnection
+            ?: error("route binding returned a non-HTTP connection")
+}
+
 private class PlatformRouteRefs {
     private val lock = Any()
     private var lastOrdinal = 0L
-    private val refs = object : LinkedHashMap<Network, PlatformRouteRef>(16, 0.75f, true) {
+    private val refs = object : LinkedHashMap<Network, PlatformRouteHandle>(16, 0.75f, true) {
         override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<Network, PlatformRouteRef>,
+            eldest: MutableMap.MutableEntry<Network, PlatformRouteHandle>,
         ): Boolean = size > MAX_TRACKED_NETWORKS
     }
 
-    fun refFor(network: Network): PlatformRouteRef = synchronized(lock) {
+    fun handleFor(network: Network): PlatformRouteHandle = synchronized(lock) {
         refs.getOrPut(network) {
             lastOrdinal += 1
-            PlatformRouteRef.ofOrdinal(lastOrdinal)
+            PlatformRouteHandle(
+                ref = PlatformRouteRef.ofOrdinal(lastOrdinal),
+                executionBinding = AndroidRouteExecutionBinding(network),
+            )
         }
     }
+
+    fun refFor(network: Network): PlatformRouteRef = handleFor(network).ref
 
     private companion object {
         const val MAX_TRACKED_NETWORKS = 32
@@ -118,7 +138,13 @@ private class DefaultNetworkCallbackPlatform(
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            sink?.offer(RouteSignal.Available(refs.refFor(network)))
+            val handle = refs.handleFor(network)
+            sink?.offer(
+                RouteSignal.Available(
+                    routeRef = handle.ref,
+                    executionBinding = handle.executionBinding,
+                ),
+            )
         }
 
         override fun onCapabilitiesChanged(
@@ -165,8 +191,13 @@ private class DefaultNetworkCallbackPlatform(
      * Only `activeNetwork` is read; capabilities come from callbacks.
      */
     override fun bootstrap(sink: RouteSignalSink) {
-        val active = connectivity.activeNetwork
-        sink.offer(RouteSignal.BootstrapSnapshot(active?.let(refs::refFor)))
+        val handle = connectivity.activeNetwork?.let(refs::handleFor)
+        sink.offer(
+            RouteSignal.BootstrapSnapshot(
+                routeRef = handle?.ref,
+                executionBinding = handle?.executionBinding,
+            ),
+        )
     }
 
     override fun unregister() {
@@ -234,10 +265,12 @@ private class LegacyConnectivityActionPlatform(
             }
             val capabilities = connectivity.getNetworkCapabilities(first)
             if (first == connectivity.activeNetwork) {
+                val handle = refs.handleFor(first)
                 sink.offer(
                     RouteSignal.LegacySnapshot(
-                        routeRef = refs.refFor(first),
+                        routeRef = handle.ref,
                         capabilities = capabilities?.toObserved(),
+                        executionBinding = handle.executionBinding,
                     ),
                 )
                 return

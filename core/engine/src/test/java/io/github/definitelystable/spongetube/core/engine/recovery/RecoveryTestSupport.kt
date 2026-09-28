@@ -11,6 +11,8 @@ import io.github.definitelystable.spongetube.core.engine.FetchPriority
 import io.github.definitelystable.spongetube.core.engine.FetchPublishSink
 import io.github.definitelystable.spongetube.core.engine.FetchPublisher
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
+import io.github.definitelystable.spongetube.core.engine.RouteBoundFetchAttemptExecutor
+import io.github.definitelystable.spongetube.core.engine.route.RouteExecutionBinding
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingEvent
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingEvidenceRecorder
@@ -66,12 +68,15 @@ internal typealias BoundAttemptScript =
  * records every execution and the delivery binding revision that execution
  * ran under (null on the unbound path), so binding lineage stays checkable.
  */
-internal class ScriptedOrigin : DeliveryBoundFetchAttemptExecutor {
+internal class ScriptedOrigin :
+    DeliveryBoundFetchAttemptExecutor,
+    RouteBoundFetchAttemptExecutor {
     private val scripts = ConcurrentHashMap<String, ConcurrentLinkedQueue<AttemptScript>>()
     private val boundScripts =
         ConcurrentHashMap<String, ConcurrentLinkedQueue<BoundAttemptScript>>()
     val executions = CopyOnWriteArrayList<String>()
     val bindingRevisions = CopyOnWriteArrayList<DeliveryBindingRevision?>()
+    val routeBindings = CopyOnWriteArrayList<RouteExecutionBinding?>()
 
     fun script(
         key: FetchKey,
@@ -98,6 +103,7 @@ internal class ScriptedOrigin : DeliveryBoundFetchAttemptExecutor {
         check(attempt == 1) { "M2-C owners make exactly one attempt" }
         executions += request.fetchKey.value
         bindingRevisions += null
+        routeBindings += null
         val script = scripts[request.fetchKey.value]?.poll()
         return script?.invoke(request, priority, emitChunk) ?: serve(request, emitChunk)
     }
@@ -122,10 +128,34 @@ internal class ScriptedOrigin : DeliveryBoundFetchAttemptExecutor {
         check(attempt == 1) { "M2-C owners make exactly one attempt" }
         executions += request.fetchKey.value
         bindingRevisions += deliveryBinding.revision
+        routeBindings += null
         onPhysicalAttemptStart()
         val bound = boundScripts[request.fetchKey.value]?.poll()
         if (bound != null) {
             return bound(request, priority, emitChunk, deliveryBinding.revision)
+        }
+        val script = scripts[request.fetchKey.value]?.poll()
+        return script?.invoke(request, priority, emitChunk) ?: serve(request, emitChunk)
+    }
+
+    override suspend fun executeWithRouteBinding(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        routeBinding: RouteExecutionBinding,
+        deliveryBinding: DeliveryBindingSnapshot?,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition {
+        check(attempt == 1) { "M2-C owners make exactly one attempt" }
+        executions += request.fetchKey.value
+        bindingRevisions += deliveryBinding?.revision
+        routeBindings += routeBinding
+        onPhysicalAttemptStart()
+        val bound = boundScripts[request.fetchKey.value]?.poll()
+        if (bound != null) {
+            return bound(request, priority, emitChunk, deliveryBinding?.revision)
         }
         val script = scripts[request.fetchKey.value]?.poll()
         return script?.invoke(request, priority, emitChunk) ?: serve(request, emitChunk)
