@@ -271,27 +271,57 @@ class RouteVpnFeasibilityAndroidTest {
     private suspend fun prepareVpn(context: Context, device: UiDevice) {
         val prepare = VpnService.prepare(context)
         if (prepare != null) {
-            prepare.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(prepare)
-            device.waitForIdle()
-
             val dialogPackage = checkNotNull(prepare.component?.packageName) {
                 "VpnService.prepare returned an intent without a component package"
             }
             val resourceIdRegex = "android:id/button1$|button_start_vpn"
+
+            RouteVpnFeasibilityConsentActivity.resetResult()
+            context.startActivity(
+                Intent(context, RouteVpnFeasibilityConsentActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            device.waitForIdle()
+
             val allow = device.findObject(
                 UiSelector()
                     .className("android.widget.Button")
                     .packageName(dialogPackage)
                     .resourceIdMatches(resourceIdRegex),
             )
+            val allowFound = allow.waitForExists(VPN_CONSENT_TIMEOUT_MS)
+            if (!allowFound) {
+                writeVpnConsentDiagnostics(
+                    context = context,
+                    device = device,
+                    dialogPackage = dialogPackage,
+                    prepareComponent = prepare.component?.flattenToShortString(),
+                    reason = "ALLOW_BUTTON_NOT_FOUND",
+                )
+            }
             assertTrue(
                 "VPN confirmation allow button not found; package=$dialogPackage " +
                     "resourceIdRegex=$resourceIdRegex",
-                allow.waitForExists(VPN_CONSENT_TIMEOUT_MS),
+                allowFound,
             )
             assertTrue("VPN confirmation click failed", allow.click())
             device.waitForIdle()
+
+            val resultCode = RouteVpnFeasibilityConsentActivity.awaitResult(VPN_CONSENT_TIMEOUT_MS)
+            if (resultCode != Activity.RESULT_OK) {
+                writeVpnConsentDiagnostics(
+                    context = context,
+                    device = device,
+                    dialogPackage = dialogPackage,
+                    prepareComponent = prepare.component?.flattenToShortString(),
+                    reason = "CONSENT_RESULT_$resultCode",
+                )
+            }
+            assertEquals(
+                "VPN confirmation dialog did not return RESULT_OK",
+                Activity.RESULT_OK,
+                resultCode,
+            )
 
             withTimeout(VPN_CONSENT_TIMEOUT_MS) {
                 while (VpnService.prepare(context) != null) {
@@ -300,6 +330,52 @@ class RouteVpnFeasibilityAndroidTest {
             }
         }
         assertTrue("VPN package is not prepared", VpnService.prepare(context) == null)
+    }
+
+    private fun writeVpnConsentDiagnostics(
+        context: Context,
+        device: UiDevice,
+        dialogPackage: String,
+        prepareComponent: String?,
+        reason: String,
+    ) {
+        val output = PlatformTestStorageRegistry.getInstance()
+        output.openOutputFile("$EVIDENCE_DIR/vpn-consent-debug.json")
+            .bufferedWriter()
+            .use { writer ->
+                writer.write(
+                    JSONObject(
+                        linkedMapOf(
+                            "schemaVersion" to 1,
+                            "phase" to "M2-F0",
+                            "reason" to reason,
+                            "dialogPackage" to dialogPackage,
+                            "prepareComponent" to prepareComponent,
+                            "currentPackageName" to device.currentPackageName,
+                        ),
+                    ).toString(2),
+                )
+                writer.newLine()
+            }
+
+        val hierarchy = File(context.cacheDir, "m2-f0-vpn-consent-window.xml")
+        runCatching {
+            device.dumpWindowHierarchy(hierarchy)
+            output.openOutputFile("$EVIDENCE_DIR/vpn-consent-window.xml").use { destination ->
+                hierarchy.inputStream().use { source -> source.copyTo(destination) }
+            }
+        }
+        hierarchy.delete()
+
+        val screenshot = File(context.cacheDir, "m2-f0-vpn-consent.png")
+        runCatching {
+            if (device.takeScreenshot(screenshot)) {
+                output.openOutputFile("$EVIDENCE_DIR/vpn-consent.png").use { destination ->
+                    screenshot.inputStream().use { source -> source.copyTo(destination) }
+                }
+            }
+        }
+        screenshot.delete()
     }
 
     private fun writeEvidence(
