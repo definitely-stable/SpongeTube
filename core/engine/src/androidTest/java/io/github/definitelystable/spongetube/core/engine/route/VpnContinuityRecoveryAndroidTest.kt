@@ -281,7 +281,7 @@ class VpnContinuityRecoveryAndroidTest {
                 ),
             )
             val chainId = handle.recoveryChainId.value
-            val outcomeDeferred = async { handle.await() }
+            val outcomeDeferred = scope.async { handle.await() }
 
             assertTrue(
                 "owner 1 was not admitted on the VPN route",
