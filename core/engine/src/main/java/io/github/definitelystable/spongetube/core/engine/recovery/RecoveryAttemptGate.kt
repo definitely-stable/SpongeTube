@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube.core.engine.recovery
 
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
+import io.github.definitelystable.spongetube.core.engine.FetchRouteExecutionBinding
 
 /** Why an external attempt was permitted; an open, typed label. */
 @JvmInline
@@ -25,6 +26,11 @@ internal value class RecoveryPermitReason(val value: String) {
 internal data class RecoveryAttemptPermit(
     val routeEpoch: Long?,
     val reason: RecoveryPermitReason,
+    /**
+     * Exact physical route selected by the gate. Process-local execution
+     * context only; RecoveryEvidence intentionally never serializes it.
+     */
+    val routeBinding: FetchRouteExecutionBinding? = null,
 ) {
     init {
         require(routeEpoch == null || routeEpoch >= 1)
