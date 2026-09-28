@@ -6,6 +6,7 @@ import io.github.definitelystable.spongetube.core.engine.recovery.CancellationKi
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
 import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
 import io.github.definitelystable.spongetube.core.engine.recovery.StorageFailureKind
+import io.github.definitelystable.spongetube.core.engine.route.RouteExecutionBinding
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentConflictException
 import io.github.definitelystable.spongetube.core.storage.ExtentIntegrityException
@@ -105,6 +106,7 @@ internal class FetchBroker internal constructor(
         consumer: FetchConsumer,
         admission: FetchAttemptAdmission? = null,
         deliveryBinding: DeliveryBindingSnapshot? = null,
+        routeBinding: RouteExecutionBinding? = null,
     ): FetchHandle {
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -127,6 +129,7 @@ internal class FetchBroker internal constructor(
                         initialConsumer = consumer,
                         admission = admission,
                         deliveryBinding = deliveryBinding,
+                        routeBinding = routeBinding,
                     )
                     active[request.fetchKey] = shared
                     created = shared
@@ -465,20 +468,39 @@ internal class FetchBroker internal constructor(
                     )
                 }
 
-                val binding = shared.deliveryBinding
-                val boundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
+                val deliveryBinding = shared.deliveryBinding
+                val routeBinding = shared.routeBinding
+                val routeBoundExecutor = executor as? RouteBoundFetchAttemptExecutor
+                val deliveryBoundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
                 disposition = when {
-                    binding != null && boundExecutor != null ->
-                        boundExecutor.executeWithDeliveryBinding(
+                    routeBinding != null && routeBoundExecutor != null ->
+                        routeBoundExecutor.executeWithRouteBinding(
                             request = shared.request,
                             attempt = attempt,
                             priority = shared.priority,
-                            deliveryBinding = binding,
+                            routeBinding = routeBinding,
+                            deliveryBinding = deliveryBinding,
                             onPhysicalAttemptStart = startPhysicalAttempt,
                             onTransportCorrelation = emitCorrelation,
                             emitChunk = emitChunk,
                         )
-                    binding != null ->
+                    routeBinding != null ->
+                        // The permit selected an exact platform route. Never
+                        // strip it or silently fall back to the ambient default.
+                        FetchAttemptDisposition.Failure(
+                            FailureObservation.InternalFailure,
+                        )
+                    deliveryBinding != null && deliveryBoundExecutor != null ->
+                        deliveryBoundExecutor.executeWithDeliveryBinding(
+                            request = shared.request,
+                            attempt = attempt,
+                            priority = shared.priority,
+                            deliveryBinding = deliveryBinding,
+                            onPhysicalAttemptStart = startPhysicalAttempt,
+                            onTransportCorrelation = emitCorrelation,
+                            emitChunk = emitChunk,
+                        )
+                    deliveryBinding != null ->
                         // Execution context the executor cannot carry: never
                         // start an unbound request, fail with zero attempts.
                         FetchAttemptDisposition.Failure(
@@ -915,6 +937,26 @@ internal interface DeliveryBoundFetchAttemptExecutor : CorrelatingFetchAttemptEx
     ): FetchAttemptDisposition
 }
 
+/**
+ * Executor capability for an owner permitted on one exact platform route.
+ *
+ * [deliveryBinding] is carried alongside the route binding when present so
+ * route execution never strips M2-D provider execution context. An executor
+ * lacking this capability fails closed in FetchBroker before admission.
+ */
+internal interface RouteBoundFetchAttemptExecutor : CorrelatingFetchAttemptExecutor {
+    suspend fun executeWithRouteBinding(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        routeBinding: RouteExecutionBinding,
+        deliveryBinding: DeliveryBindingSnapshot?,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition
+}
+
 internal interface FetchPublishSink {
     suspend fun write(bytes: ByteArray)
 }
@@ -957,6 +999,7 @@ private class SharedFetch(
     initialConsumer: FetchConsumer,
     val admission: FetchAttemptAdmission?,
     val deliveryBinding: DeliveryBindingSnapshot?,
+    val routeBinding: RouteExecutionBinding?,
 ) {
     val consumers = linkedMapOf(
         initialConsumer.id to initialConsumer,

@@ -5,11 +5,14 @@ import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKin
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingSnapshot
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
+import io.github.definitelystable.spongetube.core.engine.route.RouteExecutionBinding
 import io.github.definitelystable.spongetube.core.storage.CommittedExtent
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +31,7 @@ import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -780,6 +784,64 @@ class FetchBrokerTest {
         assertEquals(FailureObservation.InternalFailure, outcome.failure)
     }
 
+    @Test
+    fun routeBindingIsPassedToRouteBoundExecutorWithoutStrippingDeliveryBinding() = runTest {
+        val executor = RouteBoundExecutor()
+        val broker = FetchBroker(
+            publisher = FakePublisher(),
+            executor = executor,
+            sessionId = "test-session",
+            ownerScope = backgroundScope,
+            ownsScope = false,
+        )
+        val route = TestRouteBinding("route-7")
+        val delivery = DeliveryBindingSnapshot(
+            DeliveryBindingRevision("binding-7"),
+            TestDeliveryMaterial(),
+        )
+
+        val outcome = broker.acquire(
+            REQUEST,
+            consumer("route-bound-owner", FetchConsumerKind.PLAYBACK),
+            deliveryBinding = delivery,
+            routeBinding = route,
+        ).await()
+
+        assertEquals(FetchOutcomeKind.SUCCESS, outcome.kind)
+        assertEquals(1, executor.executions)
+        assertEquals(1, executor.admissions)
+        assertSame(route, executor.routeBindings.single())
+        assertEquals(
+            listOf(DeliveryBindingRevision("binding-7")),
+            executor.bindingRevisions,
+        )
+    }
+
+    @Test
+    fun ownerWithRouteBindingAndUnsupportedExecutorFailsClosedWithZeroAttempts() = runTest {
+        var executed = false
+        var admissions = 0
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, _ ->
+                executed = true
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val outcome = broker.acquire(
+            REQUEST,
+            consumer("route-capability-missing", FetchConsumerKind.RESERVE),
+            admission = FetchAttemptAdmission { _, _ -> admissions += 1 },
+            routeBinding = TestRouteBinding("route-unsupported"),
+        ).await()
+
+        assertFalse(executed)
+        assertEquals(0, admissions)
+        assertEquals(0, outcome.attempts)
+        assertEquals(FetchOutcomeKind.INTERNAL_FAILURE, outcome.kind)
+        assertEquals(FailureObservation.InternalFailure, outcome.failure)
+    }
+
     private fun TestScope.broker(
         executor: FetchAttemptExecutor,
         events: MutableList<FetchEvent> = mutableListOf(),
@@ -864,6 +926,56 @@ class FetchBrokerTest {
             emitChunk(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
             return FetchAttemptDisposition.Success()
         }
+    }
+
+    private class RouteBoundExecutor : RouteBoundFetchAttemptExecutor {
+        val routeBindings = mutableListOf<RouteExecutionBinding>()
+        val bindingRevisions = mutableListOf<DeliveryBindingRevision?>()
+        var executions = 0
+        var admissions = 0
+
+        override suspend fun execute(
+            request: FetchRequest,
+            attempt: Int,
+            priority: StateFlow<FetchPriority>,
+            emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        ): FetchAttemptDisposition =
+            error("a route-bound owner must not use the ambient path")
+
+        override suspend fun executeCorrelated(
+            request: FetchRequest,
+            attempt: Int,
+            priority: StateFlow<FetchPriority>,
+            onTransportCorrelation: suspend (String) -> Unit,
+            emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        ): FetchAttemptDisposition =
+            error("a route-bound owner must not use the ambient path")
+
+        override suspend fun executeWithRouteBinding(
+            request: FetchRequest,
+            attempt: Int,
+            priority: StateFlow<FetchPriority>,
+            routeBinding: RouteExecutionBinding,
+            deliveryBinding: DeliveryBindingSnapshot?,
+            onPhysicalAttemptStart: () -> Unit,
+            onTransportCorrelation: suspend (String) -> Unit,
+            emitChunk: suspend (FetchNetworkChunk) -> Unit,
+        ): FetchAttemptDisposition {
+            executions += 1
+            routeBindings += routeBinding
+            bindingRevisions += deliveryBinding?.revision
+            admissions += 1
+            onPhysicalAttemptStart()
+            emitChunk(FetchNetworkChunk(0, byteArrayOf(1, 2, 3, 4)))
+            return FetchAttemptDisposition.Success()
+        }
+    }
+
+    private class TestRouteBinding(
+        private val name: String,
+    ) : RouteExecutionBinding {
+        override fun openConnection(url: URL): HttpURLConnection =
+            error("$name should not open a connection in broker tests")
     }
 
     private class TestDeliveryMaterial : DeliveryMaterial

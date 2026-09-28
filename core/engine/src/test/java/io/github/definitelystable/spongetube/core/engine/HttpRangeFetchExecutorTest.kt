@@ -16,11 +16,13 @@ import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisi
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
 import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
+import io.github.definitelystable.spongetube.core.engine.route.RouteExecutionBinding
 import io.github.definitelystable.spongetube.core.storage.ExtentId
 import io.github.definitelystable.spongetube.core.storage.ExtentSpec
 import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URL
@@ -362,6 +364,52 @@ class HttpRangeFetchExecutorTest {
         assertTrue(disposition is FetchAttemptDisposition.Success, disposition.toString())
         assertEquals(1, admissions)
         assertEquals(listOf("binding-1"), bindingRevisionHeaders.toList())
+        assertArrayEquals(body.copyOfRange(100, 1_100), received.toByteArray())
+    }
+
+    @Test
+    fun routeBoundPathUsesExactRouteOpenerAndNeverAmbientOpener() {
+        var routeOpens = 0
+        var ambientOpens = 0
+        var admissions = 0
+        val received = ByteArrayOutputStream()
+        val executor = HttpRangeFetchExecutor(
+            targetFor = {
+                HttpRangeTarget(
+                    url = URL("http://127.0.0.1:${server.address.port}/fixtures/ROUTE/r"),
+                    resourceLength = RESOURCE_LENGTH.toLong(),
+                )
+            },
+            connectTimeoutMs = 5_000,
+            readTimeoutMs = 5_000,
+            openConnection = { url ->
+                ambientOpens += 1
+                url.openConnection() as HttpURLConnection
+            },
+        )
+        val routeBinding = RouteExecutionBinding { url ->
+            routeOpens += 1
+            url.openConnection() as HttpURLConnection
+        }
+
+        val disposition = runBlocking {
+            executor.executeWithRouteBinding(
+                request = request(100, 1_100),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                routeBinding = routeBinding,
+                deliveryBinding = null,
+                onPhysicalAttemptStart = { admissions += 1 },
+                onTransportCorrelation = { },
+            ) { chunk ->
+                received.write(chunk.bytes)
+            }
+        }
+
+        assertTrue(disposition is FetchAttemptDisposition.Success, disposition.toString())
+        assertEquals(1, routeOpens)
+        assertEquals(0, ambientOpens)
+        assertEquals(1, admissions)
         assertArrayEquals(body.copyOfRange(100, 1_100), received.toByteArray())
     }
 

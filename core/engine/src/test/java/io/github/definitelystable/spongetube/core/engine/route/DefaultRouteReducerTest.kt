@@ -4,6 +4,7 @@ import android.net.NetworkCapabilities
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -113,6 +114,46 @@ class DefaultRouteReducerTest {
 
         // Same platform network again: still a new epoch, nothing carried over.
         assertEquals(pending(3), reduce(RouteSignal.Available(B)).state)
+    }
+
+    @Test
+    fun monitorStopClearsExecutionBindingButKeepsReducedRouteState() {
+        val binding = RouteExecutionBinding { error("binding must not open in reducer test") }
+
+        start()
+        val available = reduce(RouteSignal.Available(A, binding))
+        assertSame(binding, available.executionBinding)
+        val stateBeforeStop = available.state
+
+        val stopped = reducer.stop(tick())
+
+        assertEquals(stateBeforeStop, stopped.state)
+        assertNull(stopped.executionBinding)
+        assertEquals(RouteSignalKind.MONITOR_STOPPED, events.last().signal)
+    }
+
+    @Test
+    fun routeExecutionBindingTracksOnlyTheCurrentEpochAndClearsOnLoss() {
+        val bindingA = RouteExecutionBinding { error("binding A must not open in reducer test") }
+        val bindingB = RouteExecutionBinding { error("binding B must not open in reducer test") }
+
+        start()
+        val first = reduce(RouteSignal.Available(A, bindingA))
+        assertSame(bindingA, first.executionBinding)
+
+        val sameEpoch = reduce(RouteSignal.CapabilitiesChanged(A, DIRECT))
+        assertSame(bindingA, sameEpoch.executionBinding)
+
+        val replacement = reduce(RouteSignal.Available(B, bindingB))
+        assertEquals(2L, (replacement.state as DefaultRouteState.Available).routeEpoch)
+        assertSame(bindingB, replacement.executionBinding)
+
+        val stale = reduce(RouteSignal.CapabilitiesChanged(A, VPN))
+        assertSame(bindingB, stale.executionBinding)
+
+        val lost = reduce(RouteSignal.Lost(B))
+        assertEquals(DefaultRouteState.Unavailable, lost.state)
+        assertNull(lost.executionBinding)
     }
 
     @Test

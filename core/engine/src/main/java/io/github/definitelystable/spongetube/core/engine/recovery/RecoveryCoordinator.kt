@@ -318,7 +318,7 @@ internal class RecoveryCoordinator(
                     consumerKind = chain.effectivePriority.consumerKind
                 }
 
-                val outcome = runOwner(chain, ownerOrdinal, consumerKind)
+                val outcome = runOwner(chain, ownerOrdinal, consumerKind, permit)
                     ?: return
                 if (outcome.isSuccess) {
                     finish(
@@ -349,6 +349,7 @@ internal class RecoveryCoordinator(
         chain: RecoveryChain,
         ownerOrdinal: Int,
         consumerKind: FetchConsumerKind,
+        permit: RecoveryAttemptPermit,
     ): FetchOutcome? {
         val admitted = AtomicBoolean()
         // The binding is execution context, never identity: it is read outside
@@ -400,6 +401,7 @@ internal class RecoveryCoordinator(
                     }
                 },
                 deliveryBinding = binding,
+                routeBinding = permit.routeBinding,
             )
         } catch (closedBroker: IllegalStateException) {
             if (closing) {
