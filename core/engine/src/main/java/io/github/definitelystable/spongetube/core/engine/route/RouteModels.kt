@@ -106,10 +106,17 @@ internal sealed interface DefaultRouteState {
     }
 }
 
-/** Reduced state plus the route-event sequence it reflects. */
+/**
+ * Reduced state plus the route-event sequence it reflects.
+ *
+ * [platformRouteRef] is process-local correlation only. It is deliberately
+ * excluded from portable route evidence and exists so M2-F can resolve the
+ * exact platform Network that produced an allowed observation.
+ */
 internal data class RouteObservation(
     val sequence: Long,
     val state: DefaultRouteState,
+    val platformRouteRef: PlatformRouteRef? = null,
 )
 
 internal enum class RouteSignalSource {
