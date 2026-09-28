@@ -71,7 +71,7 @@ internal class HttpRangeFetchExecutor(
         (statusCode: Int, header: (String) -> String?) -> ProviderSignal =
         { _, _ -> ProviderSignal.NONE },
     private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
-) : DeliveryBoundFetchAttemptExecutor {
+) : ExecutionBoundFetchAttemptExecutor {
     init {
         require(connectTimeoutMs > 0)
         require(readTimeoutMs > 0)
@@ -124,6 +124,7 @@ internal class HttpRangeFetchExecutor(
             emitChunk = emitChunk,
             resolveTarget = { targetFor(request) },
             bindingRevision = null,
+            connectionOpener = openConnection,
         )
 
     override suspend fun executeWithDeliveryBinding(
@@ -143,7 +144,39 @@ internal class HttpRangeFetchExecutor(
             emitChunk = emitChunk,
             resolveTarget = { bindingTargetFor?.invoke(request, deliveryBinding.material) },
             bindingRevision = deliveryBinding.revision,
+            connectionOpener = openConnection,
         )
+
+    override suspend fun executeWithExecutionContext(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        context: FetchAttemptExecutionContext,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition {
+        val connectionOpener = when (val routeBinding = context.routeBinding) {
+            null -> openConnection
+            is HttpUrlConnectionRouteExecutionBinding -> routeBinding::openConnection
+            else -> return failure(FailureObservation.InternalFailure, null)
+        }
+        val deliveryBinding = context.deliveryBinding
+        return executeWithTarget(
+            request = request,
+            attempt = attempt,
+            onPhysicalAttemptStart = onPhysicalAttemptStart,
+            onTransportCorrelation = onTransportCorrelation,
+            emitChunk = emitChunk,
+            resolveTarget = if (deliveryBinding == null) {
+                { targetFor(request) }
+            } else {
+                { bindingTargetFor?.invoke(request, deliveryBinding.material) }
+            },
+            bindingRevision = deliveryBinding?.revision,
+            connectionOpener = connectionOpener,
+        )
+    }
 
     /**
      * One physical origin request shared by the bound and unbound paths; only
@@ -159,6 +192,7 @@ internal class HttpRangeFetchExecutor(
         emitChunk: suspend (FetchNetworkChunk) -> Unit,
         resolveTarget: () -> HttpRangeTarget?,
         bindingRevision: DeliveryBindingRevision?,
+        connectionOpener: (URL) -> HttpURLConnection,
     ): FetchAttemptDisposition {
         // These checks are local preflight. They must not consume
         // REMOTE_ATTEMPT because no socket/request exists yet.
@@ -180,7 +214,7 @@ internal class HttpRangeFetchExecutor(
         }
 
         return withContext(Dispatchers.IO) {
-            val connection = openConnection(target.url).apply {
+            val connection = connectionOpener(target.url).apply {
                 requestMethod = "GET"
                 connectTimeout = connectTimeoutMs
                 readTimeout = readTimeoutMs
