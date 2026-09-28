@@ -179,6 +179,7 @@ jobs:
           path: |
             build/m2-f0/
             core/engine/build/outputs/androidTest-results/
+            core/engine/build/outputs/connected_android_test_additional_output/
             core/engine/build/reports/androidTests/
           if-no-files-found: error
           retention-days: 14
