@@ -13,6 +13,7 @@ import io.github.definitelystable.spongetube.core.engine.FetchKey
 import io.github.definitelystable.spongetube.core.engine.FetchOutcome
 import io.github.definitelystable.spongetube.core.engine.FetchPriority
 import io.github.definitelystable.spongetube.core.engine.FetchRequest
+import io.github.definitelystable.spongetube.core.engine.FetchRouteExecutionBinding
 import io.github.definitelystable.spongetube.core.engine.attemptCorrelationId
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCaller
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
@@ -318,8 +319,12 @@ internal class RecoveryCoordinator(
                     consumerKind = chain.effectivePriority.consumerKind
                 }
 
-                val outcome = runOwner(chain, ownerOrdinal, consumerKind)
-                    ?: return
+                val outcome = runOwner(
+                    chain = chain,
+                    ownerOrdinal = ownerOrdinal,
+                    consumerKind = consumerKind,
+                    routeBinding = permit.routeBinding,
+                ) ?: return
                 if (outcome.isSuccess) {
                     finish(
                         chain,
@@ -349,6 +354,7 @@ internal class RecoveryCoordinator(
         chain: RecoveryChain,
         ownerOrdinal: Int,
         consumerKind: FetchConsumerKind,
+        routeBinding: FetchRouteExecutionBinding?,
     ): FetchOutcome? {
         val admitted = AtomicBoolean()
         // The binding is execution context, never identity: it is read outside
@@ -400,6 +406,7 @@ internal class RecoveryCoordinator(
                     }
                 },
                 deliveryBinding = binding,
+                routeBinding = routeBinding,
             )
         } catch (closedBroker: IllegalStateException) {
             if (closing) {
