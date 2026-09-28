@@ -12,6 +12,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
+import io.github.definitelystable.spongetube.core.engine.HttpUrlConnectionRouteExecutionBinding
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -82,6 +85,20 @@ internal const val SUSPENDED_API_FLOOR = 28
 private fun NetworkCapabilities.toObserved(): ObservedRouteCapabilities =
     mapRouteCapabilities(Build.VERSION.SDK_INT, ::hasCapability)
 
+/**
+ * Exact Android Network capability for the HttpRange F1 proof seam.
+ *
+ * The raw Network remains private to this file and is never serialized,
+ * compared as stable identity or exposed to RecoveryEvidence.
+ */
+private class AndroidNetworkExecutionBinding(
+    private val network: Network,
+) : HttpUrlConnectionRouteExecutionBinding {
+    override fun openConnection(url: URL): HttpURLConnection =
+        network.openConnection(url) as? HttpURLConnection
+            ?: error("route-bound URL did not create HttpURLConnection")
+}
+
 /** Process-local, bounded Network -> opaque ref map. Never persisted. */
 private class PlatformRouteRefs {
     private val lock = Any()
@@ -98,6 +115,14 @@ private class PlatformRouteRefs {
             PlatformRouteRef.ofOrdinal(lastOrdinal)
         }
     }
+
+    fun executionBindingFor(routeRef: PlatformRouteRef): HttpUrlConnectionRouteExecutionBinding? =
+        synchronized(lock) {
+            refs.entries
+                .firstOrNull { it.value == routeRef }
+                ?.key
+                ?.let(::AndroidNetworkExecutionBinding)
+        }
 
     private companion object {
         const val MAX_TRACKED_NETWORKS = 32
@@ -169,6 +194,11 @@ private class DefaultNetworkCallbackPlatform(
         sink.offer(RouteSignal.BootstrapSnapshot(active?.let(refs::refFor)))
     }
 
+    override fun executionBinding(
+        routeRef: PlatformRouteRef,
+    ): HttpUrlConnectionRouteExecutionBinding? =
+        refs.executionBindingFor(routeRef)
+
     override fun unregister() {
         sink = null
         connectivity.unregisterNetworkCallback(callback)
@@ -218,6 +248,11 @@ private class LegacyConnectivityActionPlatform(
     override fun bootstrap(sink: RouteSignalSink) {
         snapshot(sink)
     }
+
+    override fun executionBinding(
+        routeRef: PlatformRouteRef,
+    ): HttpUrlConnectionRouteExecutionBinding? =
+        refs.executionBindingFor(routeRef)
 
     override fun unregister() {
         sink = null
