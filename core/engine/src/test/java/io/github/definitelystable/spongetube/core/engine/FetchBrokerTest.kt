@@ -780,6 +780,31 @@ class FetchBrokerTest {
         assertEquals(FailureObservation.InternalFailure, outcome.failure)
     }
 
+    @Test
+    fun ownerWithRouteBindingAndUnsupportedExecutorFailsClosedWithZeroAttempts() = runTest {
+        var executed = false
+        var admissions = 0
+        val broker = broker(
+            executor = FetchAttemptExecutor { _, _, _, _ ->
+                executed = true
+                FetchAttemptDisposition.Success()
+            },
+        )
+
+        val outcome = broker.acquire(
+            REQUEST,
+            consumer("route-bound-unsupported", FetchConsumerKind.RESERVE),
+            admission = FetchAttemptAdmission { _, _ -> admissions += 1 },
+            routeBinding = object : FetchRouteExecutionBinding {},
+        ).await()
+
+        assertFalse(executed)
+        assertEquals(0, admissions)
+        assertEquals(0, outcome.attempts)
+        assertEquals(FetchOutcomeKind.INTERNAL_FAILURE, outcome.kind)
+        assertEquals(FailureObservation.InternalFailure, outcome.failure)
+    }
+
     private fun TestScope.broker(
         executor: FetchAttemptExecutor,
         events: MutableList<FetchEvent> = mutableListOf(),
