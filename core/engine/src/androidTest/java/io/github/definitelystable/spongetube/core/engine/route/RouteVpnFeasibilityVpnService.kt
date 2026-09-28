@@ -67,6 +67,11 @@ class RouteVpnFeasibilityVpnService : VpnService() {
             .addAddress(VPN_CLIENT_ADDRESS, VPN_PREFIX_LENGTH)
             .addRoute(IPV4_DEFAULT_ROUTE, IPV4_DEFAULT_PREFIX_LENGTH)
             .setUnderlyingNetworks(arrayOf(underlying))
+            // PacketReflector performs a blocking Os.read loop, matching the
+            // Android CTS VPN reflection harness. Without this the default
+            // non-blocking TUN fd can return EAGAIN and terminate the reflector
+            // before the first TCP SYN is reflected.
+            .setBlocking(true)
             .establish()
             ?: error("VpnService.Builder.establish returned null")
 
