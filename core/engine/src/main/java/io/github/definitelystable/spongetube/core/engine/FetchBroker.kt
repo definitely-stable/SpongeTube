@@ -93,18 +93,19 @@ internal class FetchBroker internal constructor(
      * exists if and only if the attempt is made. If it throws, the owner ends
      * as INTERNAL_FAILURE with zero attempts.
      *
-     * [deliveryBinding] is execution context, never identity: it is stored on
-     * the new owner only and a join never changes it. An owner carrying a
-     * binding is executed through [DeliveryBoundFetchAttemptExecutor]; an
-     * executor that does not implement it ends the owner as
-     * [FailureObservation.InternalFailure] with zero attempts and no
-     * admission, so a bound request is never sent unbound.
+     * [deliveryBinding] and [routeBinding] are execution context, never
+     * identity: they are stored on the new owner only and a join never changes
+     * them. An owner carrying an exact route binding is executed only through
+     * [ExecutionBoundFetchAttemptExecutor]; an executor that cannot honor that
+     * binding fails closed with zero attempts and no admission, so a permitted
+     * route can never silently fall back to the ambient default.
      */
     internal suspend fun acquire(
         request: FetchRequest,
         consumer: FetchConsumer,
         admission: FetchAttemptAdmission? = null,
         deliveryBinding: DeliveryBindingSnapshot? = null,
+        routeBinding: FetchRouteExecutionBinding? = null,
     ): FetchHandle {
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -127,6 +128,7 @@ internal class FetchBroker internal constructor(
                         initialConsumer = consumer,
                         admission = admission,
                         deliveryBinding = deliveryBinding,
+                        routeBinding = routeBinding,
                     )
                     active[request.fetchKey] = shared
                     created = shared
@@ -466,10 +468,31 @@ internal class FetchBroker internal constructor(
                 }
 
                 val binding = shared.deliveryBinding
-                val boundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
+                val routeBinding = shared.routeBinding
+                val executionBoundExecutor = executor as? ExecutionBoundFetchAttemptExecutor
+                val deliveryBoundExecutor = executor as? DeliveryBoundFetchAttemptExecutor
                 disposition = when {
-                    binding != null && boundExecutor != null ->
-                        boundExecutor.executeWithDeliveryBinding(
+                    routeBinding != null && executionBoundExecutor != null ->
+                        executionBoundExecutor.executeWithExecutionContext(
+                            request = shared.request,
+                            attempt = attempt,
+                            priority = shared.priority,
+                            context = FetchAttemptExecutionContext(
+                                deliveryBinding = binding,
+                                routeBinding = routeBinding,
+                            ),
+                            onPhysicalAttemptStart = startPhysicalAttempt,
+                            onTransportCorrelation = emitCorrelation,
+                            emitChunk = emitChunk,
+                        )
+                    routeBinding != null ->
+                        // Exact route execution is mandatory. Never fall back to
+                        // the ambient default or charge a physical attempt.
+                        FetchAttemptDisposition.Failure(
+                            FailureObservation.InternalFailure,
+                        )
+                    binding != null && deliveryBoundExecutor != null ->
+                        deliveryBoundExecutor.executeWithDeliveryBinding(
                             request = shared.request,
                             attempt = attempt,
                             priority = shared.priority,
@@ -479,8 +502,8 @@ internal class FetchBroker internal constructor(
                             emitChunk = emitChunk,
                         )
                     binding != null ->
-                        // Execution context the executor cannot carry: never
-                        // start an unbound request, fail with zero attempts.
+                        // Delivery execution context the executor cannot carry:
+                        // never start an unbound request.
                         FetchAttemptDisposition.Failure(
                             FailureObservation.InternalFailure,
                         )
@@ -915,6 +938,24 @@ internal interface DeliveryBoundFetchAttemptExecutor : CorrelatingFetchAttemptEx
     ): FetchAttemptDisposition
 }
 
+/**
+ * Executor capability for an owner carrying an exact route binding.
+ *
+ * The complete context is passed together so delivery refresh and route
+ * binding cannot be applied by two independent physical request owners.
+ */
+internal interface ExecutionBoundFetchAttemptExecutor : DeliveryBoundFetchAttemptExecutor {
+    suspend fun executeWithExecutionContext(
+        request: FetchRequest,
+        attempt: Int,
+        priority: StateFlow<FetchPriority>,
+        context: FetchAttemptExecutionContext,
+        onPhysicalAttemptStart: () -> Unit,
+        onTransportCorrelation: suspend (String) -> Unit,
+        emitChunk: suspend (FetchNetworkChunk) -> Unit,
+    ): FetchAttemptDisposition
+}
+
 internal interface FetchPublishSink {
     suspend fun write(bytes: ByteArray)
 }
@@ -957,6 +998,7 @@ private class SharedFetch(
     initialConsumer: FetchConsumer,
     val admission: FetchAttemptAdmission?,
     val deliveryBinding: DeliveryBindingSnapshot?,
+    val routeBinding: FetchRouteExecutionBinding?,
 ) {
     val consumers = linkedMapOf(
         initialConsumer.id to initialConsumer,
