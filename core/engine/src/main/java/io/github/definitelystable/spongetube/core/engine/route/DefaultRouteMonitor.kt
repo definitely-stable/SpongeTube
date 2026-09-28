@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine.route
 
+import io.github.definitelystable.spongetube.core.engine.FetchRouteExecutionBinding
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -24,6 +25,13 @@ internal interface RouteSignalPlatform {
 
     /** One synchronous lookup after registration, outside any callback. */
     fun bootstrap(sink: RouteSignalSink)
+
+    /**
+     * Resolves a process-local route ref to an exact physical execution
+     * binding. Host fakes may return null. Raw platform network objects never
+     * cross this boundary.
+     */
+    fun executionBinding(routeRef: PlatformRouteRef): FetchRouteExecutionBinding? = null
 
     fun unregister()
 }
@@ -59,6 +67,17 @@ internal class DefaultRouteMonitor private constructor(
 
     val isClosed: Boolean
         get() = closed.get()
+
+    /**
+     * Resolves exactly the platform route reduced into [observation]. A route
+     * replacement after the observation does not retarget this lookup.
+     */
+    fun executionBindingFor(observation: RouteObservation): FetchRouteExecutionBinding? {
+        val available = observation.state as? DefaultRouteState.Available ?: return null
+        val routeRef = observation.platformRouteRef ?: return null
+        require(available.routeEpoch > 0)
+        return platform.executionBinding(routeRef)
+    }
 
     /**
      * 1. marks closed; 2. unregisters the platform observer; 3. stops
