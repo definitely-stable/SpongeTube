@@ -167,6 +167,35 @@ class RouteAwareRecoveryAttemptGateTest {
     }
 
     @Test
+    fun permitKeepsExactEpochBindingAfterAmbientRouteReplacement() = runTest {
+        val routeA = binding("route-A")
+        val routeB = binding("route-B")
+        val flow = MutableStateFlow(
+            available(
+                sequence = 1,
+                epoch = 10,
+                vpn = ObservedBoolean.FALSE,
+                binding = routeA,
+            ),
+        )
+        val gate = RouteAwareRecoveryAttemptGate(flow, SessionRouteGuard())
+
+        val permitA = gate.awaitPermit(CHAIN)
+        flow.value = available(
+            sequence = 2,
+            epoch = 11,
+            vpn = ObservedBoolean.FALSE,
+            binding = routeB,
+        )
+
+        assertEquals(10L, permitA.routeEpoch)
+        assertSame(routeA, permitA.routeBinding)
+        val permitB = gate.awaitPermit(CHAIN)
+        assertEquals(11L, permitB.routeEpoch)
+        assertSame(routeB, permitB.routeBinding)
+    }
+
+    @Test
     fun allowedStateWithoutBindingFailsClosed() {
         val flow = MutableStateFlow(
             available(

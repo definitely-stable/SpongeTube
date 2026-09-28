@@ -67,6 +67,10 @@ internal class DefaultRouteReducer(
     fun stop(elapsedRealtimeNs: Long): RouteObservation {
         checkRunning()
         stopped = true
+        // A stopped monitor must not leave an executable platform capability
+        // available to a later/incorrect gate invocation. Evidence keeps the
+        // reduced state, while execution fails closed after lifecycle stop.
+        currentBinding = null
         return record(
             elapsedRealtimeNs = elapsedRealtimeNs,
             source = RouteSignalSource.MONITOR_LIFECYCLE,

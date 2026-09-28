@@ -117,6 +117,22 @@ class DefaultRouteReducerTest {
     }
 
     @Test
+    fun monitorStopClearsExecutionBindingButKeepsReducedRouteState() {
+        val binding = RouteExecutionBinding { error("binding must not open in reducer test") }
+
+        start()
+        val available = reduce(RouteSignal.Available(A, binding))
+        assertSame(binding, available.executionBinding)
+        val stateBeforeStop = available.state
+
+        val stopped = reducer.stop(tick())
+
+        assertEquals(stateBeforeStop, stopped.state)
+        assertNull(stopped.executionBinding)
+        assertEquals(RouteSignalKind.MONITOR_STOPPED, events.last().signal)
+    }
+
+    @Test
     fun routeExecutionBindingTracksOnlyTheCurrentEpochAndClearsOnLoss() {
         val bindingA = RouteExecutionBinding { error("binding A must not open in reducer test") }
         val bindingB = RouteExecutionBinding { error("binding B must not open in reducer test") }
