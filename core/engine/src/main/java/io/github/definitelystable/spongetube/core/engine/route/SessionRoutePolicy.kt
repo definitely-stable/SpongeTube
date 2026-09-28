@@ -1,5 +1,9 @@
 package io.github.definitelystable.spongetube.core.engine.route
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 /** Per-session VPN continuity state (.work/milestones/M2.md 8.6). */
 internal enum class SessionRouteGuardState {
     UNRESOLVED,
@@ -128,18 +132,32 @@ internal class SessionRouteGuard(
 ) {
     private val lock = Any()
     private var guardState = SessionRouteGuardState.UNRESOLVED
-    private var override = explicitDirectOverride
+    private val directOverride = MutableStateFlow(explicitDirectOverride)
 
     val state: SessionRouteGuardState
         get() = synchronized(lock) { guardState }
 
+    /**
+     * Session-level user choice. StateFlow makes a change observable by an
+     * already-paused route gate; changing this flag never opens an owner or
+     * spends recovery budget by itself.
+     */
     var explicitDirectOverride: Boolean
-        get() = synchronized(lock) { override }
-        set(value) = synchronized(lock) { override = value }
+        get() = directOverride.value
+        set(value) {
+            directOverride.value = value
+        }
+
+    internal val explicitDirectOverrideState: StateFlow<Boolean> =
+        directOverride.asStateFlow()
 
     fun evaluate(route: DefaultRouteState): ExternalFetchRouteDecision =
         synchronized(lock) {
-            evaluateExternalFetchRoute(guardState, route, override).also {
+            evaluateExternalFetchRoute(
+                guard = guardState,
+                route = route,
+                explicitDirectOverride = directOverride.value,
+            ).also {
                 guardState = it.guardAfter
             }
         }

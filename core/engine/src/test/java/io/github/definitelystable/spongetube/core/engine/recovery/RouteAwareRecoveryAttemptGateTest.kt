@@ -111,6 +111,56 @@ class RouteAwareRecoveryAttemptGateTest {
     }
 
     @Test
+    fun explicitOverrideWakesAlreadyPausedGateWithoutRouteCallback() = runTest {
+        val recorder = RouteEvidenceRecorder("run-f3", "session-f3", androidApi = 36)
+        val vpn = binding("vpn")
+        val direct = binding("direct")
+        val flow = MutableStateFlow(available(1, 1, ObservedBoolean.TRUE, vpn))
+        val guard = SessionRouteGuard()
+        val gate = RouteAwareRecoveryAttemptGate(flow, guard, recorder)
+
+        val first = gate.awaitPermit(CHAIN)
+        assertEquals(RecoveryPermitReason.ROUTE_READY, first.reason)
+        assertSame(vpn, first.routeBinding)
+        assertEquals(SessionRouteGuardState.VPN_CONTINUITY_REQUIRED, guard.state)
+
+        flow.value = available(2, 2, ObservedBoolean.FALSE, direct)
+        val waiting = async(start = CoroutineStart.UNDISPATCHED) {
+            gate.awaitPermit(CHAIN)
+        }
+        assertFalse(waiting.isCompleted)
+        assertEquals(
+            ExternalFetchRouteReason.VPN_CONTINUITY_REQUIRED,
+            recorder.policyEvaluations().last().decision.reason,
+        )
+
+        // No route callback follows. The user choice itself must wake the
+        // suspended gate and re-evaluate the same direct route observation.
+        guard.explicitDirectOverride = true
+        runCurrent()
+
+        val permit = waiting.await()
+        assertEquals(2L, permit.routeEpoch)
+        assertEquals(RecoveryPermitReason.EXPLICIT_DIRECT_OVERRIDE, permit.reason)
+        assertSame(direct, permit.routeBinding)
+        assertEquals(2L, flow.value.sequence)
+
+        val lastTwo = recorder.policyEvaluations().takeLast(2)
+        assertEquals(
+            listOf(
+                ExternalFetchRouteReason.VPN_CONTINUITY_REQUIRED,
+                ExternalFetchRouteReason.EXPLICIT_DIRECT_OVERRIDE,
+            ),
+            lastTwo.map { it.decision.reason },
+        )
+        assertEquals(
+            listOf(2L, 2L),
+            lastTwo.map { it.routeEventSequenceWatermark },
+        )
+        assertEquals(listOf(2L, 2L), lastTwo.map { it.routeEpoch })
+    }
+
+    @Test
     fun explicitOverrideLiftsOnlyVpnContinuity() = runTest {
         val flow = MutableStateFlow(available(1, 1, ObservedBoolean.TRUE, binding("vpn")))
         val guard = SessionRouteGuard()

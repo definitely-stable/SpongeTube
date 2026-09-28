@@ -9,6 +9,7 @@ import io.github.definitelystable.spongetube.core.engine.route.RouteExecutionBin
 import io.github.definitelystable.spongetube.core.engine.route.RouteObservation
 import io.github.definitelystable.spongetube.core.engine.route.SessionRouteGuard
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 /** Why an external attempt was permitted; an open, typed label. */
@@ -115,7 +116,16 @@ internal class RouteAwareRecoveryAttemptGate(
             }
 
             val evaluatedSequence = observation.sequence
-            observation = observations.first { it.sequence > evaluatedSequence }
+            val evaluatedOverride = decision.explicitDirectOverride
+            observation = combine(
+                observations,
+                guard.explicitDirectOverrideState,
+            ) { nextObservation, directOverride ->
+                nextObservation to directOverride
+            }.first { (nextObservation, directOverride) ->
+                nextObservation.sequence > evaluatedSequence ||
+                    directOverride != evaluatedOverride
+            }.first
         }
     }
 }
