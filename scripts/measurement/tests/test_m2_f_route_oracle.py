@@ -17,6 +17,7 @@ from m2_f_route_oracle import (
     _verify_route_privacy,
     build_scenario,
     canonical_json_sha256,
+    observed_semantic_sequence,
     prepare,
     semantic_sequence,
 )
@@ -86,6 +87,116 @@ class M2FScenarioTest(unittest.TestCase):
             ),
         )
         self.assertNotEqual(restored_digest, override_digest)
+
+
+class M2FObservedSemanticReplayTest(unittest.TestCase):
+    def test_f2_observed_sequence_is_built_from_runtime_artifacts(self):
+        case = {
+            "initialRouteEpoch": 7,
+            "restoredRouteEpoch": 9,
+        }
+        route = {
+            "policyEvaluations": [
+                {
+                    "routeEpoch": None,
+                    "decision": "PAUSE",
+                    "reason": "NO_USABLE_DEFAULT",
+                }
+            ]
+        }
+        budget = {
+            "events": [
+                {
+                    "kind": "ATTEMPT_PERMIT_GRANTED",
+                    "permit": {"routeEpoch": 7, "reason": "ROUTE_READY"},
+                },
+                {"kind": "OWNER_STARTED", "ownerOrdinal": 1},
+                {
+                    "kind": "ATTEMPT_PERMIT_GRANTED",
+                    "permit": {"routeEpoch": 9, "reason": "ROUTE_READY"},
+                },
+                {"kind": "OWNER_STARTED", "ownerOrdinal": 2},
+                {"kind": "CHAIN_TERMINATED", "terminalReason": "SUCCESS"},
+            ]
+        }
+        failure = {
+            "failures": [
+                {
+                    "routeEpoch": 7,
+                    "classification": "TRANSIENT_TRANSPORT",
+                    "action": {"kind": "SCHEDULE_BACKOFF"},
+                }
+            ]
+        }
+
+        observed = observed_semantic_sequence(
+            "F2_DEFAULT_ROUTE_LOSS_RESTORE",
+            case,
+            route,
+            budget,
+            failure,
+        )
+
+        self.assertEqual(
+            semantic_sequence("F2_DEFAULT_ROUTE_LOSS_RESTORE", case),
+            observed,
+        )
+
+    def test_runtime_permit_reason_drift_is_detectable(self):
+        case = {
+            "initialVpnEpoch": 2,
+            "directReplacementEpoch": 3,
+            "resumeEpoch": 3,
+        }
+        route = {
+            "policyEvaluations": [
+                {
+                    "routeEpoch": 3,
+                    "decision": "PAUSE",
+                    "reason": "VPN_CONTINUITY_REQUIRED",
+                }
+            ]
+        }
+        budget = {
+            "events": [
+                {
+                    "kind": "ATTEMPT_PERMIT_GRANTED",
+                    "permit": {"routeEpoch": 2, "reason": "ROUTE_READY"},
+                },
+                {"kind": "OWNER_STARTED", "ownerOrdinal": 1},
+                {
+                    "kind": "ATTEMPT_PERMIT_GRANTED",
+                    "permit": {"routeEpoch": 3, "reason": "ROUTE_READY"},
+                },
+                {"kind": "OWNER_STARTED", "ownerOrdinal": 2},
+                {"kind": "CHAIN_TERMINATED", "terminalReason": "SUCCESS"},
+            ]
+        }
+        failure = {
+            "failures": [
+                {
+                    "routeEpoch": 2,
+                    "classification": "TRANSIENT_TRANSPORT",
+                    "action": {"kind": "SCHEDULE_BACKOFF"},
+                }
+            ]
+        }
+
+        observed = observed_semantic_sequence(
+            "F3_VPN_CONTINUITY_DIRECT_OVERRIDE",
+            case,
+            route,
+            budget,
+            failure,
+        )
+
+        self.assertNotEqual(
+            semantic_sequence(
+                "F3_VPN_CONTINUITY_DIRECT_OVERRIDE",
+                case,
+            ),
+            observed,
+        )
 
 
 class M2FManifestTest(unittest.TestCase):

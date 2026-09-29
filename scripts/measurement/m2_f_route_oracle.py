@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import shutil
 import sys
 from typing import Any, Iterable, Mapping
 
@@ -108,6 +109,7 @@ SOURCE_ARTIFACTS = (
     ("recovery-budget-events.json", "RUNTIME", "recovery-budget-events-v1"),
     ("failure-decision-events.json", "RUNTIME", "failure-decision-events-v2"),
     ("fetch-events.jsonl", "RUNTIME", "fetch-events-v4"),
+    ("origin-trace.jsonl", "RUNTIME", "media-lab-request-trace-v1"),
 )
 
 ORACLE_ARTIFACTS = (
@@ -461,6 +463,125 @@ def _verify_route_privacy(
     return "PASS"
 
 
+def observed_semantic_sequence(
+    case_kind: str,
+    case: Mapping[str, Any],
+    route: Mapping[str, Any],
+    budget: Mapping[str, Any],
+    failure: Mapping[str, Any],
+) -> list[str]:
+    """Build the normalized semantic sequence from verified runtime artifacts.
+
+    Concrete epoch numbers are mapped to E1/E2/E3 labels so equivalent runs
+    hash identically, but every token is sourced from the runtime evidence
+    rather than copied from the expected case template.
+    """
+    budget_events = [
+        row for row in budget.get("events") or []
+        if isinstance(row, Mapping)
+    ]
+    permits = [
+        row.get("permit")
+        for row in budget_events
+        if row.get("kind") == "ATTEMPT_PERMIT_GRANTED"
+        and isinstance(row.get("permit"), Mapping)
+    ]
+    owners = [
+        row for row in budget_events
+        if row.get("kind") == "OWNER_STARTED"
+    ]
+    terminals = [
+        row for row in budget_events
+        if row.get("kind") == "CHAIN_TERMINATED"
+    ]
+    failures = [
+        row for row in failure.get("failures") or []
+        if isinstance(row, Mapping)
+    ]
+    evaluations = [
+        row for row in route.get("policyEvaluations") or []
+        if isinstance(row, Mapping)
+    ]
+
+    require(len(permits) == 2, "semantic replay requires exactly two permits")
+    require(len(owners) == 2, "semantic replay requires exactly two owners")
+    require(len(failures) == 1, "semantic replay requires exactly one failure")
+    require(len(terminals) == 1, "semantic replay requires one terminal event")
+
+    first_failure = failures[0]
+    action = first_failure.get("action")
+    require(isinstance(action, Mapping), "semantic replay failure action missing")
+    terminal_reason = terminals[0].get("terminalReason")
+    require(isinstance(terminal_reason, str), "semantic replay terminal reason missing")
+
+    def epoch_label(epoch: Any) -> str:
+        if case_kind == "F2_DEFAULT_ROUTE_LOSS_RESTORE":
+            mapping = {
+                case.get("initialRouteEpoch"): "E1",
+                case.get("restoredRouteEpoch"): "E2",
+            }
+        else:
+            mapping = {
+                case.get("initialVpnEpoch"): "E1",
+                case.get("directReplacementEpoch"): "E2",
+            }
+            resume_epoch = case.get("resumeEpoch")
+            if resume_epoch != case.get("directReplacementEpoch"):
+                mapping[resume_epoch] = "E3"
+        require(epoch in mapping, f"semantic replay observed unexpected route epoch {epoch}")
+        return mapping[epoch]
+
+    first_permit = permits[0]
+    second_permit = permits[1]
+    first_epoch = epoch_label(first_permit.get("routeEpoch"))
+    second_epoch = epoch_label(second_permit.get("routeEpoch"))
+    failure_epoch = epoch_label(first_failure.get("routeEpoch"))
+    require(first_epoch == "E1", "first permit did not use the initial protected route")
+    require(failure_epoch == "E1", "first failure did not retain the initial route")
+
+    if case_kind == "F2_DEFAULT_ROUTE_LOSS_RESTORE":
+        pause = next(
+            (
+                row for row in evaluations
+                if row.get("decision") == "PAUSE"
+                and row.get("reason") == "NO_USABLE_DEFAULT"
+                and row.get("routeEpoch") is None
+            ),
+            None,
+        )
+        require(pause is not None, "semantic replay missing NO_USABLE_DEFAULT pause")
+        session = "SESSION:DIRECT_DEFAULT_ALLOWED"
+        pause_token = "PAUSE:NONE:NO_USABLE_DEFAULT"
+    else:
+        direct_epoch = case.get("directReplacementEpoch")
+        pause = next(
+            (
+                row for row in evaluations
+                if row.get("routeEpoch") == direct_epoch
+                and row.get("decision") == "PAUSE"
+                and row.get("reason") == "VPN_CONTINUITY_REQUIRED"
+            ),
+            None,
+        )
+        require(pause is not None, "semantic replay missing VPN continuity pause")
+        session = "SESSION:VPN_CONTINUITY_REQUIRED"
+        pause_token = "PAUSE:E2:VPN_CONTINUITY_REQUIRED"
+
+    return [
+        session,
+        f"PERMIT:{first_epoch}:{first_permit.get('reason')}",
+        f"OWNER:{owners[0].get('ownerOrdinal')}",
+        (
+            f"FAIL:{failure_epoch}:{first_failure.get('classification')}:"
+            f"{action.get('kind')}"
+        ),
+        pause_token,
+        f"PERMIT:{second_epoch}:{second_permit.get('reason')}",
+        f"OWNER:{owners[1].get('ownerOrdinal')}",
+        f"TERMINAL:{terminal_reason}",
+    ]
+
+
 def _artifact_entry(
     root: pathlib.Path,
     relative: str,
@@ -491,7 +612,13 @@ def verify(
     budget = load_object(evidence_dir / "recovery-budget-events.json")
     failure = load_object(evidence_dir / "failure-decision-events.json")
     fetch = read_jsonl(evidence_dir / "fetch-events.jsonl")
-    origin = read_jsonl(origin_path)
+    portable_origin_path = evidence_dir / "origin-trace.jsonl"
+    try:
+        if origin_path.resolve() != portable_origin_path.resolve():
+            shutil.copyfile(origin_path, portable_origin_path)
+    except OSError as error:
+        raise M2FOracleError(f"cannot retain origin trace: {error}") from error
+    origin = read_jsonl(portable_origin_path)
 
     _validate_case(config, case)
     _validate_schema("m2-scenario-v1.schema.json", scenario)
@@ -561,9 +688,25 @@ def verify(
             scan_evidence_privacy(row)
         except M2ContractError as error:
             raise M2FOracleError(f"fetch evidence privacy failure: {error}") from error
+    for row in origin:
+        try:
+            scan_evidence_privacy(row)
+        except M2ContractError as error:
+            raise M2FOracleError(f"origin evidence privacy failure: {error}") from error
 
-    sequence = semantic_sequence(case_kind, case)
-    semantic_digest = canonical_json_sha256(sequence)
+    expected_sequence = semantic_sequence(case_kind, case)
+    observed_sequence = observed_semantic_sequence(
+        case_kind,
+        case,
+        route,
+        budget,
+        failure,
+    )
+    require(
+        observed_sequence == expected_sequence,
+        "runtime semantic replay differs from the canonical case sequence",
+    )
+    semantic_digest = canonical_json_sha256(observed_sequence)
     scenario_hash = scenario_sha256(scenario)
 
     write_json(evidence_dir / "route-verification-summary.json", route_summary)
@@ -592,7 +735,7 @@ def verify(
             "route-events-v1 replayed by independent route oracle",
             "failure/budget/fetch evidence replayed by independent recovery oracle",
             "complete pre-existing committed extent identity preserved",
-            "semantic recovery sequence normalized and digested",
+            "runtime route/recovery sequence replayed, normalized and digested",
             "portable evidence privacy scan passed",
         ],
         "limitations": [
