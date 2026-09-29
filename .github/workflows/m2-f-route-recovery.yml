@@ -10,6 +10,10 @@ on:
       - "scripts/faults/m2_e0_netns.sh"
       - "scripts/ci/prepare-emulator.sh"
       - "scripts/ci/verify-m2-f2-route-recovery.py"
+      - "scripts/measurement/m2_f_route_oracle.py"
+      - "scripts/measurement/m2_contracts.py"
+      - ".work/schemas/m2-f-*.schema.json"
+      - ".work/schemas/m2-*.schema.json"
       - "test-fixtures/media/**"
   push:
     branches: [ main ]
@@ -155,6 +159,19 @@ jobs:
           python3 scripts/ci/verify-m2-f2-route-recovery.py \
             "$evidence_root" \
             "$trace"
+
+          checkout_sha="$(git rev-parse HEAD)"
+          created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 scripts/measurement/m2_f_route_oracle.py prepare \
+            --evidence-dir "$evidence_root" \
+            --case-kind F2_DEFAULT_ROUTE_LOSS_RESTORE \
+            --git-commit "$checkout_sha" \
+            --created-at-utc "$created_at"
+          python3 scripts/measurement/m2_f_route_oracle.py verify \
+            --evidence-dir "$evidence_root" \
+            --case-kind F2_DEFAULT_ROUTE_LOSS_RESTORE \
+            --origin "$trace" \
+            --expected-git-commit "$checkout_sha"
 
           cleanup
           trap - EXIT

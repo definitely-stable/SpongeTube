@@ -4,8 +4,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "measurement"))
+
+from m2_contracts import M2ContractError, validate_persisted_identity_invariance
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PREFLIGHT_FIXTURE = REPO_ROOT / "test-fixtures" / "media" / "F0" / "progressive.mp4"
@@ -157,6 +163,27 @@ def verify_scenario(root: Path, scenario_id: str) -> dict[str, Any]:
     require(isinstance(after, list) and sentinel in after, f"{scenario_id}: sentinel invalidated")
     require(target in after, f"{scenario_id}: target not committed")
     require(set(before).issubset(set(after)), f"{scenario_id}: persisted media was invalidated")
+
+    complete_before = case.get("persistedExtentsBefore")
+    complete_after = case.get("persistedExtentsAfter")
+    require(
+        isinstance(complete_before, list) and complete_before,
+        f"{scenario_id}: complete persisted extent identity missing before VPN loss",
+    )
+    require(
+        isinstance(complete_after, list) and complete_after,
+        f"{scenario_id}: complete persisted extent identity missing after recovery",
+    )
+    try:
+        validate_persisted_identity_invariance(
+            complete_before,
+            complete_after,
+            "VPN_LOST",
+        )
+    except M2ContractError as error:
+        raise VerificationError(
+            f"{scenario_id}: immutable persisted extent identity changed: {error}"
+        ) from error
 
     require(route.get("schemaVersion") == 1, f"{scenario_id}: route schema mismatch")
     require(route.get("androidApi") == 36, f"{scenario_id}: route API mismatch")
