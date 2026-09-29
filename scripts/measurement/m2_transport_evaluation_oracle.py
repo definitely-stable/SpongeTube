@@ -239,8 +239,9 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
                 {row["positionInBlock"] for row in rows} == {1, 2},
                 f"ordering block {block_id}: positions must be 1 and 2",
             )
+        first_position_counts = [first_positions[backend] for backend in backends]
         require(
-            max(first_positions.values()) - min(first_positions.values()) <= 1,
+            max(first_position_counts) - min(first_position_counts) <= 1,
             "counterbalanced ordering is biased toward one backend",
         )
     else:
@@ -257,10 +258,10 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
     exact_route_equivalent = all(
         trial["route"]["exactNetworkBound"] for trial in eligible_trials
     )
-    performance_claim_eligible = bool(eligible_trials) and all(
-        backend_sample_counts[backend] > 0
-        for backend in backends
-        if backend_eligibility[backend] == "ELIGIBLE"
+    performance_claim_eligible = (
+        bool(backends)
+        and all(backend_eligibility[backend] == "ELIGIBLE" for backend in backends)
+        and all(backend_sample_counts[backend] > 0 for backend in backends)
     )
 
     return {
@@ -353,8 +354,9 @@ def validate_summary(
         require(selected is None, "TECHNICALLY_ELIGIBLE records eligibility, not a winner")
         require(
             summary["comparison"]["correctnessEquivalent"]
+            and summary["comparison"]["recoveryEquivalent"]
             and summary["comparison"]["routeBindingEquivalent"],
-            "technical eligibility requires correctness and route-binding equivalence",
+            "technical eligibility requires correctness, recovery and route-binding equivalence",
         )
     else:
         require(selected in rows, "selected backend missing from comparison")

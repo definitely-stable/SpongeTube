@@ -214,10 +214,65 @@ class TransportEvaluationOracleTest(unittest.TestCase):
 
     def test_ordering_bias_is_rejected(self):
         trials = trials_document()
-        trials["trials"][2]["positionInBlock"] = 2
-        trials["trials"][3]["positionInBlock"] = 1
+        # Keep every block structurally valid but put the control first in both.
+        trials["trials"][2], trials["trials"][3] = (
+            trials["trials"][3],
+            trials["trials"][2],
+        )
+        trials["trials"][2]["positionInBlock"] = 1
+        trials["trials"][3]["positionInBlock"] = 2
         with self.assertRaises(TransportEvaluationError):
             analyze_trials(trials)
+
+    def test_unavailable_candidate_makes_paired_performance_ineligible(self):
+        trials = trials_document()
+        for row in trials["trials"]:
+            if row["backendId"] != "PLATFORM_HTTP_ENGINE":
+                continue
+            row["eligibility"] = "UNAVAILABLE_ON_DEVICE"
+            row["result"] = "UNAVAILABLE"
+            row["route"] = {
+                "exactNetworkBound": False,
+                "permitRouteEpoch": None,
+            }
+            row["requestCorrectness"] = {
+                "range": "NOT_APPLICABLE",
+                "contentRange": "NOT_APPLICABLE",
+                "responseBounds": "NOT_APPLICABLE",
+                "publishedBytes": "NOT_APPLICABLE",
+            }
+            row["recovery"] = {
+                "recoveryChainCount": 0,
+                "ownerCount": 0,
+                "originRequestCount": 0,
+                "internalRetryVisibility": "OPAQUE",
+                "internalRetryCount": None,
+            }
+            row["metrics"] = {
+                "firstByteUs": None,
+                "completionUs": None,
+                "cancellationLatencyUs": None,
+                "cpuTimeUs": None,
+                "maxRssBytes": None,
+                "bytesRequested": None,
+                "bytesReceived": None,
+                "bytesPublished": None,
+            }
+            row["performanceSampleEligible"] = False
+
+        computed = analyze_trials(trials)
+        self.assertFalse(
+            computed["comparisonResult"]["performanceClaimEligible"]
+        )
+
+    def test_technical_eligibility_requires_recovery_equivalence(self):
+        trials = trials_document()
+        summary = summary_document()
+        trials["trials"][1]["recovery"]["ownerCount"] = 2
+        trials["trials"][1]["recovery"]["originRequestCount"] = 2
+        summary["comparison"]["recoveryEquivalent"] = False
+        with self.assertRaises(TransportEvaluationError):
+            validate_summary(summary, trials)
 
     def test_summary_cannot_hide_extra_owner(self):
         trials = trials_document()
