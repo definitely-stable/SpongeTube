@@ -122,6 +122,7 @@ def summary_document():
                 "performanceSampleCount": 2,
             },
         ],
+        "pairedPerformanceBlockCount": 2,
         "invariants": {
             "work": True,
             "scenario": True,
@@ -280,8 +281,17 @@ class TransportEvaluationOracleTest(unittest.TestCase):
         summary["backendResults"][1]["performanceSampleCount"] = 0
         summary["comparison"] = computed["comparisonResult"]
         summary["invariants"] = computed["invariants"]
-        with self.assertRaises(TransportEvaluationError):
-            validate_summary(summary, trials)
+        summary["pairedPerformanceBlockCount"] = computed["pairedPerformanceBlockCount"]
+        summary["decision"] = {
+            "state": "NO_DECISION",
+            "selectedBackend": None,
+            "basis": "CORRECTNESS_ONLY",
+            "reasonCodes": [
+                "CANDIDATE_UNAVAILABLE",
+                "NO_PERFORMANCE_CLAIM",
+            ],
+        }
+        validate_summary(summary, trials)
 
     def test_technical_eligibility_requires_recovery_equivalence(self):
         trials = trials_document()
@@ -331,6 +341,75 @@ class TransportEvaluationOracleTest(unittest.TestCase):
         summary = summary_document()
         summary["decision"]["state"] = "NO_DECISION"
         summary["decision"]["selectedBackend"] = "PLATFORM_HTTP_ENGINE"
+        with self.assertRaises(TransportEvaluationError):
+            validate_summary(summary, trials)
+
+    def test_identical_correctness_failures_are_not_equivalent(self):
+        trials = trials_document()
+        for row in trials["trials"]:
+            row["result"] = "CORRECTNESS_FAILURE"
+            row["requestCorrectness"]["contentRange"] = "FAIL"
+            row["performanceSampleEligible"] = False
+        computed = analyze_trials(trials)
+        self.assertFalse(computed["comparisonResult"]["correctnessEquivalent"])
+
+        summary = summary_document()
+        summary["comparison"] = computed["comparisonResult"]
+        summary["invariants"] = computed["invariants"]
+        summary["pairedPerformanceBlockCount"] = computed["pairedPerformanceBlockCount"]
+        summary["backendResults"][0]["performanceSampleCount"] = 0
+        summary["backendResults"][1]["performanceSampleCount"] = 0
+        with self.assertRaises(TransportEvaluationError):
+            validate_summary(summary, trials)
+
+    def test_observable_internal_retry_requires_count(self):
+        trials = trials_document()
+        row = trials["trials"][1]
+        row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
+        row["recovery"]["internalRetryCount"] = None
+        row["performanceSampleEligible"] = False
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_opaque_internal_recovery_blocks_technical_equivalence(self):
+        trials = trials_document()
+        for row in trials["trials"]:
+            row["recovery"]["internalRetryVisibility"] = "OPAQUE"
+            row["recovery"]["internalRetryCount"] = None
+            row["performanceSampleEligible"] = False
+        computed = analyze_trials(trials)
+        self.assertFalse(computed["comparisonResult"]["recoveryEquivalent"])
+
+    def test_per_backend_samples_without_paired_block_are_not_performance_evidence(self):
+        trials = trials_document()
+        for trial_id in ("b1", "a2"):
+            row = next(row for row in trials["trials"] if row["trialId"] == trial_id)
+            row["result"] = "TRANSPORT_FAILURE"
+            row["performanceSampleEligible"] = False
+        computed = analyze_trials(trials)
+        self.assertEqual(
+            1,
+            computed["backendSampleCounts"]["HTTP_URL_CONNECTION_ROUTE_BOUND"],
+        )
+        self.assertEqual(
+            1,
+            computed["backendSampleCounts"]["PLATFORM_HTTP_ENGINE"],
+        )
+        self.assertEqual(0, computed["pairedPerformanceBlockCount"])
+        self.assertFalse(computed["comparisonResult"]["performanceClaimEligible"])
+
+    def test_seeded_balanced_ordering_rejects_malformed_blocks(self):
+        trials = trials_document()
+        trials["orderingProtocol"] = "SEEDED_RANDOMIZED_BALANCED"
+        trials["trials"][1]["orderingBlock"] = 2
+        trials["trials"][2]["orderingBlock"] = 1
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_summary_rejects_duplicate_backend_rows(self):
+        trials = trials_document()
+        summary = summary_document()
+        summary["backendResults"].append(copy.deepcopy(summary["backendResults"][0]))
         with self.assertRaises(TransportEvaluationError):
             validate_summary(summary, trials)
 

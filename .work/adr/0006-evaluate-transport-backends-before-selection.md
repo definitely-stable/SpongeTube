@@ -61,6 +61,11 @@ binding or RecoveryChain ownership is not a performance sample.
 
 Backend availability is eligibility evidence, not latency. An unavailable
 backend records `UNAVAILABLE_ON_DEVICE` and contributes no timing sample.
+A well-formed unavailable result may still pass the comparison-integrity gate
+with `NO_DECISION`; it is not converted into a failed/slow performance trial.
+
+Correctness equivalence means successful request/range/publication correctness.
+Two backends failing the same way are not treated as equivalent candidates.
 
 Negotiated HTTP protocol is descriptive evidence. HTTP/2 or HTTP/3 is never a
 score by itself.
@@ -68,14 +73,18 @@ score by itself.
 ### Ordering and warm state
 
 Every comparison declares connection state (`COLD` or `WARM`) and uses a
-counter-balanced or persisted-seed balanced ordering protocol. A run may not
+counter-balanced or persisted-seed balanced ordering protocol. Every ordering
+block contains each backend exactly once and retained position counts are
+balanced. Performance comparison uses complete paired blocks only; merely
+having the same total sample count per backend is insufficient. A run may not
 compare a cold control against a warm candidate.
 
 ### Internal recovery visibility
 
 Transport-internal connection behavior is observed where the platform exposes
-it and correlated with origin request counts. Opaque internal recovery is a
-limitation that can block a resilience-equivalence claim. It never grants a new
+it and correlated with origin request counts. `OBSERVABLE` internal recovery
+includes an explicit retry count. Opaque internal recovery blocks a
+resilience-equivalence claim. It never grants a new
 Sponge RecoveryChain budget and never authorizes the client stack to become a
 second application-level retry owner.
 
@@ -112,3 +121,13 @@ M2-G starts with a dependency-free contract and an API36 platform comparison.
 The evidence format can later admit OkHttp/Cronet without changing comparison
 semantics. A candidate that cannot prove exact-route/recovery equivalence may be
 reported as technically ineligible rather than being forced into a ranking.
+
+
+## References
+
+- Android Media3 network stacks:
+  https://developer.android.com/media/media3/exoplayer/network-stacks
+- Android HttpEngine API:
+  https://developer.android.com/reference/android/net/http/HttpEngine
+- Android Cronet UrlRequest network binding:
+  https://developer.android.com/develop/connectivity/cronet/reference/org/chromium/net/UrlRequest.Builder

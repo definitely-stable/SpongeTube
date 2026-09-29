@@ -203,7 +203,12 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
                 recovery["internalRetryCount"] == 0,
                 f"{trial['trialId']}: PROVEN_ZERO requires internalRetryCount=0",
             )
-        if recovery["internalRetryVisibility"] == "OPAQUE":
+        elif recovery["internalRetryVisibility"] == "OBSERVABLE":
+            require(
+                recovery["internalRetryCount"] is not None,
+                f"{trial['trialId']}: OBSERVABLE requires an internal retry count",
+            )
+        else:
             require(
                 recovery["internalRetryCount"] is None,
                 f"{trial['trialId']}: opaque retry visibility cannot claim a retry count",
@@ -245,8 +250,39 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
             "counterbalanced ordering is biased toward one backend",
         )
     else:
+        expected_positions = set(range(1, len(backends) + 1))
+        position_counts: dict[str, Counter[int]] = {
+            backend: Counter() for backend in backends
+        }
+        for block_id, rows in blocks.items():
+            require(
+                len(rows) == len(backends),
+                f"ordering block {block_id}: expected one trial per backend",
+            )
+            require(
+                {row["backendId"] for row in rows} == set(backends),
+                f"ordering block {block_id}: every backend must appear exactly once",
+            )
+            require(
+                {row["positionInBlock"] for row in rows} == expected_positions,
+                f"ordering block {block_id}: positions must cover 1..{len(backends)}",
+            )
+            for row in rows:
+                position_counts[row["backendId"]][row["positionInBlock"]] += 1
+
         counts = [backend_trial_counts[backend] for backend in backends]
-        require(len(set(counts)) == 1, "seeded balanced ordering requires equal backend counts")
+        require(
+            len(set(counts)) == 1,
+            "seeded balanced ordering requires equal backend counts",
+        )
+        for position in expected_positions:
+            counts_at_position = [
+                position_counts[backend][position] for backend in backends
+            ]
+            require(
+                max(counts_at_position) - min(counts_at_position) <= 1,
+                f"seeded ordering is biased at position {position}",
+            )
 
     eligible_trials = [trial for trial in trials if trial["eligibility"] == "ELIGIBLE"]
     eligible_backends = {trial["backendId"] for trial in eligible_trials}
@@ -257,21 +293,37 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
 
     correctness_equivalent = (
         has_paired_eligible_backends
-        and len(correctness_values) <= 1
-        and len(result_values) <= 1
+        and len(correctness_values) == 1
+        and correctness_values == {tuple("PASS" for _ in CORRECTNESS_FIELDS)}
+        and result_values == {"SUCCESS"}
     )
     recovery_equivalent = (
         has_paired_eligible_backends
-        and len(recovery_values) <= 1
+        and len(recovery_values) == 1
+        and all(
+            trial["recovery"]["internalRetryVisibility"] != "OPAQUE"
+            for trial in eligible_trials
+        )
+    )
+    exact_route_invariant = all(
+        trial["eligibility"] != "ELIGIBLE"
+        or trial["route"]["exactNetworkBound"]
+        for trial in trials
     )
     exact_route_equivalent = (
         has_paired_eligible_backends
         and all(trial["route"]["exactNetworkBound"] for trial in eligible_trials)
     )
+    paired_performance_blocks = sum(
+        1
+        for rows in blocks.values()
+        if {row["backendId"] for row in rows} == set(backends)
+        and all(row["performanceSampleEligible"] for row in rows)
+    )
     performance_claim_eligible = (
         bool(backends)
         and all(backend_eligibility[backend] == "ELIGIBLE" for backend in backends)
-        and all(backend_sample_counts[backend] > 0 for backend in backends)
+        and paired_performance_blocks > 0
     )
 
     return {
@@ -280,6 +332,7 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
         "backendEligibility": backend_eligibility,
         "backendTrialCounts": dict(backend_trial_counts),
         "backendSampleCounts": dict(backend_sample_counts),
+        "pairedPerformanceBlockCount": paired_performance_blocks,
         "invariants": {
             "work": True,
             "scenario": True,
@@ -289,7 +342,7 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
             "recoveryPolicy": True,
             "routePolicy": True,
             "connectionState": True,
-            "exactRouteBinding": exact_route_equivalent,
+            "exactRouteBinding": exact_route_invariant,
             "orderingBalanced": True,
         },
         "comparisonResult": {
@@ -316,6 +369,11 @@ def validate_summary(
         "summary scenarioHash mismatch",
     )
     require(summary["deviceClass"] == trials_document["deviceClass"], "deviceClass mismatch")
+    require(
+        summary["pairedPerformanceBlockCount"]
+        == computed["pairedPerformanceBlockCount"],
+        "summary pairedPerformanceBlockCount mismatch",
+    )
     require(summary["invariants"] == computed["invariants"], "summary invariant verdict drift")
     require(
         summary["comparison"] == computed["comparisonResult"],
@@ -323,6 +381,10 @@ def validate_summary(
     )
 
     rows = {row["backendId"]: row for row in summary["backendResults"]}
+    require(
+        len(rows) == len(summary["backendResults"]),
+        "summary backendResults contains duplicate backend rows",
+    )
     require(set(rows) == set(computed["backends"]), "summary backend set mismatch")
     for backend in computed["backends"]:
         row = rows[backend]
