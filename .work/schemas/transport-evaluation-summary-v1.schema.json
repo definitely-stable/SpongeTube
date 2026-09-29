@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/transport-evaluation-summary-v1.schema.json",
+  "title": "SpongeTube M2-G Transport Evaluation Summary v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "pairId",
+    "scenarioHash",
+    "status",
+    "deviceClass",
+    "backendResults",
+    "invariants",
+    "comparison",
+    "claimScope",
+    "physicalDeviceEvidence",
+    "decision",
+    "gates",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "pairId": { "type": "string", "minLength": 1 },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": { "type": "string", "enum": ["PASS", "FAIL"] },
+    "deviceClass": {
+      "type": "string",
+      "enum": ["ANDROID_EMULATOR", "PHYSICAL_ANDROID"]
+    },
+    "backendResults": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "backendId",
+          "eligibility",
+          "trialCount",
+          "performanceSampleCount"
+        ],
+        "properties": {
+          "backendId": {
+            "type": "string",
+            "enum": [
+              "HTTP_URL_CONNECTION_ROUTE_BOUND",
+              "PLATFORM_HTTP_ENGINE",
+              "OKHTTP_5",
+              "CRONET"
+            ]
+          },
+          "eligibility": {
+            "type": "string",
+            "enum": [
+              "ELIGIBLE",
+              "UNAVAILABLE_ON_DEVICE",
+              "INELIGIBLE_CONTRACT"
+            ]
+          },
+          "trialCount": { "type": "integer", "minimum": 0 },
+          "performanceSampleCount": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "invariants": {
+      "type": "object",
+      "required": [
+        "work",
+        "scenario",
+        "deviceState",
+        "playbackMode",
+        "cacheState",
+        "recoveryPolicy",
+        "routePolicy",
+        "connectionState",
+        "exactRouteBinding",
+        "orderingBalanced"
+      ],
+      "properties": {
+        "work": { "type": "boolean" },
+        "scenario": { "type": "boolean" },
+        "deviceState": { "type": "boolean" },
+        "playbackMode": { "type": "boolean" },
+        "cacheState": { "type": "boolean" },
+        "recoveryPolicy": { "type": "boolean" },
+        "routePolicy": { "type": "boolean" },
+        "connectionState": { "type": "boolean" },
+        "exactRouteBinding": { "type": "boolean" },
+        "orderingBalanced": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "comparison": {
+      "type": "object",
+      "required": [
+        "correctnessEquivalent",
+        "recoveryEquivalent",
+        "routeBindingEquivalent",
+        "performanceClaimEligible"
+      ],
+      "properties": {
+        "correctnessEquivalent": { "type": "boolean" },
+        "recoveryEquivalent": { "type": "boolean" },
+        "routeBindingEquivalent": { "type": "boolean" },
+        "performanceClaimEligible": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "claimScope": {
+      "type": "string",
+      "enum": [
+        "CORRECTNESS_ONLY",
+        "EMULATOR_DIRECTIONAL",
+        "PHYSICAL_DEVICE_PERFORMANCE"
+      ]
+    },
+    "physicalDeviceEvidence": { "type": "boolean" },
+    "decision": {
+      "type": "object",
+      "required": ["state", "selectedBackend", "basis", "reasonCodes"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["NO_DECISION", "TECHNICALLY_ELIGIBLE", "SELECTED"]
+        },
+        "selectedBackend": {
+          "type": ["string", "null"],
+          "enum": [
+            "HTTP_URL_CONNECTION_ROUTE_BOUND",
+            "PLATFORM_HTTP_ENGINE",
+            "OKHTTP_5",
+            "CRONET",
+            null
+          ]
+        },
+        "basis": {
+          "type": "string",
+          "enum": [
+            "CORRECTNESS_ONLY",
+            "CORRECTNESS_AND_RESILIENCE",
+            "PERFORMANCE"
+          ]
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "CORRECTNESS_EQUIVALENT",
+              "RECOVERY_EQUIVALENT",
+              "ROUTE_BINDING_EQUIVALENT",
+              "PAIRED_METRICS_AVAILABLE",
+              "PHYSICAL_DEVICE_EVIDENCE",
+              "DEPENDENCY_POLICY_CLEAR",
+              "CANDIDATE_UNAVAILABLE",
+              "CANDIDATE_CONTRACT_INELIGIBLE",
+              "NO_PERFORMANCE_CLAIM"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "gates": {
+      "type": "object",
+      "required": ["M2-ACC-10"],
+      "properties": {
+        "M2-ACC-10": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false
+}

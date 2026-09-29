@@ -1177,9 +1177,9 @@ def validate_m2e_harness_binding(plane: str, harness_id: str, tool_id: str) -> N
 # Historical M0/M1 contracts are immutable (falsification item 18)
 # ---------------------------------------------------------------------------
 
-# Subsystem schemas added by the current M2 owning slice (M2.md section 16).
-# M2-E owns the schemas below; every schema accepted by an earlier slice is
-# registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
+# Versioned subsystem schemas added by M2 owning slices. Once an owning slice
+# is accepted, a later slice adds a new version instead of rewriting these.
+# Frozen cross-slice schemas remain registered in ACCEPTED_M2_SCHEMA_SHA256.
 M2_SLICE_SCHEMAS = frozenset({
     "fault-harness-events-v1.schema.json",
     "network-calibration-v1.schema.json",
@@ -1187,6 +1187,8 @@ M2_SLICE_SCHEMAS = frozenset({
     "fault-verification-summary-v1.schema.json",
     "m2-f-evidence-index-v1.schema.json",
     "m2-f-verification-summary-v1.schema.json",
+    "transport-evaluation-trials-v1.schema.json",
+    "transport-evaluation-summary-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
