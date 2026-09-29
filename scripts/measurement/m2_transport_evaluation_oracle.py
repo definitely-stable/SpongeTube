@@ -249,14 +249,24 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
         require(len(set(counts)) == 1, "seeded balanced ordering requires equal backend counts")
 
     eligible_trials = [trial for trial in trials if trial["eligibility"] == "ELIGIBLE"]
+    eligible_backends = {trial["backendId"] for trial in eligible_trials}
+    has_paired_eligible_backends = len(eligible_backends) >= 2
     correctness_values = {_correctness_tuple(trial) for trial in eligible_trials}
     result_values = {trial["result"] for trial in eligible_trials}
     recovery_values = {_recovery_tuple(trial) for trial in eligible_trials}
 
-    correctness_equivalent = len(correctness_values) <= 1 and len(result_values) <= 1
-    recovery_equivalent = len(recovery_values) <= 1
-    exact_route_equivalent = all(
-        trial["route"]["exactNetworkBound"] for trial in eligible_trials
+    correctness_equivalent = (
+        has_paired_eligible_backends
+        and len(correctness_values) <= 1
+        and len(result_values) <= 1
+    )
+    recovery_equivalent = (
+        has_paired_eligible_backends
+        and len(recovery_values) <= 1
+    )
+    exact_route_equivalent = (
+        has_paired_eligible_backends
+        and all(trial["route"]["exactNetworkBound"] for trial in eligible_trials)
     )
     performance_claim_eligible = (
         bool(backends)
@@ -352,6 +362,13 @@ def validate_summary(
         require(selected is None, "NO_DECISION cannot select a backend")
     elif decision["state"] == "TECHNICALLY_ELIGIBLE":
         require(selected is None, "TECHNICALLY_ELIGIBLE records eligibility, not a winner")
+        require(
+            all(
+                row["eligibility"] == "ELIGIBLE"
+                for row in summary["backendResults"]
+            ),
+            "TECHNICALLY_ELIGIBLE requires every compared backend to be eligible",
+        )
         require(
             summary["comparison"]["correctnessEquivalent"]
             and summary["comparison"]["recoveryEquivalent"]

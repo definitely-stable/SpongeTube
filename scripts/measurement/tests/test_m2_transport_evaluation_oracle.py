@@ -265,6 +265,24 @@ class TransportEvaluationOracleTest(unittest.TestCase):
             computed["comparisonResult"]["performanceClaimEligible"]
         )
 
+        self.assertFalse(
+            computed["comparisonResult"]["correctnessEquivalent"]
+        )
+        self.assertFalse(
+            computed["comparisonResult"]["recoveryEquivalent"]
+        )
+        self.assertFalse(
+            computed["comparisonResult"]["routeBindingEquivalent"]
+        )
+
+        summary = summary_document()
+        summary["backendResults"][1]["eligibility"] = "UNAVAILABLE_ON_DEVICE"
+        summary["backendResults"][1]["performanceSampleCount"] = 0
+        summary["comparison"] = computed["comparisonResult"]
+        summary["invariants"] = computed["invariants"]
+        with self.assertRaises(TransportEvaluationError):
+            validate_summary(summary, trials)
+
     def test_technical_eligibility_requires_recovery_equivalence(self):
         trials = trials_document()
         summary = summary_document()
