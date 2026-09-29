@@ -905,6 +905,7 @@ An artifact schema becomes canonical together with its owning producer and verif
 | M2-ACC-07 | Mutable Binding Independence | delivery binding can be refreshed without changing stable work identity; incompatible rebinding fails closed |
 | M2-ACC-08 | Deterministic Provider Recovery | N8/N9/N10 deterministic provider scenarios have independently verified provider attribution, bounded recovery, Retry-After handling and binding refresh without immutable identity mutation |
 | M2-ACC-09 | Scoped Fault Harness Fidelity | resolved TRANSPORT/NETWORK faults are applied by exactly their owning scoped harness; tool readback, scenario/seed binding, media traversal, control isolation and cleanup are independently verified |
+| M2-ACC-10 | Transport Evaluation Integrity | paired transport evidence changes only backend identity/order, requires exact-route and visible RecoveryChain semantics, separates backend availability from performance samples, uses balanced ordering, and never makes a performance selection stronger than the retained device evidence |
 
 Later M2 slices may add gate IDs; no fixed count is reserved.
 
@@ -974,6 +975,22 @@ tool-state readback, media-path counters, clean ADB/control paths, the persisted
 stochastic seed where applicable, and verified teardown. Harness command exit
 status alone never satisfies the gate. E0 (#86) proves topology feasibility
 only and is not acceptance evidence for M2-ACC-09.
+
+M2-G0 adds `transport-evaluation-trials-v1` and
+`transport-evaluation-summary-v1` plus the independent
+`scripts/measurement/m2_transport_evaluation_oracle.py`. It makes
+**M2-ACC-10** contract-executable before a candidate backend is implemented.
+The oracle recomputes comparison invariants instead of trusting producer flags:
+all trials in a pair have one comparison fingerprint; an eligible trial proves
+exact-route binding; unavailable/ineligible candidates are never latency
+samples; correctness equivalence requires actual SUCCESS plus all request
+correctness checks PASS; opaque internal transport recovery cannot satisfy
+RecoveryChain equivalence; performance evidence requires at least one complete
+paired ordering block in which every compared backend produced an eligible
+sample; and counter-balanced/seeded-balanced ordering is verified from retained
+block/position facts. Emulator evidence can support correctness/resilience and
+directional measurements only. A performance-based SELECTED decision requires
+retained physical-device evidence and dependency/distribution clearance.
 
 ### 23.3 Additional M2 evidence rules
 

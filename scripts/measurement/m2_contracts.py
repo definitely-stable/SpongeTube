@@ -1177,16 +1177,12 @@ def validate_m2e_harness_binding(plane: str, harness_id: str, tool_id: str) -> N
 # Historical M0/M1 contracts are immutable (falsification item 18)
 # ---------------------------------------------------------------------------
 
-# Subsystem schemas added by the current M2 owning slice (M2.md section 16).
-# M2-E owns the schemas below; every schema accepted by an earlier slice is
-# registered in ACCEPTED_M2_SCHEMA_SHA256 instead.
+# Versioned subsystem schemas added by M2 owning slices. Once an owning slice
+# is accepted, a later slice adds a new version instead of rewriting these.
+# Frozen cross-slice schemas remain registered in ACCEPTED_M2_SCHEMA_SHA256.
 M2_SLICE_SCHEMAS = frozenset({
-    "fault-harness-events-v1.schema.json",
-    "network-calibration-v1.schema.json",
-    "fault-engine-fingerprint-v1.schema.json",
-    "fault-verification-summary-v1.schema.json",
-    "m2-f-evidence-index-v1.schema.json",
-    "m2-f-verification-summary-v1.schema.json",
+    "transport-evaluation-trials-v1.schema.json",
+    "transport-evaluation-summary-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
@@ -1218,6 +1214,18 @@ ACCEPTED_M2_SCHEMA_SHA256 = {
         "f42af47c6416b42d59c746477c6d19de67fca6059647ea7fbc4197d98b583c11",
     "provider-verification-summary-v1.schema.json":
         "c82f6ad712e1262217f6b2b324c8f847c45478782571f5bd667b437e2541c5f1",
+    "fault-harness-events-v1.schema.json":
+        "c0625158b88889aa3d9475432f6772ceb7097f5e0cf2521896a04ca9459a524b",
+    "network-calibration-v1.schema.json":
+        "35092608285c1f0f9848b94e44eff7b9e7d7bfdbe3b86abc152386c3871da776",
+    "fault-engine-fingerprint-v1.schema.json":
+        "2769a8b906e1de5b9c0feffa42958adc694fc5a7009077228bc72e7186b47fb6",
+    "fault-verification-summary-v1.schema.json":
+        "1d824bde9c91fb2697a643fe13ffc284d5d59c0011815e5f1e08d00b2044bfab",
+    "m2-f-evidence-index-v1.schema.json":
+        "d93b60f270fe7e24ab36b0424be8d22e521dd6ede8a1a2ec5e235e51049736b8",
+    "m2-f-verification-summary-v1.schema.json":
+        "2f82e8c9d4ebc29de6e14c5b896a6860d3788817e1fdf21c8ec7a5cda91bc4ec",
 }
 
 # SHA-256 of every pre-M2 (M0/M1) schema at M2-A. M2 work must add a new

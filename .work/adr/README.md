@@ -12,6 +12,8 @@ Canonical product/architecture truth remains in `.work/PRODUCT.md` and `.work/AR
 | [0002](0002-playback-bridge-media3-seam.md) | PlaybackBridge Media3 seam | Accepted (superseded in part by ADR-0003) |
 | [0003](0003-centralize-recovery-ownership.md) | Centralize recovery ownership in RecoveryCoordinator | Accepted |
 | [0004](0004-separate-immutable-work-from-delivery-binding.md) | Separate immutable media work from mutable delivery binding | Accepted |
+| [0005](0005-separate-transport-stream-and-packet-fault-harnesses.md) | Separate transport-stream and packet/network fault harnesses | Accepted |
+| [0006](0006-evaluate-transport-backends-before-selection.md) | Evaluate exact-route transport backends before production selection | Accepted |
 
 ## Naming
 

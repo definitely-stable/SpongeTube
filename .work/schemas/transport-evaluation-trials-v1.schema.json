@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/transport-evaluation-trials-v1.schema.json",
+  "title": "SpongeTube M2-G Transport Evaluation Trials v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "pairId",
+    "deviceClass",
+    "androidApi",
+    "clockDomain",
+    "orderingProtocol",
+    "orderingSeed",
+    "trials",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "pairId": { "type": "string", "minLength": 1 },
+    "deviceClass": {
+      "type": "string",
+      "enum": ["ANDROID_EMULATOR", "PHYSICAL_ANDROID"]
+    },
+    "androidApi": { "type": "integer", "minimum": 23 },
+    "clockDomain": {
+      "type": "string",
+      "const": "ANDROID_MONOTONIC"
+    },
+    "orderingProtocol": {
+      "type": "string",
+      "enum": ["COUNTERBALANCED_PAIRS", "SEEDED_RANDOMIZED_BALANCED"]
+    },
+    "orderingSeed": { "type": "integer", "minimum": 0 },
+    "trials": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/trial" }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableNonNegativeInteger": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "checkStatus": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "NOT_APPLICABLE"]
+    },
+    "comparison": {
+      "type": "object",
+      "required": [
+        "workFingerprint",
+        "scenarioHash",
+        "deviceStateFingerprint",
+        "playbackMode",
+        "cacheStateFingerprint",
+        "recoveryPolicyFingerprint",
+        "routePolicyFingerprint",
+        "connectionState"
+      ],
+      "properties": {
+        "workFingerprint": { "$ref": "#/$defs/sha256" },
+        "scenarioHash": { "$ref": "#/$defs/sha256" },
+        "deviceStateFingerprint": { "$ref": "#/$defs/sha256" },
+        "playbackMode": {
+          "type": "string",
+          "enum": ["DIRECT", "SPONGE"]
+        },
+        "cacheStateFingerprint": { "$ref": "#/$defs/sha256" },
+        "recoveryPolicyFingerprint": { "$ref": "#/$defs/sha256" },
+        "routePolicyFingerprint": { "$ref": "#/$defs/sha256" },
+        "connectionState": {
+          "type": "string",
+          "enum": ["COLD", "WARM"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "route": {
+      "type": "object",
+      "required": ["exactNetworkBound", "permitRouteEpoch"],
+      "properties": {
+        "exactNetworkBound": { "type": "boolean" },
+        "permitRouteEpoch": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "requestCorrectness": {
+      "type": "object",
+      "required": [
+        "range",
+        "contentRange",
+        "responseBounds",
+        "publishedBytes"
+      ],
+      "properties": {
+        "range": { "$ref": "#/$defs/checkStatus" },
+        "contentRange": { "$ref": "#/$defs/checkStatus" },
+        "responseBounds": { "$ref": "#/$defs/checkStatus" },
+        "publishedBytes": { "$ref": "#/$defs/checkStatus" }
+      },
+      "additionalProperties": false
+    },
+    "recovery": {
+      "type": "object",
+      "required": [
+        "recoveryChainCount",
+        "ownerCount",
+        "originRequestCount",
+        "internalRetryVisibility",
+        "internalRetryCount"
+      ],
+      "properties": {
+        "recoveryChainCount": { "type": "integer", "minimum": 0 },
+        "ownerCount": { "type": "integer", "minimum": 0 },
+        "originRequestCount": { "type": "integer", "minimum": 0 },
+        "internalRetryVisibility": {
+          "type": "string",
+          "enum": ["PROVEN_ZERO", "OBSERVABLE", "OPAQUE"]
+        },
+        "internalRetryCount": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "firstByteUs",
+        "completionUs",
+        "cancellationLatencyUs",
+        "cpuTimeUs",
+        "maxRssBytes",
+        "bytesRequested",
+        "bytesReceived",
+        "bytesPublished"
+      ],
+      "properties": {
+        "firstByteUs": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "completionUs": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "cancellationLatencyUs": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "cpuTimeUs": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "maxRssBytes": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "bytesRequested": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "bytesReceived": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "bytesPublished": { "$ref": "#/$defs/nullableNonNegativeInteger" }
+      },
+      "additionalProperties": false
+    },
+    "trial": {
+      "type": "object",
+      "required": [
+        "trialId",
+        "orderingBlock",
+        "positionInBlock",
+        "backendId",
+        "backendVersion",
+        "implementationId",
+        "eligibility",
+        "comparison",
+        "route",
+        "result",
+        "requestCorrectness",
+        "recovery",
+        "metrics",
+        "negotiatedProtocol",
+        "performanceSampleEligible",
+        "limitations"
+      ],
+      "properties": {
+        "trialId": { "type": "string", "minLength": 1 },
+        "orderingBlock": { "type": "integer", "minimum": 1 },
+        "positionInBlock": { "type": "integer", "minimum": 1 },
+        "backendId": {
+          "type": "string",
+          "enum": [
+            "HTTP_URL_CONNECTION_ROUTE_BOUND",
+            "PLATFORM_HTTP_ENGINE",
+            "OKHTTP_5",
+            "CRONET"
+          ]
+        },
+        "backendVersion": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "implementationId": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "eligibility": {
+          "type": "string",
+          "enum": [
+            "ELIGIBLE",
+            "UNAVAILABLE_ON_DEVICE",
+            "INELIGIBLE_CONTRACT"
+          ]
+        },
+        "comparison": { "$ref": "#/$defs/comparison" },
+        "route": { "$ref": "#/$defs/route" },
+        "result": {
+          "type": "string",
+          "enum": [
+            "SUCCESS",
+            "CORRECTNESS_FAILURE",
+            "TRANSPORT_FAILURE",
+            "CANCELLED",
+            "UNAVAILABLE"
+          ]
+        },
+        "requestCorrectness": { "$ref": "#/$defs/requestCorrectness" },
+        "recovery": { "$ref": "#/$defs/recovery" },
+        "metrics": { "$ref": "#/$defs/metrics" },
+        "negotiatedProtocol": {
+          "type": ["string", "null"],
+          "enum": ["HTTP_1_1", "HTTP_2", "HTTP_3", "UNKNOWN", null]
+        },
+        "performanceSampleEligible": { "type": "boolean" },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
