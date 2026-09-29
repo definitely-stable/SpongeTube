@@ -293,11 +293,11 @@ def prepare(
             "primaryPlane": scenario["primaryPlane"],
             "hash": scenario_sha256(scenario),
         },
-        "playbackMode": "SPONGE",
+        "playbackMode": "DIRECT",
         "mediaPath": "ANDROID_DEFAULT_NETWORK",
         "transport": {
-            "backendId": "android-httpurlconnection-route-bound",
-            "backendVersion": "1",
+            "backendId": "http-range-fetch-executor",
+            "backendVersion": null,
         },
         "faultHarnesses": [
             {
@@ -308,20 +308,16 @@ def prepare(
         ],
         "policies": [
             {
-                "policyId": "session-route-guard-v1",
-                "version": "1",
-            },
-            {
                 "policyId": "sponge-recovery-v2",
                 "version": "2",
-            },
+            }
         ],
         "device": {
             "api": case["deviceApi"],
-            "kind": "GITHUB_HOSTED_ANDROID_EMULATOR",
+            "kind": "ANDROID_EMULATOR",
         },
         "runtime": {
-            "httpClient": "HttpURLConnection",
+            "executor": "HttpRangeFetchExecutor",
             "routeBinding": "Network.openConnection",
             "evidenceProducer": "M2-F4",
         },
