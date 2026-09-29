@@ -1185,6 +1185,8 @@ M2_SLICE_SCHEMAS = frozenset({
     "network-calibration-v1.schema.json",
     "fault-engine-fingerprint-v1.schema.json",
     "fault-verification-summary-v1.schema.json",
+    "m2-f-evidence-index-v1.schema.json",
+    "m2-f-verification-summary-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and

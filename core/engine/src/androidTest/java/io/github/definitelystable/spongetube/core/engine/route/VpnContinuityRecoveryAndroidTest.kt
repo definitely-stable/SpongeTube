@@ -213,8 +213,12 @@ class VpnContinuityRecoveryAndroidTest {
             val openedStore = ExtentStore.open(targetContext)
             store = openedStore
             seedSentinel(openedStore, scenario)
-            val persistedBefore = committedExtentIds(openedStore)
-            assertEquals(listOf(scenario.sentinelExtentId), persistedBefore)
+            val persistedBefore =
+                openedStore.committedExtents().toM2PersistedExtentIdentity()
+            assertEquals(
+                listOf(scenario.sentinelExtentId),
+                persistedBefore.map { it["extentId"] },
+            )
 
             recoveryRelay = OriginRelay(
                 underlying = underlying,
@@ -366,7 +370,8 @@ class VpnContinuityRecoveryAndroidTest {
                 )
             }
 
-            val persistedAfter = committedExtentIds(openedStore)
+            val persistedAfter =
+                openedStore.committedExtents().toM2PersistedExtentIdentity()
             assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
             assertEquals(chainId, outcome.recoveryChainId.value)
             assertEquals(scenario.fetchKey, outcome.fetchKey.value)
@@ -395,8 +400,12 @@ class VpnContinuityRecoveryAndroidTest {
             assertEquals(initialVpnState.routeEpoch, failure.routeEpoch)
             assertEquals(FailureClassification.TRANSIENT_TRANSPORT, failure.classification)
             assertEquals(RecoveryActionKind.SCHEDULE_BACKOFF, failure.action.kind)
-            assertTrue(persistedAfter.contains(scenario.sentinelExtentId))
-            assertTrue(persistedAfter.contains(scenario.targetExtentId))
+            assertTrue(
+                persistedAfter.any { it["extentId"] == scenario.sentinelExtentId },
+            )
+            assertTrue(
+                persistedAfter.any { it["extentId"] == scenario.targetExtentId },
+            )
 
             val directPause = routeRecorder.policyEvaluations()
                 .last {
@@ -437,6 +446,8 @@ class VpnContinuityRecoveryAndroidTest {
                 case = linkedMapOf(
                     "schemaVersion" to 1,
                     "phase" to "M2-F3",
+                    "runId" to RUN_ID,
+                    "sessionId" to sessionId,
                     "scenarioId" to scenario.id,
                     "deviceApi" to Build.VERSION.SDK_INT,
                     "status" to "PASS",
@@ -461,8 +472,12 @@ class VpnContinuityRecoveryAndroidTest {
                     "resumeRouteEventWatermark" to
                         resumeEvaluation.routeEventSequenceWatermark,
                     "explicitDirectOverride" to guard.explicitDirectOverride,
-                    "persistedExtentIdsBefore" to persistedBefore,
-                    "persistedExtentIdsAfter" to persistedAfter,
+                    "persistedExtentIdsBefore" to
+                        persistedBefore.map { it["extentId"] },
+                    "persistedExtentIdsAfter" to
+                        persistedAfter.map { it["extentId"] },
+                    "persistedExtentsBefore" to persistedBefore,
+                    "persistedExtentsAfter" to persistedAfter,
                     "sentinelExtentId" to scenario.sentinelExtentId,
                     "targetExtentId" to scenario.targetExtentId,
                     "mediaPathUsesAdbReverse" to false,
@@ -536,9 +551,6 @@ class VpnContinuityRecoveryAndroidTest {
             write(SENTINEL_BYTES)
         }
     }
-
-    private suspend fun committedExtentIds(store: ExtentStore): List<String> =
-        store.committedExtents().map { it.extentId.value }.sorted()
 
     private suspend fun awaitRoute(
         monitor: DefaultRouteMonitor,

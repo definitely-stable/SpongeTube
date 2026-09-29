@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m2-f-evidence-index-v1.schema.json",
+  "title": "SpongeTube M2-F Evidence Index v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "scenarioHash",
+    "semanticDigest",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "scenarioHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "semanticDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "role", "format", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._/-]+$"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["CASE", "CONTRACT", "RUNTIME", "ORACLE"]
+          },
+          "format": { "type": "string", "minLength": 1 },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

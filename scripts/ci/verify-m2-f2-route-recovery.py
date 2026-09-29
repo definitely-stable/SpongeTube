@@ -3,8 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "measurement"))
+
+from m2_contracts import M2ContractError, validate_persisted_identity_invariance
 
 EXPECTED_PATH = "/fixtures/F1/segment-1-00001.m4s"
 EXPECTED_RANGE = "bytes=0-81810"
@@ -108,6 +114,27 @@ def main() -> int:
     require(isinstance(after, list) and sentinel in after, "sentinel invalidated by route replacement")
     require(target in after, "target extent was not committed after recovery")
     require(set(before).issubset(set(after)), "pre-existing committed media was invalidated")
+
+    complete_before = case.get("persistedExtentsBefore")
+    complete_after = case.get("persistedExtentsAfter")
+    require(
+        isinstance(complete_before, list) and complete_before,
+        "complete persisted extent identity missing before route loss",
+    )
+    require(
+        isinstance(complete_after, list) and complete_after,
+        "complete persisted extent identity missing after route recovery",
+    )
+    try:
+        validate_persisted_identity_invariance(
+            complete_before,
+            complete_after,
+            "ROUTE_EPOCH_CHANGED",
+        )
+    except M2ContractError as error:
+        raise VerificationError(
+            f"immutable persisted extent identity changed: {error}"
+        ) from error
 
     require(route.get("schemaVersion") == 1, "route-events schema mismatch")
     require(route.get("androidApi") == 36, "route-events API mismatch")
