@@ -297,7 +297,7 @@ def prepare(
         "mediaPath": "ANDROID_DEFAULT_NETWORK",
         "transport": {
             "backendId": "http-range-fetch-executor",
-            "backendVersion": null,
+            "backendVersion": None,
         },
         "faultHarnesses": [
             {
