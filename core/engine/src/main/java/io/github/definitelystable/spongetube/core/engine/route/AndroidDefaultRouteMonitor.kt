@@ -93,14 +93,22 @@ private data class PlatformRouteHandle(
     val executionBinding: RouteExecutionBinding,
 )
 
-private class AndroidRouteExecutionBinding(
+private open class AndroidRouteExecutionBinding(
     private val network: Network,
-) : PlatformHttpEngineRouteBinding {
+) : RouteExecutionBinding {
     override fun openConnection(url: URL): HttpURLConnection =
         network.openConnection(url) as? HttpURLConnection
             ?: error("route binding returned a non-HTTP connection")
+}
 
-    @android.annotation.TargetApi(34)
+/**
+ * Isolated API34+ subtype: API23 loads only AndroidRouteExecutionBinding and
+ * never verifies missing android.net.http method signatures.
+ */
+@android.annotation.TargetApi(34)
+private class AndroidPlatformHttpEngineRouteBinding(
+    private val network: Network,
+) : AndroidRouteExecutionBinding(network), PlatformHttpEngineRouteBinding {
     override fun newBoundRequest(
         engine: HttpEngine,
         url: URL,
@@ -125,7 +133,11 @@ private class PlatformRouteRefs {
             lastOrdinal += 1
             PlatformRouteHandle(
                 ref = PlatformRouteRef.ofOrdinal(lastOrdinal),
-                executionBinding = AndroidRouteExecutionBinding(network),
+                executionBinding = if (Build.VERSION.SDK_INT >= 34) {
+                    AndroidPlatformHttpEngineRouteBinding(network)
+                } else {
+                    AndroidRouteExecutionBinding(network)
+                },
             )
         }
     }
