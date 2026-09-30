@@ -8,6 +8,7 @@ import android.os.Build
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -24,13 +25,40 @@ internal class PlatformHttpEnginePool private constructor(
     val engine: HttpEngine,
 ) {
     private val lock = Any()
-    private val worker = Executors.newFixedThreadPool(2) { task ->
+    private val worker = Executors.newSingleThreadExecutor() { task ->
         Thread(task, "sponge-http-engine-callback").apply { isDaemon = true }
     }
     val dispatcher = worker.asCoroutineDispatcher()
     val callbackExecutor = worker
     private val pending = LinkedHashMap<UrlRequest, CompletableDeferred<Unit>>()
     private var closing = false
+    private val shutdownResult = CompletableDeferred<Result<Unit>>()
+
+    /**
+     * Complete after the TERMINAL callback has returned, not from within it.
+     * A single serial callback executor makes this an actual lifecycle barrier.
+     * UrlRequest control operations also use this executor.
+     */
+    fun completeAfterCallback(terminal: CompletableDeferred<Unit>) {
+        callbackExecutor.execute { terminal.complete(Unit) }
+    }
+
+    /** Non-suspending, atomic owner admission/start versus pool shutdown. */
+    fun startTracked(
+        request: UrlRequest,
+        terminal: CompletableDeferred<Unit>,
+        onPhysicalAttemptStart: () -> Unit,
+        markStartInvoked: () -> Unit,
+    ): Boolean = synchronized(lock) {
+        if (closing || pending[request] !== terminal) {
+            false
+        } else {
+            onPhysicalAttemptStart()
+            markStartInvoked()
+            request.start()
+            true
+        }
+    }
 
     /** Process-local diagnostic: a terminal callback is required before removal. */
     val activeRequestCount: Int
@@ -51,17 +79,36 @@ internal class PlatformHttpEnginePool private constructor(
 
     suspend fun shutdown() {
         val snapshot = synchronized(lock) {
-            closing = true
-            pending.toMap()
+            if (closing) null else {
+                closing = true
+                pending.toMap()
+            }
         }
-        snapshot.keys.forEach { it.cancel() }
-        // Engine.shutdown() explicitly forbids active requests and may block.
-        // Do not report clean shutdown if a terminal callback failed to arrive.
-        withTimeout(SHUTDOWN_TIMEOUT_MS) {
-            snapshot.values.forEach { it.await() }
+        if (snapshot == null) {
+            shutdownResult.await().getOrThrow()
+            return
         }
-        withContext(Dispatchers.IO) { engine.shutdown() }
-        dispatcher.close()
+        withContext(NonCancellable) {
+            try {
+                // Android requires request control on the builder's Executor.
+                // startTracked + closing share a lock; no late owner may start.
+                withContext(dispatcher) {
+                    snapshot.forEach { (request, terminal) ->
+                        if (!terminal.isCompleted) request.cancel()
+                    }
+                }
+                withTimeout(SHUTDOWN_TIMEOUT_MS) {
+                    snapshot.values.forEach { it.await() }
+                }
+                withContext(Dispatchers.IO) { engine.shutdown() }
+                dispatcher.close()
+                shutdownResult.complete(Result.success(Unit))
+            } catch (failure: Throwable) {
+                shutdownResult.complete(Result.failure(failure))
+                // A failed/unknown shutdown must never be called clean.
+                throw failure
+            }
+        }
     }
 
     val backendVersion: String

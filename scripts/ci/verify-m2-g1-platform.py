@@ -45,20 +45,35 @@ def check(case: dict, origin: list[dict]) -> None:
         require(row.get("attempts") == 1 and row.get("committedBytes") == LENGTH,
                 "physical owner or committed extent count mismatch")
         require(row.get("sha256") == SHA, "fixture content identity mismatch")
+        require(type(row.get("originRequestId")) is int and row["originRequestId"] > 0,
+                "trial lacks a real physical origin correlation ID")
 
     require(case.get("unboundCharges") == 0, "unbound candidate charged a physical request")
     require(case.get("cancelledRequestCharges") == 1, "cancel case did not start exactly once")
     require(case.get("cancelledRequestAcknowledged") is True,
             "cancellation did not release platform terminal callback")
+    require(case.get("cancelTerminal") == "CANCELED",
+            "onFailed/onSucceeded must never count as cancellation proof")
+    cancelled_id = case.get("cancelledOriginRequestId")
+    request_ids = [row["originRequestId"] for row in trials] + [cancelled_id]
+    require(type(cancelled_id) is int and cancelled_id > 0
+            and len(set(request_ids)) == 3,
+            "missing or duplicate physical origin request correlation")
     data = [x for x in origin if x.get("plane") == "data" and x.get("method") == "GET"]
-    require(len(data) == 3, f"expected two success GETs and one cancel GET, got {len(data)}")
-    for row in data[:2]:
+    by_id = {row.get("requestId"): row for row in data}
+    require(len(data) == 3 and len(by_id) == 3 and set(by_id) == set(request_ids),
+            "each device owner must correlate with exactly one independent origin GET")
+    # The G1 smoke test is sequential, not the G2 counterbalanced experiment.
+    require(request_ids == sorted(request_ids),
+            "G1 runtime trial sequence does not match physical request sequence")
+    for trial in trials:
+        row = by_id[trial["originRequestId"]]
         require(row.get("path") == "/fixtures/F1/segment-1-00001.m4s",
                 "unexpected physical target")
         require(row.get("rangeHeader") == "bytes=0-81810" and row.get("status") == 206,
                 "physical Range or response mismatch")
         require(row.get("bodyBytesWritten") == LENGTH, "origin response body incomplete")
-    cancelled = data[2]
+    cancelled = by_id[cancelled_id]
     require(cancelled.get("path") == "/fixtures/F1/segment-1-00001.m4s"
             and cancelled.get("rangeHeader") == "bytes=0-81810"
             and cancelled.get("status") == 206, "cancel case did not reach the permitted origin")

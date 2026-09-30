@@ -48,6 +48,7 @@ internal class PlatformHttpRangeFetchExecutor(
         { _, _ -> ProviderSignal.NONE },
     private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
     private val onProtocolObserved: (String) -> Unit = { },
+    private val onTerminalObserved: (PlatformHttpTerminal) -> Unit = { },
 ) : RouteBoundFetchAttemptExecutor {
     init { require(firstResponseTimeoutMs > 0 && readTimeoutMs > 0 && chunkSize > 0) }
 
@@ -98,7 +99,18 @@ internal class PlatformHttpRangeFetchExecutor(
         currentCoroutineContext().ensureActive()
         val events = Channel<Event>(Channel.UNLIMITED)
         val terminal = CompletableDeferred<Unit>()
+        // Exactly one outstanding read. Reusing one direct buffer avoids one
+        // off-heap allocation per network chunk without changing backpressure.
+        val readBuffer = ByteBuffer.allocateDirect(chunkSize)
         val callback = object : UrlRequest.Callback {
+            private fun confirm(kind: PlatformHttpTerminal) {
+                try {
+                    onTerminalObserved(kind)
+                } finally {
+                    // Single callback executor: ack runs AFTER callback returns.
+                    pool.completeAfterCallback(terminal)
+                }
+            }
             override fun onRedirectReceived(
                 request: UrlRequest, info: UrlResponseInfo, newLocationUrl: String,
             ) { events.trySend(Event.Redirect(info)) }
@@ -118,19 +130,19 @@ internal class PlatformHttpRangeFetchExecutor(
 
             override fun onSucceeded(request: UrlRequest, info: UrlResponseInfo) {
                 events.trySend(Event.Done)
-                terminal.complete(Unit)
+                confirm(PlatformHttpTerminal.SUCCEEDED)
             }
 
             override fun onFailed(
                 request: UrlRequest, info: UrlResponseInfo?, error: HttpException,
             ) {
                 events.trySend(Event.Failed(error))
-                terminal.complete(Unit)
+                confirm(PlatformHttpTerminal.FAILED)
             }
 
             override fun onCanceled(request: UrlRequest, info: UrlResponseInfo?) {
                 events.trySend(Event.Cancelled)
-                terminal.complete(Unit)
+                confirm(PlatformHttpTerminal.CANCELED)
             }
         }
 
@@ -161,17 +173,27 @@ internal class PlatformHttpRangeFetchExecutor(
         }
         if (!pool.track(underlying, terminal)) return transport(TransportIoKind.IO)
 
-        var started = false
+        var startInvoked = false
         var sawHeaders = false
         var position = start
         var correlation: String? = null
         try {
-            withContext(pool.dispatcher) {
-                currentCoroutineContext().ensureActive()
-                onPhysicalAttemptStart()
-                underlying.start()
-                started = true
+            val started = try {
+                withContext(pool.dispatcher) {
+                    currentCoroutineContext().ensureActive()
+                    pool.startTracked(
+                        underlying, terminal, onPhysicalAttemptStart,
+                        markStartInvoked = { startInvoked = true },
+                    )
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // A rejected start is internal contract failure, never a
+                // transport timeout or an authorized logical retry.
+                return failure(FailureObservation.InternalFailure)
             }
+            if (!started) return failure(FailureObservation.InternalFailure)
             while (true) {
                 val event = try {
                     withTimeout(if (sawHeaders) readTimeoutMs else firstResponseTimeoutMs) {
@@ -222,7 +244,7 @@ internal class PlatformHttpRangeFetchExecutor(
                             return rangeFailure(RangeProtocolKind.RESPONSE_LENGTH_MISMATCH, correlation)
                         }
                         withContext(pool.dispatcher) {
-                            underlying.read(ByteBuffer.allocateDirect(chunkSize))
+                            underlying.read(readBuffer.apply { clear() })
                         }
                     }
                     is Event.Bytes -> {
@@ -240,7 +262,7 @@ internal class PlatformHttpRangeFetchExecutor(
                         // Read once more after the expected extent ends. An
                         // oversized body must never be published as success.
                         withContext(pool.dispatcher) {
-                            underlying.read(ByteBuffer.allocateDirect(chunkSize))
+                            underlying.read(readBuffer.apply { clear() })
                         }
                     }
                     Event.Done -> return if (position == end) {
@@ -256,12 +278,13 @@ internal class PlatformHttpRangeFetchExecutor(
                 }
             }
         } finally {
-            if (!started) terminal.complete(Unit)
-            if (started && !terminal.isCompleted) {
+            if (!startInvoked) terminal.complete(Unit)
+            if (startInvoked && !terminal.isCompleted) {
                 withContext(NonCancellable) {
-                    underlying.cancel()
-                    // An unacknowledged request remains tracked so pool
-                    // shutdown never incorrectly claims leak-free completion.
+                    withContext(pool.dispatcher) { underlying.cancel() }
+                    // If start() failed after being invoked and the platform
+                    // never sends a callback, preserve the tracked leak as an
+                    // explicit shutdown failure rather than synthesizing an ack.
                     withTimeoutOrNull(CANCEL_ACK_TIMEOUT_MS) { terminal.await() }
                 }
             }
@@ -287,8 +310,10 @@ internal class PlatformHttpRangeFetchExecutor(
 
     private fun errorKind(error: HttpException, sawHeaders: Boolean): TransportIoKind =
         when ((error as? NetworkException)?.errorCode) {
-            NetworkException.ERROR_CONNECTION_TIMED_OUT ->
-                if (sawHeaders) TransportIoKind.READ_TIMEOUT else TransportIoKind.CONNECT_TIMEOUT
+            NetworkException.ERROR_CONNECTION_TIMED_OUT -> TransportIoKind.CONNECT_TIMEOUT
+            // Generic ERROR_TIMED_OUT follows connection establishment on
+            // Android: report a request/read timeout, not vague I/O.
+            NetworkException.ERROR_TIMED_OUT -> TransportIoKind.READ_TIMEOUT
             NetworkException.ERROR_CONNECTION_RESET,
             NetworkException.ERROR_CONNECTION_CLOSED -> TransportIoKind.CONNECTION_RESET
             else -> TransportIoKind.IO
@@ -334,3 +359,6 @@ internal fun normalizedPlatformProtocol(raw: String?): String {
         else -> "UNKNOWN"
     }
 }
+
+/** Observed platform terminal callback kind, never inferred from pool size. */
+internal enum class PlatformHttpTerminal { SUCCEEDED, FAILED, CANCELED }

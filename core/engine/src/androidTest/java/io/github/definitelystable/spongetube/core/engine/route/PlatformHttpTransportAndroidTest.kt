@@ -15,6 +15,7 @@ import io.github.definitelystable.spongetube.core.engine.HttpRangeFetchExecutor
 import io.github.definitelystable.spongetube.core.engine.HttpRangeTarget
 import io.github.definitelystable.spongetube.core.engine.PlatformHttpEnginePool
 import io.github.definitelystable.spongetube.core.engine.PlatformHttpRangeFetchExecutor
+import io.github.definitelystable.spongetube.core.engine.PlatformHttpTerminal
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationBackend
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationEligibility
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationSelector
@@ -101,12 +102,14 @@ class PlatformHttpTransportAndroidTest {
                 readTimeoutMs = 12_000,
             )
             val candidateProtocol = AtomicReference("UNKNOWN")
+            val platformTerminals = CopyOnWriteArrayList<PlatformHttpTerminal>()
             val candidate = PlatformHttpRangeFetchExecutor(
                 pool = engine,
                 targetFor = { HttpRangeTarget(uri, RESOURCE_LENGTH) },
                 firstResponseTimeoutMs = 20_000,
                 readTimeoutMs = 12_000,
                 onProtocolObserved = candidateProtocol::set,
+                onTerminalObserved = { platformTerminals += it },
             )
             val selector = TransportEvaluationSelector(control, candidate, engine.backendVersion)
             for (backend in listOf(
@@ -149,9 +152,17 @@ class PlatformHttpTransportAndroidTest {
                     assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
                     assertEquals(1, events.count { it.event == FetchEventKind.ATTEMPT_STARTED })
                     assertEquals(1, events.count { it.event == FetchEventKind.ATTEMPT_COMPLETED })
-                    assertTrue(store.committedExtents().any {
+                    val committed = store.committedExtents().single {
                         it.extentId.value == id && it.length == RESOURCE_LENGTH
-                    })
+                    }
+                    assertEquals(RESOURCE_SHA256, committed.sha256.hex)
+                    val correlation = events.single {
+                        it.event == FetchEventKind.ATTEMPT_CORRELATED
+                    }
+                    val physicalOriginId = checkNotNull(
+                        correlation.transportCorrelationId?.toLongOrNull(),
+                    )
+                    assertTrue(physicalOriginId > 0)
                     val observedEpoch = (monitor.observations.value.state as? DefaultRouteState.Available)
                         ?.routeEpoch
                     assertEquals("comparison changed permitted route", epoch, observedEpoch)
@@ -162,7 +173,8 @@ class PlatformHttpTransportAndroidTest {
                         put("attempts", 1)
                         put("committedBytes", RESOURCE_LENGTH)
                         put("routeEpoch", epoch)
-                        put("sha256", RESOURCE_SHA256)
+                        put("sha256", committed.sha256.hex)
+                        put("originRequestId", physicalOriginId)
                         put("backendVersion", checkNotNull(selected.backendVersion))
                         put("implementationId", checkNotNull(selected.implementationId))
                         put("negotiatedProtocol", if (
@@ -197,6 +209,8 @@ class PlatformHttpTransportAndroidTest {
             val firstChunk = CompletableDeferred<Unit>()
             val keepEmitterPaused = CompletableDeferred<Unit>()
             val cancelCharges = AtomicInteger()
+            val cancelledOriginCorrelation = AtomicReference<String?>(null)
+            val previousTerminalCount = platformTerminals.size
             val cancelTask = async {
                 candidate.executeWithRouteBinding(
                     request = request("m2g1:cancellation"),
@@ -205,7 +219,7 @@ class PlatformHttpTransportAndroidTest {
                     routeBinding = checkNotNull(initial.executionBinding),
                     deliveryBinding = null,
                     onPhysicalAttemptStart = { cancelCharges.incrementAndGet() },
-                    onTransportCorrelation = { },
+                    onTransportCorrelation = { cancelledOriginCorrelation.set(it) },
                     emitChunk = {
                         firstChunk.complete(Unit)
                         keepEmitterPaused.await()
@@ -215,6 +229,15 @@ class PlatformHttpTransportAndroidTest {
             withTimeout(30_000) { firstChunk.await() }
             assertEquals(1, cancelCharges.get())
             cancelTask.cancelAndJoin()
+            assertEquals(
+                "Only an actual onCanceled callback proves cancellation",
+                listOf(PlatformHttpTerminal.CANCELED),
+                platformTerminals.drop(previousTerminalCount),
+            )
+            val cancelledOriginId = checkNotNull(
+                cancelledOriginCorrelation.get()?.toLongOrNull(),
+            )
+            assertTrue(cancelledOriginId > 0)
             assertEquals(
                 "UrlRequest never acknowledged cancellation",
                 0, engine.activeRequestCount,
@@ -232,6 +255,8 @@ class PlatformHttpTransportAndroidTest {
                     put("trials", evidence)
                     put("unboundCharges", unboundCharges.get())
                     put("cancelledRequestCharges", cancelCharges.get())
+                    put("cancelledOriginRequestId", cancelledOriginId)
+                    put("cancelTerminal", platformTerminals.last().name)
                     put("cancelledRequestAcknowledged", engine.activeRequestCount == 0)
                 }.toString() + "\n")
             }
