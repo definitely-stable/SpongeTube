@@ -168,6 +168,70 @@ class TransportEvaluationOracleTest(unittest.TestCase):
         self.assertTrue(computed["comparisonResult"]["recoveryEquivalent"])
         validate_summary(summary_document(), trials)
 
+
+    def test_observable_extra_internal_retry_is_not_equivalent(self):
+        trials = trials_document()
+        for row in trials["trials"]:
+            if row["backendId"] == "PLATFORM_HTTP_ENGINE":
+                row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
+                row["recovery"]["internalRetryCount"] = 1
+        computed = analyze_trials(trials)
+        self.assertFalse(computed["comparisonResult"]["recoveryEquivalent"])
+        self.assertFalse(computed["comparisonResult"]["performanceClaimEligible"])
+        with self.assertRaises(TransportEvaluationError):
+            validate_summary(summary_document(), trials)
+
+    def test_observable_zero_and_proven_zero_are_equivalent(self):
+        trials = trials_document()
+        for row in trials["trials"]:
+            if row["backendId"] == "PLATFORM_HTTP_ENGINE":
+                row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
+                row["recovery"]["internalRetryCount"] = 0
+        self.assertTrue(analyze_trials(trials)["comparisonResult"]["recoveryEquivalent"])
+        validate_summary(summary_document(), trials)
+
+    def test_backend_version_drift_between_repetitions_is_rejected(self):
+        trials = trials_document()
+        trials["trials"][2]["backendVersion"] = "platform-v2"
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_implementation_drift_between_repetitions_is_rejected(self):
+        trials = trials_document()
+        trials["trials"][2]["implementationId"] = "different-implementation"
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_first_byte_after_completion_is_rejected(self):
+        trials = trials_document()
+        trials["trials"][1]["metrics"]["firstByteUs"] = 100_001
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_missing_requested_byte_accounting_is_rejected(self):
+        trials = trials_document()
+        trials["trials"][1]["metrics"]["bytesRequested"] = None
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_publishing_more_than_received_is_rejected(self):
+        trials = trials_document()
+        trials["trials"][1]["metrics"]["bytesPublished"] = 81_812
+        with self.assertRaises(TransportEvaluationError):
+            analyze_trials(trials)
+
+    def test_retry_amplified_received_bytes_do_not_violate_bounds(self):
+        trials = trials_document()
+        for row in trials["trials"]:
+            row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
+            row["recovery"]["internalRetryCount"] = 1
+            row["recovery"]["originRequestCount"] = 2
+            row["metrics"]["bytesReceived"] = 100_000
+        computed = analyze_trials(trials)
+        self.assertTrue(computed["comparisonResult"]["recoveryEquivalent"])
+        self.assertTrue(computed["comparisonResult"]["performanceClaimEligible"])
+        validate_summary(summary_document(), trials)
+
     def test_only_backend_may_change_comparison_fingerprint(self):
         trials = trials_document()
         trials["trials"][1]["comparison"]["scenarioHash"] = "1" * 64

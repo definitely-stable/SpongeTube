@@ -89,12 +89,15 @@ def _correctness_tuple(trial: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(correctness[field] for field in CORRECTNESS_FIELDS)
 
 
-def _recovery_tuple(trial: Mapping[str, Any]) -> tuple[int, int, int]:
+def _recovery_tuple(trial: Mapping[str, Any]) -> tuple[int, int, int, int | None]:
     recovery = trial["recovery"]
     return (
         recovery["recoveryChainCount"],
         recovery["ownerCount"],
         recovery["originRequestCount"],
+        # The visibility label is observational, not an outcome: an observed
+        # zero and a proven zero are equivalent; an observable extra retry is not.
+        recovery["internalRetryCount"],
     )
 
 
@@ -142,6 +145,7 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     backend_eligibility: dict[str, str] = {}
+    backend_identity: dict[str, tuple[str | None, str | None]] = {}
     backend_trial_counts = Counter()
     backend_sample_counts = Counter()
     first_positions = Counter()
@@ -158,6 +162,12 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
         require(
             previous == trial["eligibility"],
             f"{backend}: eligibility changed within one pair",
+        )
+        identity = (trial["backendVersion"], trial["implementationId"])
+        previous_identity = backend_identity.setdefault(backend, identity)
+        require(
+            previous_identity == identity,
+            f"{backend}: backend version or implementation changed within one pair",
         )
 
         eligibility = trial["eligibility"]
@@ -227,8 +237,18 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
                 f"{trial['trialId']}: performance sample requires first-byte and completion durations",
             )
             require(
-                metrics["bytesReceived"] is not None and metrics["bytesPublished"] is not None,
-                f"{trial['trialId']}: performance sample requires byte accounting",
+                metrics["bytesRequested"] is not None
+                and metrics["bytesReceived"] is not None
+                and metrics["bytesPublished"] is not None,
+                f"{trial['trialId']}: performance sample requires complete byte accounting",
+            )
+            require(
+                metrics["firstByteUs"] <= metrics["completionUs"],
+                f"{trial['trialId']}: first byte must not follow completion",
+            )
+            require(
+                metrics["bytesPublished"] <= metrics["bytesReceived"],
+                f"{trial['trialId']}: published bytes exceed received bytes",
             )
 
     protocol = document["orderingProtocol"]
@@ -324,6 +344,9 @@ def analyze_trials(document: Mapping[str, Any]) -> dict[str, Any]:
         bool(backends)
         and all(backend_eligibility[backend] == "ELIGIBLE" for backend in backends)
         and paired_performance_blocks > 0
+        and correctness_equivalent
+        and recovery_equivalent
+        and exact_route_equivalent
     )
 
     return {
