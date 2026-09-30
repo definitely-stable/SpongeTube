@@ -10,10 +10,13 @@ import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.http.HttpEngine
+import android.net.http.UrlRequest
 import android.os.Build
 import android.os.SystemClock
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executor
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -92,10 +95,20 @@ private data class PlatformRouteHandle(
 
 private class AndroidRouteExecutionBinding(
     private val network: Network,
-) : RouteExecutionBinding {
+) : PlatformHttpEngineRouteBinding {
     override fun openConnection(url: URL): HttpURLConnection =
         network.openConnection(url) as? HttpURLConnection
             ?: error("route binding returned a non-HTTP connection")
+
+    @android.annotation.TargetApi(34)
+    override fun newBoundRequest(
+        engine: HttpEngine,
+        url: URL,
+        executor: Executor,
+        callback: UrlRequest.Callback,
+    ): UrlRequest.Builder =
+        engine.newUrlRequestBuilder(url.toString(), executor, callback)
+            .bindToNetwork(network)
 }
 
 private class PlatformRouteRefs {
