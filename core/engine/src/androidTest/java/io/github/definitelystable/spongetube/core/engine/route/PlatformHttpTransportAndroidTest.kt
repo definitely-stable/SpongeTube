@@ -34,7 +34,17 @@ import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import java.io.File
 import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableStateFlow
+import io.github.definitelystable.spongetube.core.engine.FetchPriority
+import io.github.definitelystable.spongetube.core.engine.FetchAttemptDisposition
+import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
+import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -90,11 +100,13 @@ class PlatformHttpTransportAndroidTest {
                 connectTimeoutMs = 12_000,
                 readTimeoutMs = 12_000,
             )
+            val candidateProtocol = AtomicReference("UNKNOWN")
             val candidate = PlatformHttpRangeFetchExecutor(
                 pool = engine,
                 targetFor = { HttpRangeTarget(uri, RESOURCE_LENGTH) },
                 firstResponseTimeoutMs = 20_000,
                 readTimeoutMs = 12_000,
+                onProtocolObserved = candidateProtocol::set,
             )
             val selector = TransportEvaluationSelector(control, candidate, engine.backendVersion)
             for (backend in listOf(
@@ -151,12 +163,63 @@ class PlatformHttpTransportAndroidTest {
                         put("committedBytes", RESOURCE_LENGTH)
                         put("routeEpoch", epoch)
                         put("sha256", RESOURCE_SHA256)
+                        put("backendVersion", checkNotNull(selected.backendVersion))
+                        put("implementationId", checkNotNull(selected.implementationId))
+                        put("negotiatedProtocol", if (
+                            backend == TransportEvaluationBackend.PLATFORM_HTTP_ENGINE
+                        ) candidateProtocol.get() else "UNKNOWN")
                     })
                 } finally {
                     coordinator.shutdown()
                     broker.shutdown()
                 }
             }
+
+            // Unbound candidate may never use the ambient/default network
+            // or charge a physical attempt, even if HttpEngine is available.
+            val unboundCharges = AtomicInteger()
+            val unbound = candidate.executeCorrelatedWithAdmission(
+                request("m2g1:unbound"), 1, MutableStateFlow(FetchPriority.PLAYBACK),
+                onPhysicalAttemptStart = { unboundCharges.incrementAndGet() },
+                onTransportCorrelation = { error("unbound candidate emitted correlation") },
+                emitChunk = { error("unbound candidate emitted bytes") },
+            )
+            assertTrue(unbound is FetchAttemptDisposition.Failure)
+            assertEquals(
+                FailureObservation.TransportIo(TransportIoKind.TARGET_UNRESOLVED),
+                (unbound as FetchAttemptDisposition.Failure).observation,
+            )
+            assertEquals(0, unboundCharges.get())
+
+            // A real response is deliberately paused during emitChunk.
+            // Cancellation must cancel UrlRequest and await its terminal
+            // onCanceled callback before releasing session engine ownership.
+            val firstChunk = CompletableDeferred<Unit>()
+            val keepEmitterPaused = CompletableDeferred<Unit>()
+            val cancelCharges = AtomicInteger()
+            val cancelTask = async {
+                candidate.executeWithRouteBinding(
+                    request = request("m2g1:cancellation"),
+                    attempt = 1,
+                    priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                    routeBinding = checkNotNull(initial.executionBinding),
+                    deliveryBinding = null,
+                    onPhysicalAttemptStart = { cancelCharges.incrementAndGet() },
+                    onTransportCorrelation = { },
+                    emitChunk = {
+                        firstChunk.complete(Unit)
+                        keepEmitterPaused.await()
+                    },
+                )
+            }
+            withTimeout(30_000) { firstChunk.await() }
+            assertEquals(1, cancelCharges.get())
+            cancelTask.cancelAndJoin()
+            assertEquals(
+                "UrlRequest never acknowledged cancellation",
+                0, engine.activeRequestCount,
+            )
+
             PlatformTestStorageRegistry.getInstance().openOutputFile(
                 "m2-g1-platform/case.json",
             ).bufferedWriter().use { writer ->
@@ -167,6 +230,9 @@ class PlatformHttpTransportAndroidTest {
                     put("deviceClass", "ANDROID_EMULATOR")
                     put("mediaPath", "ANDROID_DEFAULT_NETWORK")
                     put("trials", evidence)
+                    put("unboundCharges", unboundCharges.get())
+                    put("cancelledRequestCharges", cancelCharges.get())
+                    put("cancelledRequestAcknowledged", engine.activeRequestCount == 0)
                 }.toString() + "\n")
             }
         } finally {

@@ -32,6 +32,10 @@ internal class PlatformHttpEnginePool private constructor(
     private val pending = LinkedHashMap<UrlRequest, CompletableDeferred<Unit>>()
     private var closing = false
 
+    /** Process-local diagnostic: a terminal callback is required before removal. */
+    val activeRequestCount: Int
+        get() = synchronized(lock) { pending.size }
+
     fun track(request: UrlRequest, terminal: CompletableDeferred<Unit>): Boolean =
         synchronized(lock) {
             if (closing) {

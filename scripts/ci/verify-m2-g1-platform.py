@@ -34,20 +34,34 @@ def check(case: dict, origin: list[dict]) -> None:
     require(len(epochs) == 1 and all(isinstance(x, int) and x > 0 for x in epochs),
             "route epoch changed during correctness comparison")
     for row in trials:
+        require(isinstance(row.get("backendVersion"), str) and row["backendVersion"],
+                "version evidence missing")
+        require(isinstance(row.get("implementationId"), str) and row["implementationId"],
+                "implementation identity evidence missing")
+        require(row.get("negotiatedProtocol") in ("HTTP_1_1", "HTTP_2", "HTTP_3", "UNKNOWN"),
+                "protocol must be descriptive normalized evidence")
         require(row.get("eligibility") == "ELIGIBLE" and row.get("result") == "SUCCESS",
                 "backend not independently proven eligible and successful")
         require(row.get("attempts") == 1 and row.get("committedBytes") == LENGTH,
                 "physical owner or committed extent count mismatch")
         require(row.get("sha256") == SHA, "fixture content identity mismatch")
 
+    require(case.get("unboundCharges") == 0, "unbound candidate charged a physical request")
+    require(case.get("cancelledRequestCharges") == 1, "cancel case did not start exactly once")
+    require(case.get("cancelledRequestAcknowledged") is True,
+            "cancellation did not release platform terminal callback")
     data = [x for x in origin if x.get("plane") == "data" and x.get("method") == "GET"]
-    require(len(data) == 2, f"expected exactly two physical origin GETs, got {len(data)}")
-    for row in data:
+    require(len(data) == 3, f"expected two success GETs and one cancel GET, got {len(data)}")
+    for row in data[:2]:
         require(row.get("path") == "/fixtures/F1/segment-1-00001.m4s",
                 "unexpected physical target")
         require(row.get("rangeHeader") == "bytes=0-81810" and row.get("status") == 206,
                 "physical Range or response mismatch")
         require(row.get("bodyBytesWritten") == LENGTH, "origin response body incomplete")
+    cancelled = data[2]
+    require(cancelled.get("path") == "/fixtures/F1/segment-1-00001.m4s"
+            and cancelled.get("rangeHeader") == "bytes=0-81810"
+            and cancelled.get("status") == 206, "cancel case did not reach the permitted origin")
 
 
 def main() -> None:

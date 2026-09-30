@@ -47,6 +47,7 @@ internal class PlatformHttpRangeFetchExecutor(
         (statusCode: Int, header: (String) -> String?) -> ProviderSignal =
         { _, _ -> ProviderSignal.NONE },
     private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
+    private val onProtocolObserved: (String) -> Unit = { },
 ) : RouteBoundFetchAttemptExecutor {
     init { require(firstResponseTimeoutMs > 0 && readTimeoutMs > 0 && chunkSize > 0) }
 
@@ -196,6 +197,8 @@ internal class PlatformHttpRangeFetchExecutor(
                             return failure(httpResponse(info, deliveryBinding), correlation)
                         }
                         sawHeaders = true
+                        // Descriptive observation only: never a ranking input.
+                        onProtocolObserved(normalizedPlatformProtocol(info.negotiatedProtocol))
                         if (info.wasCached()) return transport(TransportIoKind.IO, correlation)
                         when (info.httpStatusCode) {
                             206 -> Unit
@@ -319,4 +322,15 @@ internal class PlatformHttpRangeFetchExecutor(
     }
 
     private companion object { const val CANCEL_ACK_TIMEOUT_MS = 15_000L }
+}
+
+/** Never retain raw protocol strings in portable evidence. */
+internal fun normalizedPlatformProtocol(raw: String?): String {
+    val value = raw?.lowercase(java.util.Locale.ROOT) ?: return "UNKNOWN"
+    return when {
+        value == "http/1.1" -> "HTTP_1_1"
+        value == "h2" || value == "http/2" -> "HTTP_2"
+        value == "h3" || value.startsWith("h3-") || value == "http/3" -> "HTTP_3"
+        else -> "UNKNOWN"
+    }
 }

@@ -27,7 +27,7 @@ internal data class TransportEvaluationSelection(
 
 internal class TransportEvaluationSelector(
     private val control: HttpRangeFetchExecutor,
-    private val candidate: FetchAttemptExecutor?,
+    private val candidate: RouteBoundFetchAttemptExecutor?,
     private val candidateVersion: String?,
 ) {
     fun select(backend: TransportEvaluationBackend): TransportEvaluationSelection =
