@@ -45,6 +45,9 @@ def check(case: dict, origin: list[dict]) -> None:
         require(row.get("attempts") == 1 and row.get("committedBytes") == LENGTH,
                 "physical owner or committed extent count mismatch")
         require(row.get("sha256") == SHA, "fixture content identity mismatch")
+        require(row.get("deliveryBindingRevision") == "binding-1"
+                and row.get("deliveryBindingTargetResolved") is True,
+                "both backends must preserve the same delivery-binding execution path")
         require(type(row.get("originRequestId")) is int and row["originRequestId"] > 0,
                 "trial lacks a real physical origin correlation ID")
 

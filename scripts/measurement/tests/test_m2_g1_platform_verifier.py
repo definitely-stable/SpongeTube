@@ -30,6 +30,8 @@ def baseline():
         "routeEpoch": 1,
         "sha256": SHA,
         "originRequestId": request_id,
+        "deliveryBindingRevision": "binding-1",
+        "deliveryBindingTargetResolved": True,
     }
     case = {
         "schemaVersion": 1,
@@ -123,6 +125,18 @@ class G1VerifierFalsificationTests(unittest.TestCase):
     def test_stale_binding_origin_correlation_is_rejected(self):
         case, origin = baseline()
         case["staleRouteCorrelationAbsent"] = False
+        with self.assertRaises(ValueError):
+            check(case, origin)
+
+    def test_delivery_binding_revision_drift_fails(self):
+        case, origin = baseline()
+        case["trials"][1]["deliveryBindingRevision"] = "binding-2"
+        with self.assertRaises(ValueError):
+            check(case, origin)
+
+    def test_delivery_binding_target_not_resolved_fails(self):
+        case, origin = baseline()
+        case["trials"][1]["deliveryBindingTargetResolved"] = False
         with self.assertRaises(ValueError):
             check(case, origin)
 

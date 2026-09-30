@@ -21,6 +21,9 @@ import io.github.definitelystable.spongetube.core.engine.PlatformHttpTerminal
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationBackend
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationEligibility
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationSelector
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRefresher
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAttemptGate
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumer
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumerId
@@ -60,7 +63,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,6 +77,21 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class PlatformHttpTransportAndroidTest {
+    @Test
+    fun api23RecordsCandidateUnavailableWithoutConstructingAnEngine() {
+        assumeTrue(Build.VERSION.SDK_INT < 34)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val pool = PlatformHttpEnginePool.createIfAvailable(context)
+        assertNull("API 23 must never instantiate API34 HttpEngine", pool)
+        val control = HttpRangeFetchExecutor(
+            targetFor = { null }, connectTimeoutMs = 1_000, readTimeoutMs = 1_000,
+        )
+        val selected = TransportEvaluationSelector(control, null, null)
+            .select(TransportEvaluationBackend.PLATFORM_HTTP_ENGINE)
+        assertEquals(TransportEvaluationEligibility.UNAVAILABLE_ON_DEVICE, selected.eligibility)
+        assertNull(selected.executor)
+    }
+
     @Test(timeout = 180_000L)
     fun bothBackendsPublishExpectedCoverageThroughTheSameRouteGate() = runBlocking {
         assumeTrue(Build.VERSION.SDK_INT == 36)
@@ -100,8 +120,18 @@ class PlatformHttpTransportAndroidTest {
                 }
             }
             val epoch = (initial.state as DefaultRouteState.Available).routeEpoch
+            // Identical mutable delivery context for BOTH control and candidate.
+            // Resolving it is part of execution, never FetchKey / ExtentSpec.
+            val deliveryMaterial = object : DeliveryMaterial {}
+            val controlBindingHits = AtomicInteger()
+            val candidateBindingHits = AtomicInteger()
             val control = HttpRangeFetchExecutor(
                 targetFor = { HttpRangeTarget(uri, RESOURCE_LENGTH) },
+                bindingTargetFor = { _, selected ->
+                    assertSame(deliveryMaterial, selected)
+                    controlBindingHits.incrementAndGet()
+                    HttpRangeTarget(uri, RESOURCE_LENGTH)
+                },
                 connectTimeoutMs = 12_000,
                 readTimeoutMs = 12_000,
             )
@@ -110,6 +140,11 @@ class PlatformHttpTransportAndroidTest {
             val candidate = PlatformHttpRangeFetchExecutor(
                 pool = engine,
                 targetFor = { HttpRangeTarget(uri, RESOURCE_LENGTH) },
+                bindingTargetFor = { _, selected ->
+                    assertSame(deliveryMaterial, selected)
+                    candidateBindingHits.incrementAndGet()
+                    HttpRangeTarget(uri, RESOURCE_LENGTH)
+                },
                 firstResponseTimeoutMs = 20_000,
                 readTimeoutMs = 12_000,
                 onProtocolObserved = candidateProtocol::set,
@@ -130,6 +165,12 @@ class PlatformHttpTransportAndroidTest {
                     sessionId = sessionId,
                     eventListener = FetchEventListener { events += it },
                 )
+                val bindings = DeliveryBindingCoordinator(
+                    initialMaterial = deliveryMaterial,
+                    refresher = DeliveryBindingRefresher { _, _ ->
+                        error("G1 N0 comparison must not refresh delivery binding")
+                    },
+                )
                 val routeGate = RouteAwareRecoveryAttemptGate(
                     observations = monitor.observations,
                     guard = SessionRouteGuard(),
@@ -138,6 +179,7 @@ class PlatformHttpTransportAndroidTest {
                     broker = broker,
                     sessionId = sessionId,
                     policy = RecoveryPolicy.DEFAULT,
+                    bindings = bindings,
                     attemptGate = RecoveryAttemptGate { chainId ->
                         routeGate.awaitPermit(chainId)
                     },
@@ -156,6 +198,14 @@ class PlatformHttpTransportAndroidTest {
                     assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
                     assertEquals(1, events.count { it.event == FetchEventKind.ATTEMPT_STARTED })
                     assertEquals(1, events.count { it.event == FetchEventKind.ATTEMPT_COMPLETED })
+                    assertEquals(
+                        1,
+                        if (backend == TransportEvaluationBackend.PLATFORM_HTTP_ENGINE) {
+                            candidateBindingHits.get()
+                        } else {
+                            controlBindingHits.get()
+                        },
+                    )
                     val committed = store.committedExtents().single {
                         it.extentId.value == id && it.length == RESOURCE_LENGTH
                     }
@@ -179,6 +229,8 @@ class PlatformHttpTransportAndroidTest {
                         put("routeEpoch", epoch)
                         put("sha256", committed.sha256.hex)
                         put("originRequestId", physicalOriginId)
+                        put("deliveryBindingRevision", "binding-1")
+                        put("deliveryBindingTargetResolved", true)
                         put("backendVersion", checkNotNull(selected.backendVersion))
                         put("implementationId", checkNotNull(selected.implementationId))
                         put("negotiatedProtocol", if (
