@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "recordType": "m2-g0-issue113-current-state",
+  "recordedOn": "2026-09-30",
+  "repository": "definitely-stable/SpongeTube",
+  "lastVerifiedBaseHead": "9f61c8054f1a08143f5fcf2b675d4eb08e4345f4",
+  "currentMilestone": "M2",
+  "currentSlice": "M2-G0 independent-oracle hardening",
+  "issue": 113,
+  "parentIssue": 109,
+  "openPr": 114,
+  "frozenTrialSchemaBlob": "55dc7598901dadfb4cf7eaf510cd093f4b230aee",
+  "frozenSummarySchemaBlob": "8a949f483f2748062b83b398d9d113c72b113139",
+  "changes": [
+    "Recovery equivalence compares internalRetryCount but normalizes OBSERVABLE zero and PROVEN_ZERO zero",
+    "backendVersion and implementationId remain identical per backend inside one pair",
+    "Performance samples require ordered firstByteUs and completionUs, complete byte accounting and bytesPublished <= bytesReceived",
+    "Paired performance claim requires correctness/recovery/exact-route equivalence"
+  ],
+  "regressionTests": {
+    "added": 8,
+    "positive": [
+      "observable-zero versus proven-zero equivalence",
+      "received-byte amplification during observed retries"
+    ],
+    "negative": [
+      "extra observable internal retry mismatch",
+      "backend version drift",
+      "implementation drift",
+      "first-byte after completion",
+      "missing bytesRequested",
+      "published bytes exceed received"
+    ]
+  },
+  "verifiedCI": "PENDING",
+  "localAndroidBuild": "NOT_RUN_GITHUB_CONNECTOR_ONLY",
+  "acceptance": "PENDING_CI_AND_REVIEW",
+  "knownBlockers": [
+    "Verify and Windows Verify not yet reported on current PR head"
+  ],
+  "nextAllowedAction": "Run/review required CI; merge only after green gates; begin M2-G1 on merged main"
+}
