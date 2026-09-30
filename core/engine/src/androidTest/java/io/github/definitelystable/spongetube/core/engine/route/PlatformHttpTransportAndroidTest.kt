@@ -1,6 +1,8 @@
 package io.github.definitelystable.spongetube.core.engine.route
 
 import android.content.Context
+import android.app.Instrumentation
+import android.os.ParcelFileDescriptor
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,6 +50,8 @@ import io.github.definitelystable.spongetube.core.engine.recovery.FailureObserva
 import io.github.definitelystable.spongetube.core.engine.recovery.TransportIoKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -68,7 +72,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class PlatformHttpTransportAndroidTest {
-    @Test(timeout = 120_000L)
+    @Test(timeout = 180_000L)
     fun bothBackendsPublishExpectedCoverageThroughTheSameRouteGate() = runBlocking {
         assumeTrue(Build.VERSION.SDK_INT == 36)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -234,6 +238,8 @@ class PlatformHttpTransportAndroidTest {
                 listOf(PlatformHttpTerminal.CANCELED),
                 platformTerminals.drop(previousTerminalCount),
             )
+            val observedCancellationTerminal = platformTerminals.last()
+            val cancellationAcked = engine.activeRequestCount == 0
             val cancelledOriginId = checkNotNull(
                 cancelledOriginCorrelation.get()?.toLongOrNull(),
             )
@@ -242,6 +248,56 @@ class PlatformHttpTransportAndroidTest {
                 "UrlRequest never acknowledged cancellation",
                 0, engine.activeRequestCount,
             )
+
+            // M2-G1 route falsification: keep the ORIGINAL route binding
+            // after an ACTUAL Android default-network loss. It must fail
+            // instead of silently routing through any subsequent ambient path.
+            // Independent origin verifier also rejects ANY fourth GET.
+            val staleCharges = AtomicInteger()
+            val staleCorrelation = AtomicReference<String?>(null)
+            val staleBytes = AtomicInteger()
+            var lossObserved = false
+            var staleBindingRejected = false
+            var restoredRouteEpoch = epoch
+            try {
+                setConnectivityEnabled(instrumentation, enabled = false)
+                withTimeout(30_000) {
+                    monitor.observations.first { it.state == DefaultRouteState.Unavailable }
+                }
+                lossObserved = true
+                val old = candidate.executeWithRouteBinding(
+                    request = request("m2g1:old-route"),
+                    attempt = 1,
+                    priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                    routeBinding = checkNotNull(initial.executionBinding),
+                    deliveryBinding = null,
+                    onPhysicalAttemptStart = { staleCharges.incrementAndGet() },
+                    onTransportCorrelation = { staleCorrelation.set(it) },
+                    emitChunk = { staleBytes.addAndGet(it.bytes.size) },
+                )
+                staleBindingRejected = old is FetchAttemptDisposition.Failure &&
+                    staleCorrelation.get() == null && staleBytes.get() == 0 &&
+                    engine.activeRequestCount == 0
+                assertTrue(
+                    "a stale HttpEngine route must fail without ambient fallback",
+                    staleBindingRejected,
+                )
+            } finally {
+                withContext(NonCancellable) {
+                    setConnectivityEnabled(instrumentation, enabled = true)
+                    val recovered = withTimeout(30_000) {
+                        monitor.observations.first { observation ->
+                            val state = observation.state as? DefaultRouteState.Available
+                            state != null && state.capabilitiesReceived &&
+                                state.routeEpoch > epoch &&
+                                state.capabilities.vpn == ObservedBoolean.FALSE &&
+                                observation.executionBinding is PlatformHttpEngineRouteBinding
+                        }
+                    }
+                    restoredRouteEpoch =
+                        (recovered.state as DefaultRouteState.Available).routeEpoch
+                }
+            }
 
             PlatformTestStorageRegistry.getInstance().openOutputFile(
                 "m2-g1-platform/case.json",
@@ -256,8 +312,14 @@ class PlatformHttpTransportAndroidTest {
                     put("unboundCharges", unboundCharges.get())
                     put("cancelledRequestCharges", cancelCharges.get())
                     put("cancelledOriginRequestId", cancelledOriginId)
-                    put("cancelTerminal", platformTerminals.last().name)
-                    put("cancelledRequestAcknowledged", engine.activeRequestCount == 0)
+                    put("cancelTerminal", observedCancellationTerminal.name)
+                    put("actualDefaultRouteLossObserved", lossObserved)
+                    put("staleRouteBoundRequestRejected", staleBindingRejected)
+                    put("staleRouteCorrelationAbsent", staleCorrelation.get() == null)
+                    put("staleRoutePublishedBytes", staleBytes.get())
+                    put("staleRouteCharges", staleCharges.get())
+                    put("restoredRouteEpoch", restoredRouteEpoch)
+                    put("cancelledRequestAcknowledged", cancellationAcked)
                 }.toString() + "\n")
             }
         } finally {
@@ -266,6 +328,30 @@ class PlatformHttpTransportAndroidTest {
             pool?.shutdown()
             store.close()
             File(context.filesDir, "sponge").deleteRecursively()
+        }
+    }
+
+    private suspend fun setConnectivityEnabled(
+        instrumentation: Instrumentation,
+        enabled: Boolean,
+    ) {
+        val commands = if (enabled) {
+            listOf(
+                "cmd connectivity airplane-mode disable",
+                "svc data enable",
+                "svc wifi enable",
+            )
+        } else {
+            listOf(
+                "svc wifi disable",
+                "svc data disable",
+                "cmd connectivity airplane-mode enable",
+            )
+        }
+        for (command in commands) {
+            ParcelFileDescriptor.AutoCloseInputStream(
+                instrumentation.uiAutomation.executeShellCommand(command),
+            ).bufferedReader().use { it.readText() }
         }
     }
 

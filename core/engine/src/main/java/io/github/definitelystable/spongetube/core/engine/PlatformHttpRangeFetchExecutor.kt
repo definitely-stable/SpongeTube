@@ -232,24 +232,26 @@ internal class PlatformHttpRangeFetchExecutor(
                             )
                             else -> return transport(TransportIoKind.IO, correlation)
                         }
-                        val rawRange = header(info, "Content-Range")
-                            ?: return rangeFailure(RangeProtocolKind.CONTENT_RANGE_MISSING, correlation)
-                        val parsed = HttpRangeFetchExecutor.ContentRange.parse(rawRange)
-                        if (parsed == null || parsed.start != start ||
-                            parsed.endInclusive != end - 1 ||
-                            (parsed.total != null && parsed.total != target.resourceLength)
-                        ) return rangeFailure(RangeProtocolKind.CONTENT_RANGE_MISMATCH, correlation)
-                        val length = header(info, "Content-Length")
-                        if (length != null && length.trim().toLongOrNull() != end - start) {
-                            return rangeFailure(RangeProtocolKind.RESPONSE_LENGTH_MISMATCH, correlation)
-                        }
+                        val invalid = validatePlatformPartialRange(
+                            start = start,
+                            endExclusive = end,
+                            resourceLength = target.resourceLength,
+                            contentRange = header(info, "Content-Range"),
+                            contentLength = header(info, "Content-Length"),
+                        )
+                        if (invalid != null) return rangeFailure(invalid, correlation)
                         withContext(pool.dispatcher) {
                             underlying.read(readBuffer.apply { clear() })
                         }
                     }
                     is Event.Bytes -> {
-                        if (!sawHeaders || event.bytes.size.toLong() > end - position) {
+                        if (!sawHeaders) {
                             return rangeFailure(RangeProtocolKind.RESPONSE_LENGTH_MISMATCH, correlation)
+                        }
+                        if (event.bytes.size.toLong() > end - position) {
+                            return rangeFailure(
+                                RangeProtocolKind.RESPONSE_BYTES_OUTSIDE_RANGE, correlation,
+                            )
                         }
                         if (event.bytes.isNotEmpty()) {
                             emitChunk(FetchNetworkChunk(
@@ -362,3 +364,4 @@ internal fun normalizedPlatformProtocol(raw: String?): String {
 
 /** Observed platform terminal callback kind, never inferred from pool size. */
 internal enum class PlatformHttpTerminal { SUCCEEDED, FAILED, CANCELED }
+

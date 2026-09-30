@@ -59,6 +59,20 @@ def check(case: dict, origin: list[dict]) -> None:
     require(type(cancelled_id) is int and cancelled_id > 0
             and len(set(request_ids)) == 3,
             "missing or duplicate physical origin request correlation")
+    require(case.get("actualDefaultRouteLossObserved") is True,
+            "Android did not observe real default network loss")
+    require(case.get("staleRouteBoundRequestRejected") is True,
+            "saved exact binding did not fail closed after route loss")
+    require(case.get("staleRouteCorrelationAbsent") is True
+            and case.get("staleRoutePublishedBytes") == 0,
+            "old binding reached origin or emitted bytes")
+    require(type(case.get("staleRouteCharges")) is int
+            and case["staleRouteCharges"] in (0, 1),
+            "old route attempt has invalid owner accounting")
+    original_epoch = trials[0]["routeEpoch"]
+    require(type(case.get("restoredRouteEpoch")) is int
+            and case["restoredRouteEpoch"] > original_epoch,
+            "device route did not recover to a new epoch")
     data = [x for x in origin if x.get("plane") == "data" and x.get("method") == "GET"]
     by_id = {row.get("requestId"): row for row in data}
     require(len(data) == 3 and len(by_id) == 3 and set(by_id) == set(request_ids),

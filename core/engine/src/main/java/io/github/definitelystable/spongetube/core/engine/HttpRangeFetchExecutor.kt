@@ -368,6 +368,17 @@ internal class HttpRangeFetchExecutor(
                     )
                     position += read
                 }
+                // A chunked 206 may omit Content-Length while illegally
+                // sending body bytes beyond Content-Range. Do not declare
+                // SUCCESS based only on the expected prefix. Wait for HTTP
+                // response EOF or reject one extra byte. On valid framed
+                // responses this does not change the accepted byte range.
+                if (position == endExclusive && input.read() != -1) {
+                    return rangeFailure(
+                        RangeProtocolKind.RESPONSE_BYTES_OUTSIDE_RANGE,
+                        correlation,
+                    )
+                }
             }
         } catch (error: IOException) {
             currentCoroutineContext().ensureActive()

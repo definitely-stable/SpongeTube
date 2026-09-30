@@ -46,6 +46,12 @@ def baseline():
         "cancelledRequestAcknowledged": True,
         "cancelTerminal": "CANCELED",
         "cancelledOriginRequestId": 4,
+        "actualDefaultRouteLossObserved": True,
+        "staleRouteBoundRequestRejected": True,
+        "staleRouteCorrelationAbsent": True,
+        "staleRoutePublishedBytes": 0,
+        "staleRouteCharges": 1,
+        "restoredRouteEpoch": 2,
     }
     origin = [{
         "plane": "data",
@@ -111,6 +117,24 @@ class G1VerifierFalsificationTests(unittest.TestCase):
     def test_origin_range_mismatch_fails_with_correct_device_claim(self):
         case, origin = baseline()
         origin[1]["rangeHeader"] = "bytes=1-81810"
+        with self.assertRaises(ValueError):
+            check(case, origin)
+
+    def test_stale_binding_origin_correlation_is_rejected(self):
+        case, origin = baseline()
+        case["staleRouteCorrelationAbsent"] = False
+        with self.assertRaises(ValueError):
+            check(case, origin)
+
+    def test_old_route_returning_success_is_rejected(self):
+        case, origin = baseline()
+        case["staleRouteBoundRequestRejected"] = False
+        with self.assertRaises(ValueError):
+            check(case, origin)
+
+    def test_route_epoch_must_change_after_restoration(self):
+        case, origin = baseline()
+        case["restoredRouteEpoch"] = 1
         with self.assertRaises(ValueError):
             check(case, origin)
 

@@ -30,7 +30,8 @@ internal class PlatformHttpEnginePool private constructor(
     }
     val dispatcher = worker.asCoroutineDispatcher()
     val callbackExecutor = worker
-    private val pending = LinkedHashMap<UrlRequest, CompletableDeferred<Unit>>()
+    private val pending = LinkedHashMap<UrlRequest, Tracked>()
+    private data class Tracked(val terminal: CompletableDeferred<Unit>, var startReturned: Boolean = false)
     private var closing = false
     private val shutdownResult = CompletableDeferred<Result<Unit>>()
 
@@ -50,12 +51,14 @@ internal class PlatformHttpEnginePool private constructor(
         onPhysicalAttemptStart: () -> Unit,
         markStartInvoked: () -> Unit,
     ): Boolean = synchronized(lock) {
-        if (closing || pending[request] !== terminal) {
+        val tracked = pending[request]
+        if (closing || tracked?.terminal !== terminal) {
             false
         } else {
             onPhysicalAttemptStart()
             markStartInvoked()
             request.start()
+            tracked.startReturned = true
             true
         }
     }
@@ -69,7 +72,7 @@ internal class PlatformHttpEnginePool private constructor(
             if (closing) {
                 false
             } else {
-                pending[request] = terminal
+                pending[request] = Tracked(terminal)
                 terminal.invokeOnCompletion {
                     synchronized(lock) { pending.remove(request) }
                 }
@@ -93,12 +96,17 @@ internal class PlatformHttpEnginePool private constructor(
                 // Android requires request control on the builder's Executor.
                 // startTracked + closing share a lock; no late owner may start.
                 withContext(dispatcher) {
-                    snapshot.forEach { (request, terminal) ->
-                        if (!terminal.isCompleted) request.cancel()
+                    snapshot.forEach { (request, tracked) ->
+                        // cancel() on an unstarted request is not guaranteed
+                        // to deliver a terminal callback. Its owner will
+                        // finish local preflight/decline start and release it.
+                        if (tracked.startReturned && !tracked.terminal.isCompleted) {
+                            request.cancel()
+                        }
                     }
                 }
                 withTimeout(SHUTDOWN_TIMEOUT_MS) {
-                    snapshot.values.forEach { it.await() }
+                    snapshot.values.forEach { it.terminal.await() }
                 }
                 withContext(Dispatchers.IO) { engine.shutdown() }
                 dispatcher.close()
