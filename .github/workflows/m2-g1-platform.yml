@@ -3,21 +3,23 @@ name: M2-G1 Platform Transport Correctness
 on:
   pull_request:
     paths:
-      - ".github/workflows/m2-f-platform.yml"
+      - ".github/workflows/m2-g1-platform.yml"
       - "core/engine/**"
       - "tools/media-lab/**"
       - "scripts/faults/m2_e0_netns.sh"
       - "scripts/ci/prepare-emulator.sh"
       - "scripts/ci/verify-m2-g1-platform.py"
+      - "scripts/ci/m2_g1_response_lab.py"
       - "test-fixtures/media/**"
   push:
     branches: [ main ]
     paths:
-      - ".github/workflows/m2-f-platform.yml"
+      - ".github/workflows/m2-g1-platform.yml"
       - "core/engine/**"
       - "tools/media-lab/**"
       - "scripts/faults/m2_e0_netns.sh"
       - "scripts/ci/verify-m2-g1-platform.py"
+      - "scripts/ci/m2_g1_response_lab.py"
   workflow_dispatch:
 
 permissions:
@@ -81,13 +83,19 @@ jobs:
           test -n "$LAB_BIN"
           LAB_BIN="$(realpath "$LAB_BIN")"
           trace="$server_root/requests.jsonl"
+          fault_trace="$server_root/response-faults.jsonl"
           lab_pid=""
+          fault_pid=""
 
           cleanup() {
             set +e
             adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1
             adb shell svc data enable >/dev/null 2>&1
             adb shell svc wifi enable >/dev/null 2>&1
+            if [[ -n "$fault_pid" ]] && kill -0 "$fault_pid" 2>/dev/null; then
+              kill "$fault_pid" >/dev/null 2>&1 || true
+              wait "$fault_pid" >/dev/null 2>&1 || true
+            fi
             if [[ -n "$lab_pid" ]] && kill -0 "$lab_pid" 2>/dev/null; then
               kill "$lab_pid" >/dev/null 2>&1 || true
               wait "$lab_pid" >/dev/null 2>&1 || true
@@ -127,9 +135,31 @@ jobs:
             sleep 0.1
           done
 
+          sudo -n ip netns exec "$ns" \
+            python3 "$PWD/scripts/ci/m2_g1_response_lab.py" \
+              "--bind-address=$media_addr" \
+              --port=18083 \
+              "--trace=$fault_trace" \
+            > "$server_root/response-lab.out" \
+            2> "$server_root/response-lab.err" &
+          fault_pid=$!
+
+          for attempt in {1..60}; do
+            if sudo -n ip netns exec "$ns" \
+              curl --fail --silent "http://$media_addr:18083/__health" \
+              > "$server_root/response-lab-health.txt"; then
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              cat "$server_root/response-lab.err" >&2 || true
+              exit 1
+            fi
+            sleep 0.1
+          done
+
           adb get-state | tee "$root/adb-before.txt" | grep -Fxq device
-          if adb reverse --list | grep -Eq 'tcp:18081([[:space:]]|$)'; then
-            echo "M2-G1 media path must not use adb reverse" >&2
+          if adb reverse --list | grep -Eq 'tcp:(18081|18083)([[:space:]]|$)'; then
+            echo "M2-G1 media/fault paths must not use adb reverse" >&2
             exit 1
           fi
           printf 'ok\n' > "$root/media-reverse-absent.txt"
@@ -137,7 +167,8 @@ jobs:
           ./gradlew --dependency-verification=strict \
             :core:engine:connectedDebugAndroidTest \
             -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.route.PlatformHttpTransportAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g1.originBaseUrl="http://$media_addr:18081"
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g1.originBaseUrl="http://$media_addr:18081" \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g1.faultBaseUrl="http://$media_addr:18083"
 
           adb get-state | tee "$root/adb-after.txt" | grep -Fxq device
           sudo -n ip netns exec "$ns" \
@@ -150,9 +181,11 @@ jobs:
           cp -R "$source_dir/." "$evidence_root/"
 
           test -s "$trace"
+          test -s "$fault_trace"
           python3 scripts/ci/verify-m2-g1-platform.py \
             "$evidence_root" \
-            "$trace"
+            "$trace" \
+            "$fault_trace"
 
           cleanup
           trap - EXIT

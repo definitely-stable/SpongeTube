@@ -23,7 +23,10 @@ import io.github.definitelystable.spongetube.core.engine.TransportEvaluationElig
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationSelector
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRevision
+import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingSnapshot
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRefresher
+import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAttemptGate
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumer
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumerId
@@ -97,9 +100,11 @@ class PlatformHttpTransportAndroidTest {
         assumeTrue(Build.VERSION.SDK_INT == 36)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context: Context = instrumentation.targetContext
-        val origin = InstrumentationRegistry.getArguments()
-            .getString("spongetube.m2g1.originBaseUrl")?.trimEnd('/')
+        val arguments = InstrumentationRegistry.getArguments()
+        val origin = arguments.getString("spongetube.m2g1.originBaseUrl")?.trimEnd('/')
+        val faultOrigin = arguments.getString("spongetube.m2g1.faultBaseUrl")?.trimEnd('/')
         assumeTrue("G1 requires its isolated Media Lab origin", !origin.isNullOrBlank())
+        assumeTrue("G1 requires its isolated malformed-response origin", !faultOrigin.isNullOrBlank())
         val uri = URL(checkNotNull(origin) + "/fixtures/F1/segment-1-00001.m4s")
         File(context.filesDir, "sponge").deleteRecursively()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -301,6 +306,14 @@ class PlatformHttpTransportAndroidTest {
                 0, engine.activeRequestCount,
             )
 
+            val responseFaults = proveCandidateResponseContract(
+                engine = engine,
+                routeBinding = checkNotNull(initial.executionBinding),
+                deliveryMaterial = deliveryMaterial,
+                faultBaseUrl = checkNotNull(faultOrigin),
+                terminals = platformTerminals,
+            )
+
             // M2-G1 route falsification: keep the ORIGINAL route binding
             // after an ACTUAL Android default-network loss. It must fail
             // instead of silently routing through any subsequent ambient path.
@@ -372,6 +385,7 @@ class PlatformHttpTransportAndroidTest {
                     put("staleRouteCharges", staleCharges.get())
                     put("restoredRouteEpoch", restoredRouteEpoch)
                     put("cancelledRequestAcknowledged", cancellationAcked)
+                    put("responseFaults", responseFaults)
                 }.toString() + "\n")
             }
         } finally {
@@ -381,6 +395,115 @@ class PlatformHttpTransportAndroidTest {
             store.close()
             File(context.filesDir, "sponge").deleteRecursively()
         }
+    }
+
+    private suspend fun proveCandidateResponseContract(
+        engine: PlatformHttpEnginePool,
+        routeBinding: RouteExecutionBinding,
+        deliveryMaterial: DeliveryMaterial,
+        faultBaseUrl: String,
+        terminals: CopyOnWriteArrayList<PlatformHttpTerminal>,
+    ): JSONArray {
+        val evidence = JSONArray()
+
+        suspend fun runCase(
+            caseId: String,
+            expectedCode: String,
+            expectedTerminal: PlatformHttpTerminal,
+            deliveryBinding: DeliveryBindingSnapshot? = null,
+            expectedBytes: Long? = null,
+        ) {
+            val charges = AtomicInteger()
+            val correlation = AtomicReference<String?>(null)
+            val emittedBytes = AtomicInteger()
+            val terminalStart = terminals.size
+            val target = HttpRangeTarget(URL("$faultBaseUrl/$caseId"), RESOURCE_LENGTH)
+            val candidate = PlatformHttpRangeFetchExecutor(
+                pool = engine,
+                targetFor = { target },
+                bindingTargetFor = { _, material ->
+                    assertSame(deliveryMaterial, material)
+                    target
+                },
+                firstResponseTimeoutMs = 12_000,
+                readTimeoutMs = 12_000,
+                onTerminalObserved = { terminals += it },
+            )
+            val disposition = candidate.executeWithRouteBinding(
+                request = request("m2g1:fault:$caseId"),
+                attempt = 1,
+                priority = MutableStateFlow(FetchPriority.PLAYBACK),
+                routeBinding = routeBinding,
+                deliveryBinding = deliveryBinding,
+                onPhysicalAttemptStart = { charges.incrementAndGet() },
+                onTransportCorrelation = { correlation.set(it) },
+                emitChunk = { emittedBytes.addAndGet(it.bytes.size) },
+            )
+            val actualCode = when (disposition) {
+                is FetchAttemptDisposition.Success -> "SUCCESS"
+                is FetchAttemptDisposition.Failure -> when (val observation = disposition.observation) {
+                    is FailureObservation.HttpResponse -> "HTTP_" + observation.statusCode
+                    is FailureObservation.RangeProtocolFailure -> observation.kind.name
+                    else -> "UNEXPECTED_" + observation.plane.name
+                }
+            }
+            assertEquals(caseId, expectedCode, actualCode)
+            assertEquals("$caseId must start one physical request", 1, charges.get())
+            assertEquals(
+                "$caseId terminal callback mismatch",
+                listOf(expectedTerminal),
+                terminals.drop(terminalStart),
+            )
+            assertEquals("$caseId leaked an active UrlRequest", 0, engine.activeRequestCount)
+            if (expectedBytes != null) {
+                assertEquals("$caseId emitted byte count", expectedBytes, emittedBytes.get().toLong())
+            } else {
+                assertTrue(
+                    "$caseId emitted bytes outside the requested extent",
+                    emittedBytes.get().toLong() in 0L..RESOURCE_LENGTH,
+                )
+            }
+            val requestId = checkNotNull(correlation.get()?.toLongOrNull())
+            assertTrue("$caseId origin correlation missing", requestId > 0)
+            evidence.put(JSONObject().apply {
+                put("case", caseId)
+                put("result", actualCode)
+                put("terminal", expectedTerminal.name)
+                put("originRequestId", requestId)
+                put("charges", charges.get())
+                put("emittedBytes", emittedBytes.get())
+                put("deliveryBindingRevision", deliveryBinding?.revision?.value ?: JSONObject.NULL)
+            })
+        }
+
+        runCase(
+            caseId = "redirect",
+            expectedCode = "HTTP_302",
+            expectedTerminal = PlatformHttpTerminal.CANCELED,
+            expectedBytes = 0,
+        )
+        runCase(
+            caseId = "wrong-content-range",
+            expectedCode = RangeProtocolKind.CONTENT_RANGE_MISMATCH.name,
+            expectedTerminal = PlatformHttpTerminal.CANCELED,
+            expectedBytes = 0,
+        )
+        runCase(
+            caseId = "overlong-body",
+            expectedCode = RangeProtocolKind.RESPONSE_BYTES_OUTSIDE_RANGE.name,
+            expectedTerminal = PlatformHttpTerminal.CANCELED,
+        )
+        runCase(
+            caseId = "binding",
+            expectedCode = "SUCCESS",
+            expectedTerminal = PlatformHttpTerminal.SUCCEEDED,
+            deliveryBinding = DeliveryBindingSnapshot(
+                DeliveryBindingRevision("binding-1"),
+                deliveryMaterial,
+            ),
+            expectedBytes = RESOURCE_LENGTH,
+        )
+        return evidence
     }
 
     private suspend fun setConnectivityEnabled(

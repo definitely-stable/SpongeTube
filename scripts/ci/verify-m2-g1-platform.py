@@ -18,7 +18,7 @@ SHA = "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
 LENGTH = 81811
 
 
-def check(case: dict, origin: list[dict]) -> None:
+def check(case: dict, origin: list[dict], faults: list[dict]) -> None:
     def require(ok: bool, message: str) -> None:
         if not ok:
             raise ValueError(message)
@@ -95,11 +95,74 @@ def check(case: dict, origin: list[dict]) -> None:
             and cancelled.get("rangeHeader") == "bytes=0-81810"
             and cancelled.get("status") == 206, "cancel case did not reach the permitted origin")
 
+    faults_evidence = case.get("responseFaults")
+    require(isinstance(faults_evidence, list) and len(faults_evidence) == 4,
+            "expected four candidate response-contract cases")
+    expected_faults = (
+        ("redirect", "HTTP_302", "CANCELED", 302, None, 0),
+        ("wrong-content-range", "CONTENT_RANGE_MISMATCH", "CANCELED", 206, None, 0),
+        ("overlong-body", "RESPONSE_BYTES_OUTSIDE_RANGE", "CANCELED", 206, None, None),
+        ("binding", "SUCCESS", "SUCCEEDED", 206, "binding-1", LENGTH),
+    )
+    fault_by_id = {row.get("requestId"): row for row in faults}
+    require(len(faults) == 4 and len(fault_by_id) == 4,
+            "fault origin must receive exactly four physical GETs")
+    observed_ids = []
+    for evidence_row, expected in zip(faults_evidence, expected_faults):
+        case_id, result, terminal, status, binding_revision, exact_emitted = expected
+        require(evidence_row.get("case") == case_id, "fault case ordering/identity mismatch")
+        require(evidence_row.get("result") == result, f"{case_id} client result mismatch")
+        require(evidence_row.get("terminal") == terminal, f"{case_id} terminal mismatch")
+        require(evidence_row.get("charges") == 1, f"{case_id} owner charge mismatch")
+        if exact_emitted is None:
+            emitted = evidence_row.get("emittedBytes")
+            require(type(emitted) is int and 0 <= emitted <= LENGTH,
+                    f"{case_id} emitted bytes outside immutable extent")
+        else:
+            require(evidence_row.get("emittedBytes") == exact_emitted,
+                    f"{case_id} emitted byte count mismatch")
+        require(evidence_row.get("deliveryBindingRevision") == binding_revision,
+                f"{case_id} device binding evidence mismatch")
+        request_id = evidence_row.get("originRequestId")
+        require(type(request_id) is int and request_id > 0 and request_id not in observed_ids,
+                f"{case_id} missing/duplicate fault-origin correlation")
+        observed_ids.append(request_id)
+        row = fault_by_id.get(request_id)
+        require(row is not None, f"{case_id} has no independent fault-origin row")
+        require(row.get("method") == "GET" and row.get("path") == "/" + case_id,
+                f"{case_id} physical target mismatch")
+        require(row.get("rangeHeader") == "bytes=0-81810"
+                and row.get("acceptEncoding") == "identity"
+                and row.get("attemptHeader") == "1",
+                f"{case_id} request contract mismatch at fault origin")
+        require(row.get("fetchKey") ==
+                "fixture:F1/audio-main/f1-audio-1/m2g1:fault:" + case_id,
+                f"{case_id} immutable fetch identity mismatch at fault origin")
+        require(row.get("status") == status
+                and row.get("responseVariant") == case_id,
+                f"{case_id} response variant/status mismatch")
+        require(row.get("bindingRevision") == binding_revision,
+                f"{case_id} wire delivery binding mismatch")
+
+    redirect_row = fault_by_id[observed_ids[0]]
+    wrong_row = fault_by_id[observed_ids[1]]
+    overlong_row = fault_by_id[observed_ids[2]]
+    binding_row = fault_by_id[observed_ids[3]]
+    require(redirect_row.get("plannedResponseBytes") == 0
+            and wrong_row.get("plannedResponseBytes") == 0,
+            "header-only malformed cases unexpectedly carried a body")
+    require(overlong_row.get("plannedResponseBytes") == LENGTH + 1,
+            "overlong origin did not actually plan one extra byte")
+    require(binding_row.get("plannedResponseBytes") == LENGTH
+            and binding_row.get("bodyBytesWritten") == LENGTH,
+            "valid bound candidate response was incomplete")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("evidence_dir", type=Path)
     parser.add_argument("origin_trace", type=Path)
+    parser.add_argument("fault_trace", type=Path)
     args = parser.parse_args()
     case_path = args.evidence_dir / "case.json"
     raw = case_path.read_text(encoding="utf-8")
@@ -112,7 +175,12 @@ def main() -> None:
         for line in args.origin_trace.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    check(case, origin)
+    faults = [
+        json.loads(line)
+        for line in args.fault_trace.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    check(case, origin, faults)
     (args.evidence_dir / "verification.json").write_text(
         json.dumps({"schemaVersion": 1, "phase": "M2-G1", "status": "PASS",
                     "claimScope": "API36_EMULATOR_CORRECTNESS_ONLY"}, indent=2) + "\n",
