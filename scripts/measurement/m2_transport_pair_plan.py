@@ -263,6 +263,11 @@ def _validate_g2_input_semantics(
 def _validate_fingerprint_inputs(
     inputs: Mapping[str, Mapping[str, Any]],
 ) -> None:
+    require(
+        set(inputs) == set(REQUIRED_COMPARISON_INPUTS),
+        "comparison fingerprint inputs must contain exactly: "
+        + ", ".join(REQUIRED_COMPARISON_INPUTS),
+    )
     for name in REQUIRED_COMPARISON_INPUTS:
         require(name in inputs, f"missing comparison input {name}")
         require(isinstance(inputs[name], Mapping), f"{name} input must be an object")

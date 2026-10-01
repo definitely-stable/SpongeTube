@@ -450,6 +450,29 @@ class TransportPairPlanTest(unittest.TestCase):
                         inputs=inputs(),
                     )
 
+    def test_unknown_top_level_fingerprint_group_is_rejected_not_ignored(self):
+        values = inputs()
+        values["thermalState"] = {"status": "NOMINAL"}
+        with self.assertRaises(TransportPairPlanError):
+            module.build_plan(
+                run_id="m2-g2-n0",
+                pair_id="pair-n0-cold",
+                scenario=scenario("n0-control.json"),
+                inputs=values,
+                ordering_seed=1,
+            )
+
+        private = inputs()
+        private["debugState"] = {"origin": "https://private.invalid/secret"}
+        with self.assertRaises(TransportPairPlanError):
+            module.build_plan(
+                run_id="m2-g2-n0",
+                pair_id="pair-n0-cold",
+                scenario=scenario("n0-control.json"),
+                inputs=private,
+                ordering_seed=1,
+            )
+
     def test_private_locator_cannot_be_hidden_inside_fingerprint_input(self):
         values = inputs()
         values["routePolicy"]["debugOrigin"] = "https://origin.example.test/private/path"
