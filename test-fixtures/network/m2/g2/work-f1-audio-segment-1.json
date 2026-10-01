@@ -1,0 +1,8 @@
+{
+  "fixtureId": "F1",
+  "trackId": "audio-main",
+  "representationId": "f1-audio-1",
+  "byteStart": 0,
+  "byteEndExclusive": 81811,
+  "expectedSha256": "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
+}

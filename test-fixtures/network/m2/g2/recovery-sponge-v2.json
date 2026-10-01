@@ -1,0 +1,7 @@
+{
+  "policyId": "sponge-recovery-v2",
+  "remoteAttemptLimit": 4,
+  "deliveryBindingRefreshLimit": 1,
+  "backoffBaseMs": 500,
+  "backoffCapMs": 5000
+}
