@@ -61,7 +61,7 @@
       "properties": {
         "faultHarnessResetPerTrial": { "type": "boolean" },
         "cacheStateResetPerTrial": { "type": "boolean" },
-        "transportSessionResetPerTrial": { "type": "boolean" },
+        "transportSessionResetPerTrial": { "type": "boolean", "const": true },
         "stochasticStateResetPerTrial": { "type": "boolean" }
       },
       "additionalProperties": false
@@ -118,7 +118,7 @@
         "cacheStateFingerprint": { "$ref": "#/$defs/sha256" },
         "recoveryPolicyFingerprint": { "$ref": "#/$defs/sha256" },
         "routePolicyFingerprint": { "$ref": "#/$defs/sha256" },
-        "connectionState": { "type": "string", "enum": ["COLD", "WARM"] }
+        "connectionState": { "type": "string", "const": "COLD" }
       },
       "additionalProperties": false
     },
@@ -138,7 +138,7 @@
         "positionInBlock": { "type": "integer", "minimum": 1, "maximum": 2 },
         "scenarioHash": { "$ref": "#/$defs/sha256" },
         "comparisonFingerprint": { "$ref": "#/$defs/sha256" },
-        "connectionState": { "type": "string", "enum": ["COLD", "WARM"] }
+        "connectionState": { "type": "string", "const": "COLD" }
       },
       "additionalProperties": false
     },

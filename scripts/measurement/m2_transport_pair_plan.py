@@ -123,6 +123,35 @@ def validate_g2_scenario(scenario: Mapping[str, Any]) -> None:
         )
 
 
+def _reject_raw_locators(value: Any, path: str) -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _reject_raw_locators(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_raw_locators(item, f"{path}[{index}]")
+    elif isinstance(value, str):
+        require(
+            "://" not in value,
+            f"{path}: raw URL/locator must not influence a portable comparison fingerprint",
+        )
+
+
+def _validate_fingerprint_inputs(
+    inputs: Mapping[str, Mapping[str, Any]],
+) -> None:
+    for name in REQUIRED_COMPARISON_INPUTS:
+        require(name in inputs, f"missing comparison input {name}")
+        require(isinstance(inputs[name], Mapping), f"{name} input must be an object")
+        try:
+            scan_evidence_privacy(inputs[name])
+        except M2ContractError as error:
+            raise TransportPairPlanError(
+                f"{name} fingerprint input privacy failure: {error}"
+            ) from error
+        _reject_raw_locators(inputs[name], f"$.{name}")
+
+
 def _comparison(
     scenario_hash: str,
     inputs: Mapping[str, Mapping[str, Any]],
@@ -130,10 +159,11 @@ def _comparison(
     connection_state: str,
 ) -> dict[str, Any]:
     require(playback_mode in {"DIRECT", "SPONGE"}, "unsupported playback mode")
-    require(connection_state in {"COLD", "WARM"}, "unsupported connection state")
-    for name in REQUIRED_COMPARISON_INPUTS:
-        require(name in inputs, f"missing comparison input {name}")
-        require(isinstance(inputs[name], Mapping), f"{name} input must be an object")
+    require(
+        connection_state == "COLD",
+        "transport-pair-plan-v1 is COLD-only; WARM requires a separately frozen pre-warm protocol",
+    )
+    _validate_fingerprint_inputs(inputs)
     return {
         "workFingerprint": fingerprint(inputs["work"]),
         "scenarioHash": scenario_hash,
@@ -237,7 +267,7 @@ def build_plan(
             # execution can never change the next trial's fault state/counters.
             "faultHarnessResetPerTrial": True,
             "cacheStateResetPerTrial": True,
-            "transportSessionResetPerTrial": connection_state == "COLD",
+            "transportSessionResetPerTrial": True,
             # N2/N5 must restart tc/netem with the same persisted seed before
             # EACH backend trial rather than continue one random stream.
             "stochasticStateResetPerTrial": stochastic,
@@ -250,6 +280,7 @@ def build_plan(
         "limitations": [
             "Plan is frozen before Android execution and contains no result data.",
             "Emulator evidence may support correctness/resilience and directional observations only.",
+            "transport-pair-plan-v1 is COLD-only; WARM requires a separately frozen pre-warm protocol.",
         ],
     }
     validate_plan(plan, scenario=scenario, inputs=inputs)
@@ -318,9 +349,8 @@ def validate_plan(
         "stochastic reset policy does not match scenario",
     )
     require(
-        reset["transportSessionResetPerTrial"]
-        is (plan["comparison"]["connectionState"] == "COLD"),
-        "transport-session reset disagrees with COLD/WARM declaration",
+        reset["transportSessionResetPerTrial"] is True,
+        "transport session must reset before every v1 COLD trial",
     )
 
     expected_blocks = list(range(1, plan["blockCount"] + 1))
@@ -372,6 +402,58 @@ def validate_plan(
     )
 
 
+
+
+TRIAL_SCHEDULE_FIELDS = (
+    "trialId",
+    "orderingBlock",
+    "positionInBlock",
+    "backendId",
+)
+
+
+def planned_trial_schedule(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Canonical execution schedule derived only from the frozen plan."""
+    schedule: list[dict[str, Any]] = []
+    for block in plan["blocks"]:
+        for row in sorted(block["trials"], key=lambda item: item["positionInBlock"]):
+            schedule.append({
+                "trialId": row["trialId"],
+                "orderingBlock": block["orderingBlock"],
+                "positionInBlock": row["positionInBlock"],
+                "backendId": row["backendId"],
+            })
+    return schedule
+
+
+def validate_observed_schedule(
+    plan: Mapping[str, Any],
+    observed_trials: list[Mapping[str, Any]],
+    *,
+    scenario: Mapping[str, Any],
+    inputs: Mapping[str, Mapping[str, Any]],
+) -> None:
+    """Bind execution to the verified pre-result schedule before outcomes are interpreted."""
+    # Never let a producer bind itself to a tampered plan merely because the
+    # observed rows repeat the same tampering.
+    validate_plan(plan, scenario=scenario, inputs=inputs)
+    require(isinstance(observed_trials, list), "observed trial schedule must be a list")
+    observed: list[dict[str, Any]] = []
+    for index, row in enumerate(observed_trials):
+        require(isinstance(row, Mapping), f"observed trial {index} must be an object")
+        identity: dict[str, Any] = {}
+        for field in TRIAL_SCHEDULE_FIELDS:
+            require(field in row, f"observed trial {index} missing {field}")
+            identity[field] = row[field]
+        observed.append(identity)
+
+    require(
+        observed == planned_trial_schedule(plan),
+        "observed execution schedule differs from frozen plan; "
+        "trial deletion, duplication or result-dependent reordering is forbidden",
+    )
+
+
 def _inputs_from_args(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
     return {
         "work": load_object(args.work),
@@ -402,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--ordering-seed", required=True, type=int)
     build.add_argument("--blocks", type=int, default=2)
     build.add_argument("--playback-mode", choices=("DIRECT", "SPONGE"), default="SPONGE")
-    build.add_argument("--connection-state", choices=("COLD", "WARM"), default="COLD")
+    build.add_argument("--connection-state", choices=("COLD",), default="COLD")
     build.add_argument("--output", required=True, type=pathlib.Path)
 
     verify = commands.add_parser("verify")

@@ -156,15 +156,17 @@ class TransportPairPlanTest(unittest.TestCase):
         self.assertFalse(control["scenario"]["stochastic"])
         self.assertFalse(control["resetPolicy"]["stochasticStateResetPerTrial"])
 
-    def test_cold_warm_state_cannot_drift_within_pair(self):
+    def test_v1_is_cold_only_and_resets_transport_session_per_trial(self):
         plan = plan_for()
+        self.assertEqual("COLD", plan["comparison"]["connectionState"])
+        self.assertTrue(plan["resetPolicy"]["transportSessionResetPerTrial"])
+
         plan["blocks"][1]["trials"][0]["connectionState"] = "WARM"
         with self.assertRaises(TransportPairPlanError):
             module.validate_plan(plan, scenario=scenario("n0-control.json"), inputs=inputs())
 
-        warm = plan_for(connection_state="WARM")
-        self.assertFalse(warm["resetPolicy"]["transportSessionResetPerTrial"])
-        module.validate_plan(warm, scenario=scenario("n0-control.json"), inputs=inputs())
+        with self.assertRaises(TransportPairPlanError):
+            plan_for(connection_state="WARM")
 
     def test_comparison_input_change_invalidates_plan(self):
         plan = plan_for()
@@ -177,7 +179,7 @@ class TransportPairPlanTest(unittest.TestCase):
                 inputs=changed,
             )
 
-    def test_result_dependent_fields_are_schema_rejected(self):
+    def test_result_fields_are_forbidden_in_pre_execution_plan(self):
         plan = plan_for()
         plan["blocks"][0]["trials"][0]["result"] = "SUCCESS"
         with self.assertRaises(TransportPairPlanError):
@@ -188,6 +190,46 @@ class TransportPairPlanTest(unittest.TestCase):
         plan["limitations"].append("debug endpoint http://192.0.2.10/token")
         with self.assertRaises(TransportPairPlanError):
             module.validate_plan(plan, scenario=scenario("n0-control.json"), inputs=inputs())
+
+    def test_observed_schedule_rejects_post_result_deletion_reordering_and_duplication(self):
+        plan = plan_for()
+        observed = module.planned_trial_schedule(plan)
+        module.validate_observed_schedule(
+            plan, observed, scenario=scenario("n0-control.json"), inputs=inputs()
+        )
+
+        missing = copy.deepcopy(observed)
+        missing.pop(1)
+        with self.assertRaises(TransportPairPlanError):
+            module.validate_observed_schedule(
+                plan, missing, scenario=scenario("n0-control.json"), inputs=inputs()
+            )
+
+        reordered = copy.deepcopy(observed)
+        reordered[0], reordered[1] = reordered[1], reordered[0]
+        with self.assertRaises(TransportPairPlanError):
+            module.validate_observed_schedule(
+                plan, reordered, scenario=scenario("n0-control.json"), inputs=inputs()
+            )
+
+        duplicated = copy.deepcopy(observed)
+        duplicated[1] = copy.deepcopy(duplicated[0])
+        with self.assertRaises(TransportPairPlanError):
+            module.validate_observed_schedule(
+                plan, duplicated, scenario=scenario("n0-control.json"), inputs=inputs()
+            )
+
+    def test_private_locator_cannot_be_hidden_inside_fingerprint_input(self):
+        values = inputs()
+        values["routePolicy"]["debugOrigin"] = "https://origin.example.test/private/path"
+        with self.assertRaises(TransportPairPlanError):
+            module.build_plan(
+                run_id="m2-g2-n0",
+                pair_id="pair-n0-cold",
+                scenario=scenario("n0-control.json"),
+                inputs=values,
+                ordering_seed=1,
+            )
 
     def test_odd_block_count_is_rejected_before_execution(self):
         with self.assertRaises(TransportPairPlanError):
