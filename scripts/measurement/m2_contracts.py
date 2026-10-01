@@ -1183,6 +1183,9 @@ def validate_m2e_harness_binding(plane: str, harness_id: str, tool_id: str) -> N
 M2_SLICE_SCHEMAS = frozenset({
     "transport-evaluation-trials-v1.schema.json",
     "transport-evaluation-summary-v1.schema.json",
+    # M2-G2 execution plan is a new owning-slice artifact. It freezes order and
+    # comparison fingerprints before Android outcomes exist; G0 schemas remain unchanged.
+    "transport-pair-plan-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
