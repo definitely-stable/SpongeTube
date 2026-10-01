@@ -10,10 +10,13 @@ import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.http.HttpEngine
+import android.net.http.UrlRequest
 import android.os.Build
 import android.os.SystemClock
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executor
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -90,12 +93,30 @@ private data class PlatformRouteHandle(
     val executionBinding: RouteExecutionBinding,
 )
 
-private class AndroidRouteExecutionBinding(
+private open class AndroidRouteExecutionBinding(
     private val network: Network,
 ) : RouteExecutionBinding {
     override fun openConnection(url: URL): HttpURLConnection =
         network.openConnection(url) as? HttpURLConnection
             ?: error("route binding returned a non-HTTP connection")
+}
+
+/**
+ * Isolated API34+ subtype: API23 loads only AndroidRouteExecutionBinding and
+ * never verifies missing android.net.http method signatures.
+ */
+@android.annotation.TargetApi(34)
+private class AndroidPlatformHttpEngineRouteBinding(
+    private val network: Network,
+) : AndroidRouteExecutionBinding(network), PlatformHttpEngineRouteBinding {
+    override fun newBoundRequest(
+        engine: HttpEngine,
+        url: URL,
+        executor: Executor,
+        callback: UrlRequest.Callback,
+    ): UrlRequest.Builder =
+        engine.newUrlRequestBuilder(url.toString(), executor, callback)
+            .bindToNetwork(network)
 }
 
 private class PlatformRouteRefs {
@@ -112,7 +133,11 @@ private class PlatformRouteRefs {
             lastOrdinal += 1
             PlatformRouteHandle(
                 ref = PlatformRouteRef.ofOrdinal(lastOrdinal),
-                executionBinding = AndroidRouteExecutionBinding(network),
+                executionBinding = if (Build.VERSION.SDK_INT >= 34) {
+                    AndroidPlatformHttpEngineRouteBinding(network)
+                } else {
+                    AndroidRouteExecutionBinding(network)
+                },
             )
         }
     }

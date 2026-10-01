@@ -12,6 +12,7 @@ import io.github.definitelystable.spongetube.core.engine.recovery.FailureClassif
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureClassification
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureObservation
 import io.github.definitelystable.spongetube.core.engine.recovery.ProviderSignal
+import io.github.definitelystable.spongetube.core.engine.recovery.RangeProtocolKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionContext
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryDecisionKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
@@ -118,6 +119,24 @@ class HttpRangeFetchExecutorTest {
 
         assertRangeRejected(disposition, "lab-1")
         assertEquals(0, received.size)
+    }
+
+    @Test
+    fun overlongChunked206NeverBecomesSuccessfulRange() {
+        mode = Mode.OVERLONG_CHUNKED
+        val (disposition, received) = execute(start = 100, endExclusive = 1_100)
+        assertEquals(
+            FetchAttemptDisposition.Failure(
+                FailureObservation.RangeProtocolFailure(
+                    RangeProtocolKind.RESPONSE_BYTES_OUTSIDE_RANGE,
+                ),
+                transportCorrelationId = "lab-1",
+            ),
+            disposition,
+        )
+        // The executor may emit a valid prefix. FetchBroker/ExtentStore must
+        // abort the publisher because the terminal disposition is failure.
+        assertArrayEquals(body.copyOfRange(100, 1_100), received)
     }
 
     @Test
@@ -651,6 +670,16 @@ class HttpRangeFetchExecutorTest {
                     exchange.sendResponseHeaders(206, (last - first + 1).toLong())
                     exchange.responseBody.write(body, first, last - first + 1)
                 }
+                Mode.OVERLONG_CHUNKED -> {
+                    val contentRange = "bytes $first-$last/$RESOURCE_LENGTH"
+                    responseStatuses += 206
+                    responseContentRanges += contentRange
+                    exchange.responseHeaders.add("Content-Range", contentRange)
+                    // 0L selects HTTP chunked transfer coding, so a liar
+                    // cannot hide the extra body byte behind Content-Length.
+                    exchange.sendResponseHeaders(206, 0L)
+                    exchange.responseBody.write(body, first, last - first + 2)
+                }
                 Mode.WRONG_START -> {
                     val contentRange =
                         "bytes ${first + 1}-$last/$RESOURCE_LENGTH"
@@ -751,6 +780,7 @@ class HttpRangeFetchExecutorTest {
 
     private enum class Mode {
         PARTIAL,
+        OVERLONG_CHUNKED,
         WRONG_START,
         WRONG_TOTAL,
         FULL_200,
