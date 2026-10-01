@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import sys
 from collections import Counter
 from typing import Any, Mapping
@@ -18,6 +19,7 @@ from typing import Any, Mapping
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 SCHEMA_PATH = REPO_ROOT / ".work" / "schemas" / "transport-pair-plan-v1.schema.json"
+TRIALS_SCHEMA_PATH = REPO_ROOT / ".work" / "schemas" / "transport-evaluation-trials-v1.schema.json"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from m2_contracts import (  # noqa: E402
@@ -42,6 +44,14 @@ FROZEN_STOCHASTIC_SEEDS = {
     ("N2", "HIGH_RTT_JITTER"): 424_242,
     ("N5", "BURST_LOSS"): 424_242,
 }
+CANONICAL_G2_SCENARIO_HASHES = {
+    ("N0", "CONTROL"): "e4d6044e7f5221dd4adc07f08d29822b7613e2174bde3ee31c623f1a787bd537",
+    ("N2", "HIGH_RTT_JITTER"): "0a4b3ec961d3925bbe46d58697c9b0031d8f970ec45845ffe2e3c96a1e83b8ac",
+    ("N3", "BURST_PACKET_LOSS"): "c8a2ec3ab7f337b287b20f0ed19de6e1e7f1cfb4c7dae295602a5d4f9137c990",
+    ("N5", "BURST_LOSS"): "aed0b51ca0f0f5b0409918e1b621ef67d4c7655983bf839f58699c171977d670",
+    ("N6", "TRANSPORT_RESET"): "12d6a0aebb9c021f89170dd429356bf29c8822f482f687cc00992cf26d316d45",
+}
+PORTABLE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
 REQUIRED_COMPARISON_INPUTS = (
     "work",
     "deviceState",
@@ -108,6 +118,15 @@ def validate_g2_scenario(scenario: Mapping[str, Any]) -> None:
         raise TransportPairPlanError(str(error)) from error
 
     key = (scenario["scenarioFamily"], scenario["variant"])
+    require(
+        key in CANONICAL_G2_SCENARIO_HASHES,
+        f"{key}: scenario is not in the canonical G2 set",
+    )
+    actual_hash = scenario_sha256(scenario)
+    require(
+        actual_hash == CANONICAL_G2_SCENARIO_HASHES[key],
+        f"{key}: canonical G2 scenario hash drift: {actual_hash}",
+    )
     stochastic = scenario_is_stochastic(scenario)
     seed = scenario.get("randomSeed")
     if key in FROZEN_STOCHASTIC_SEEDS:
@@ -176,25 +195,26 @@ def _comparison(
     }
 
 
-def _first_backend(pair_id: str, scenario_hash: str, ordering_seed: int) -> str:
+def _first_backend(scenario_hash: str, ordering_seed: int) -> str:
     require(
         isinstance(ordering_seed, int)
         and not isinstance(ordering_seed, bool)
         and ordering_seed >= 0,
         "orderingSeed must be a non-negative integer",
     )
-    material = f"{ordering_seed}:{pair_id}:{scenario_hash}".encode("utf-8")
+    # pairId is an evidence label, not randomization entropy. Relabeling a
+    # frozen experiment must not alter backend order.
+    material = f"{ordering_seed}:{scenario_hash}".encode("utf-8")
     bit = hashlib.sha256(material).digest()[0] & 1
     return BACKENDS[bit]
 
 
 def _expected_order(
-    pair_id: str,
     scenario_hash: str,
     ordering_seed: int,
     block: int,
 ) -> tuple[str, str]:
-    first = _first_backend(pair_id, scenario_hash, ordering_seed)
+    first = _first_backend(scenario_hash, ordering_seed)
     if block % 2 == 0:
         first = BACKENDS[1] if first == BACKENDS[0] else BACKENDS[0]
     second = BACKENDS[1] if first == BACKENDS[0] else BACKENDS[0]
@@ -212,8 +232,14 @@ def build_plan(
     playback_mode: str = "SPONGE",
     connection_state: str = "COLD",
 ) -> dict[str, Any]:
-    require(isinstance(run_id, str) and run_id.strip(), "runId is required")
-    require(isinstance(pair_id, str) and pair_id.strip(), "pairId is required")
+    require(
+        isinstance(run_id, str) and PORTABLE_ID.fullmatch(run_id) is not None,
+        "runId must be a lowercase portable id (1..96 chars)",
+    )
+    require(
+        isinstance(pair_id, str) and PORTABLE_ID.fullmatch(pair_id) is not None,
+        "pairId must be a lowercase portable id (1..96 chars)",
+    )
     require(
         isinstance(block_count, int)
         and not isinstance(block_count, bool)
@@ -230,7 +256,7 @@ def build_plan(
 
     blocks: list[dict[str, Any]] = []
     for block in range(1, block_count + 1):
-        order = _expected_order(pair_id, scenario_hash, ordering_seed, block)
+        order = _expected_order(scenario_hash, ordering_seed, block)
         trials = []
         for position, backend in enumerate(order, start=1):
             trials.append({
@@ -307,6 +333,14 @@ def validate_plan(
     except M2ContractError as error:
         raise TransportPairPlanError(f"pair plan privacy failure: {error}") from error
     validate_g2_scenario(scenario)
+    require(
+        PORTABLE_ID.fullmatch(plan["runId"]) is not None,
+        "runId is not a portable G2 identifier",
+    )
+    require(
+        PORTABLE_ID.fullmatch(plan["pairId"]) is not None,
+        "pairId is not a portable G2 identifier",
+    )
 
     require(plan["backends"] == list(BACKENDS), "G2 backend identity/order drift")
     require(plan["orderingProtocol"] == "COUNTERBALANCED_PAIRS", "ordering protocol drift")
@@ -373,7 +407,7 @@ def validate_plan(
             f"block {block_id}: positions must be 1 and 2",
         )
         expected_order = _expected_order(
-            plan["pairId"], scenario_hash, plan["orderingSeed"], block_id
+            scenario_hash, plan["orderingSeed"], block_id
         )
         actual_order = tuple(
             row["backendId"] for row in sorted(rows, key=lambda row: row["positionInBlock"])
@@ -384,6 +418,11 @@ def validate_plan(
         )
         first_positions[actual_order[0]] += 1
         for row in rows:
+            expected_trial_id = f"{plan['pairId']}-b{block_id}-p{row['positionInBlock']}"
+            require(
+                row["trialId"] == expected_trial_id,
+                f"block {block_id}: trialId does not match pair/position identity",
+            )
             require(row["trialId"] not in trial_ids, "trialId must be globally unique")
             trial_ids.add(row["trialId"])
             require(row["scenarioHash"] == scenario_hash, f"{row['trialId']}: scenario drift")
@@ -454,6 +493,60 @@ def validate_observed_schedule(
     )
 
 
+def _validate_trials_schema(document: Mapping[str, Any]) -> None:
+    schema = load_object(TRIALS_SCHEMA_PATH)
+    try:
+        validate_instance(schema, document)
+    except SchemaContractError as error:
+        raise TransportPairPlanError(
+            f"transport-evaluation-trials-v1: {error}"
+        ) from error
+
+
+def validate_trials_against_plan(
+    plan: Mapping[str, Any],
+    trials_document: Mapping[str, Any],
+    *,
+    scenario: Mapping[str, Any],
+    inputs: Mapping[str, Mapping[str, Any]],
+) -> None:
+    """Bind complete frozen-G0 result rows to the pre-execution G2 plan."""
+    validate_plan(plan, scenario=scenario, inputs=inputs)
+    _validate_trials_schema(trials_document)
+    try:
+        scan_evidence_privacy(trials_document)
+    except M2ContractError as error:
+        raise TransportPairPlanError(
+            f"transport trials privacy failure: {error}"
+        ) from error
+
+    for field in ("runId", "pairId", "orderingProtocol", "orderingSeed"):
+        require(
+            trials_document[field] == plan[field],
+            f"result evidence {field} does not match frozen pair plan",
+        )
+
+    planned_schedule = planned_trial_schedule(plan)
+    result_schedule = [
+        {field: row[field] for field in TRIAL_SCHEDULE_FIELDS}
+        for row in trials_document["trials"]
+    ]
+    require(
+        result_schedule == planned_schedule,
+        "G0 trial rows differ from frozen schedule; deletion, duplication or "
+        "result-dependent reordering is forbidden",
+    )
+    require(
+        len(trials_document["trials"]) == len(planned_schedule),
+        "G0 trial count differs from frozen pair plan",
+    )
+    for row in trials_document["trials"]:
+        require(
+            row["comparison"] == plan["comparison"],
+            f"{row['trialId']}: comparison differs from frozen pair plan",
+        )
+
+
 def _inputs_from_args(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
     return {
         "work": load_object(args.work),
@@ -491,6 +584,11 @@ def main(argv: list[str] | None = None) -> int:
     _shared_inputs(verify)
     verify.add_argument("--plan", required=True, type=pathlib.Path)
 
+    verify_results = commands.add_parser("verify-results")
+    _shared_inputs(verify_results)
+    verify_results.add_argument("--plan", required=True, type=pathlib.Path)
+    verify_results.add_argument("--trials", required=True, type=pathlib.Path)
+
     args = parser.parse_args(argv)
     try:
         scenario = load_object(args.scenario)
@@ -511,8 +609,15 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(plan, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-        else:
+        elif args.command == "verify":
             validate_plan(load_object(args.plan), scenario=scenario, inputs=inputs)
+        else:
+            validate_trials_against_plan(
+                load_object(args.plan),
+                load_object(args.trials),
+                scenario=scenario,
+                inputs=inputs,
+            )
     except (TransportPairPlanError, OSError, KeyError, TypeError, ValueError) as error:
         print(f"M2-G2 pair-plan verification failed: {error}", file=sys.stderr)
         return 1

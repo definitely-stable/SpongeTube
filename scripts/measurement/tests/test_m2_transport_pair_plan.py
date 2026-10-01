@@ -81,6 +81,65 @@ def plan_for(
     )
 
 
+def trials_for(plan: dict) -> dict:
+    rows = []
+    for block in plan["blocks"]:
+        for planned in block["trials"]:
+            rows.append({
+                "trialId": planned["trialId"],
+                "orderingBlock": block["orderingBlock"],
+                "positionInBlock": planned["positionInBlock"],
+                "backendId": planned["backendId"],
+                "backendVersion": "test-version",
+                "implementationId": "test-implementation",
+                "eligibility": "ELIGIBLE",
+                "comparison": copy.deepcopy(plan["comparison"]),
+                "route": {
+                    "exactNetworkBound": True,
+                    "permitRouteEpoch": 1,
+                },
+                "result": "SUCCESS",
+                "requestCorrectness": {
+                    "range": "PASS",
+                    "contentRange": "PASS",
+                    "responseBounds": "PASS",
+                    "publishedBytes": "PASS",
+                },
+                "recovery": {
+                    "recoveryChainCount": 1,
+                    "ownerCount": 1,
+                    "originRequestCount": 1,
+                    "internalRetryVisibility": "PROVEN_ZERO",
+                    "internalRetryCount": 0,
+                },
+                "metrics": {
+                    "firstByteUs": 1,
+                    "completionUs": 2,
+                    "cancellationLatencyUs": None,
+                    "cpuTimeUs": 1,
+                    "maxRssBytes": 1,
+                    "bytesRequested": 81811,
+                    "bytesReceived": 81811,
+                    "bytesPublished": 81811,
+                },
+                "negotiatedProtocol": "UNKNOWN",
+                "performanceSampleEligible": True,
+                "limitations": [],
+            })
+    return {
+        "schemaVersion": 1,
+        "runId": plan["runId"],
+        "pairId": plan["pairId"],
+        "deviceClass": "ANDROID_EMULATOR",
+        "androidApi": 36,
+        "clockDomain": "ANDROID_MONOTONIC",
+        "orderingProtocol": plan["orderingProtocol"],
+        "orderingSeed": plan["orderingSeed"],
+        "trials": rows,
+        "limitations": ["test evidence"],
+    }
+
+
 class TransportPairPlanTest(unittest.TestCase):
     def test_control_plan_is_complete_counterbalanced_and_result_free(self):
         plan = plan_for()
@@ -93,10 +152,22 @@ class TransportPairPlanTest(unittest.TestCase):
             self.assertNotIn(forbidden, encoded)
         module.validate_plan(plan, scenario=scenario("n0-control.json"), inputs=inputs())
 
-    def test_order_is_deterministic_from_seed_and_pair_identity(self):
+    def test_order_is_deterministic_from_seed_and_scenario_not_pair_label(self):
         one = plan_for(seed=41)
         two = plan_for(seed=41)
         self.assertEqual(one["blocks"], two["blocks"])
+
+        relabeled = module.build_plan(
+            run_id="m2-g2-n0-relabeled",
+            pair_id="different-pair-label",
+            scenario=scenario("n0-control.json"),
+            inputs=inputs(),
+            ordering_seed=41,
+        )
+        self.assertEqual(
+            [row["backendId"] for row in one["blocks"][0]["trials"]],
+            [row["backendId"] for row in relabeled["blocks"][0]["trials"]],
+        )
 
         first = one["blocks"][0]["trials"][0]["backendId"]
         flip_seed = next(
@@ -218,6 +289,81 @@ class TransportPairPlanTest(unittest.TestCase):
             module.validate_observed_schedule(
                 plan, duplicated, scenario=scenario("n0-control.json"), inputs=inputs()
             )
+
+    def test_canonical_scenario_parameter_drift_is_rejected(self):
+        mutations = [
+            ("n2-high-rtt-jitter.json", ("networkFaults", 0, "parameters", "delayUs"), 100001),
+            ("n3-burst-packet-loss.json", ("networkFaults", 0, "parameters", "durationMs"), 1499),
+            ("n5-burst-loss.json", ("networkFaults", 0, "parameters", "lossPpm"), 20001),
+            ("n6-transport-reset.json", ("transportFaults", 0, "parameters", "timeoutMs"), 1),
+        ]
+        for name, path, value in mutations:
+            with self.subTest(name=name):
+                changed = scenario(name)
+                target = changed
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.assertRaises(TransportPairPlanError):
+                    plan_for(changed)
+
+    def test_noncanonical_n6_variant_is_rejected(self):
+        with self.assertRaises(TransportPairPlanError):
+            plan_for(scenario("n6-truncated-stream.json"))
+
+    def test_plan_ids_are_portable_and_bounded(self):
+        for run_id, pair_id in (
+            ("bad id with spaces", "pair-n0-cold"),
+            ("m2-g2-n0", "https://not-portable"),
+            ("x" * 97, "pair-n0-cold"),
+        ):
+            with self.subTest(run_id=run_id, pair_id=pair_id):
+                with self.assertRaises(TransportPairPlanError):
+                    module.build_plan(
+                        run_id=run_id,
+                        pair_id=pair_id,
+                        scenario=scenario("n0-control.json"),
+                        inputs=inputs(),
+                        ordering_seed=1,
+                    )
+
+    def test_complete_g0_trials_bind_to_frozen_plan(self):
+        plan = plan_for()
+        module.validate_trials_against_plan(
+            plan,
+            trials_for(plan),
+            scenario=scenario("n0-control.json"),
+            inputs=inputs(),
+        )
+
+    def test_g0_results_cannot_delete_reorder_relabel_or_change_comparison(self):
+        for mutation in ("delete", "reorder", "backend", "comparison"):
+            with self.subTest(mutation=mutation):
+                plan = plan_for()
+                trials = trials_for(plan)
+                if mutation == "delete":
+                    trials["trials"].pop(1)
+                elif mutation == "reorder":
+                    trials["trials"][0], trials["trials"][1] = (
+                        trials["trials"][1],
+                        trials["trials"][0],
+                    )
+                elif mutation == "backend":
+                    row = trials["trials"][0]
+                    row["backendId"] = (
+                        "PLATFORM_HTTP_ENGINE"
+                        if row["backendId"] == "HTTP_URL_CONNECTION_ROUTE_BOUND"
+                        else "HTTP_URL_CONNECTION_ROUTE_BOUND"
+                    )
+                else:
+                    trials["trials"][0]["comparison"]["cacheStateFingerprint"] = "0" * 64
+                with self.assertRaises(TransportPairPlanError):
+                    module.validate_trials_against_plan(
+                        plan,
+                        trials,
+                        scenario=scenario("n0-control.json"),
+                        inputs=inputs(),
+                    )
 
     def test_private_locator_cannot_be_hidden_inside_fingerprint_input(self):
         values = inputs()

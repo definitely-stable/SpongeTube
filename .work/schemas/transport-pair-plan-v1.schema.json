@@ -21,8 +21,16 @@
   ],
   "properties": {
     "schemaVersion": { "type": "integer", "const": 1 },
-    "runId": { "type": "string", "minLength": 1 },
-    "pairId": { "type": "string", "minLength": 1 },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
+    "pairId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
     "scenario": {
       "type": "object",
       "required": ["family", "variant", "hash", "randomSeed", "stochastic"],
@@ -133,7 +141,11 @@
         "connectionState"
       ],
       "properties": {
-        "trialId": { "type": "string", "minLength": 1 },
+        "trialId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+        },
         "backendId": { "$ref": "#/$defs/backend" },
         "positionInBlock": { "type": "integer", "minimum": 1, "maximum": 2 },
         "scenarioHash": { "$ref": "#/$defs/sha256" },
