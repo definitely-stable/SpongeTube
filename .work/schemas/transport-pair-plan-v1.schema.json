@@ -40,7 +40,6 @@
     "backends": {
       "type": "array",
       "minItems": 2,
-      "maxItems": 2,
       "items": { "$ref": "#/$defs/backend" }
     },
     "comparison": { "$ref": "#/$defs/comparison" },
@@ -151,7 +150,6 @@
         "trials": {
           "type": "array",
           "minItems": 2,
-          "maxItems": 2,
           "items": { "$ref": "#/$defs/trial" }
         }
       },
