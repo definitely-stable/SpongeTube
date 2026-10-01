@@ -297,6 +297,7 @@ class TransportPairPlanTest(unittest.TestCase):
             "n3-burst-packet-loss.json",
             "n5-burst-loss.json",
             "n6-transport-reset.json",
+            "n6-default-route-loss-restore.json",
         ):
             with self.subTest(name=name):
                 plan = plan_for(scenario(name))
@@ -345,6 +346,11 @@ class TransportPairPlanTest(unittest.TestCase):
             ("n3-burst-packet-loss.json", ("networkFaults", 0, "parameters", "durationMs"), 1499),
             ("n5-burst-loss.json", ("networkFaults", 0, "parameters", "lossPpm"), 20001),
             ("n6-transport-reset.json", ("transportFaults", 0, "parameters", "timeoutMs"), 1),
+            (
+                "n6-default-route-loss-restore.json",
+                ("routeFaults", 0, "parameters", "replacementDefault"),
+                "VPN",
+            ),
         ]
         for name, path, value in mutations:
             with self.subTest(name=name):
@@ -355,6 +361,15 @@ class TransportPairPlanTest(unittest.TestCase):
                 target[path[-1]] = value
                 with self.assertRaises(TransportPairPlanError):
                     plan_for(changed)
+
+    def test_retained_f2_route_regression_keeps_exact_identity(self):
+        plan = plan_for(scenario("n6-default-route-loss-restore.json"))
+        self.assertEqual("N6", plan["scenario"]["family"])
+        self.assertEqual("DEFAULT_ROUTE_LOSS_RESTORE", plan["scenario"]["variant"])
+        self.assertEqual(
+            "05e0359cb33d864600e98547776b98b5a436f372c99ab325e7f0797c80d42c5a",
+            plan["scenario"]["hash"],
+        )
 
     def test_noncanonical_n6_variant_is_rejected(self):
         with self.assertRaises(TransportPairPlanError):
