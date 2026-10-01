@@ -631,6 +631,16 @@ def validate_trials_against_plan(
             f"result evidence {field} does not match frozen pair plan",
         )
 
+    device = inputs["deviceState"]
+    require(
+        trials_document["deviceClass"] == device["deviceClass"],
+        "result evidence deviceClass does not match device fingerprint source",
+    )
+    require(
+        trials_document["androidApi"] == device["androidApi"],
+        "result evidence androidApi does not match device fingerprint source",
+    )
+
     planned_schedule = planned_trial_schedule(plan)
     result_schedule = [
         {field: row[field] for field in TRIAL_SCHEDULE_FIELDS}

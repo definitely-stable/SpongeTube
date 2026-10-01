@@ -414,6 +414,42 @@ class TransportPairPlanTest(unittest.TestCase):
                         inputs=inputs(),
                     )
 
+    def test_result_device_identity_must_match_fingerprint_source(self):
+        plan = plan_for()
+        for field, value in (
+            ("androidApi", 34),
+            ("deviceClass", "PHYSICAL_ANDROID"),
+        ):
+            with self.subTest(field=field):
+                trials = trials_for(plan)
+                trials[field] = value
+                with self.assertRaises(TransportPairPlanError):
+                    module.validate_trials_against_plan(
+                        plan,
+                        trials,
+                        scenario=scenario("n0-control.json"),
+                        inputs=inputs(),
+                    )
+
+    def test_schema_rejects_backend_superset_and_disabled_required_resets(self):
+        plan = plan_for()
+        plan["backends"].append(module.BACKENDS[0])
+        with self.assertRaises(TransportPairPlanError):
+            module.validate_plan(
+                plan, scenario=scenario("n0-control.json"), inputs=inputs()
+            )
+
+        for field in ("faultHarnessResetPerTrial", "cacheStateResetPerTrial"):
+            broken = plan_for()
+            broken["resetPolicy"][field] = False
+            with self.subTest(field=field):
+                with self.assertRaises(TransportPairPlanError):
+                    module.validate_plan(
+                        broken,
+                        scenario=scenario("n0-control.json"),
+                        inputs=inputs(),
+                    )
+
     def test_private_locator_cannot_be_hidden_inside_fingerprint_input(self):
         values = inputs()
         values["routePolicy"]["debugOrigin"] = "https://origin.example.test/private/path"

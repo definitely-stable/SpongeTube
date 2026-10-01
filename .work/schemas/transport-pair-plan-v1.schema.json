@@ -47,8 +47,10 @@
     "orderingSeed": { "type": "integer", "minimum": 0 },
     "backends": {
       "type": "array",
-      "minItems": 2,
-      "items": { "$ref": "#/$defs/backend" }
+      "const": [
+        "HTTP_URL_CONNECTION_ROUTE_BOUND",
+        "PLATFORM_HTTP_ENGINE"
+      ]
     },
     "comparison": { "$ref": "#/$defs/comparison" },
     "comparisonFingerprint": { "$ref": "#/$defs/sha256" },
@@ -67,8 +69,8 @@
         "stochasticStateResetPerTrial"
       ],
       "properties": {
-        "faultHarnessResetPerTrial": { "type": "boolean" },
-        "cacheStateResetPerTrial": { "type": "boolean" },
+        "faultHarnessResetPerTrial": { "type": "boolean", "const": true },
+        "cacheStateResetPerTrial": { "type": "boolean", "const": true },
         "transportSessionResetPerTrial": { "type": "boolean", "const": true },
         "stochasticStateResetPerTrial": { "type": "boolean" }
       },
