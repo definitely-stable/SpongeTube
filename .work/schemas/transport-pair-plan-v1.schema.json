@@ -66,12 +66,14 @@
         "faultHarnessResetPerTrial",
         "cacheStateResetPerTrial",
         "transportSessionResetPerTrial",
+        "recoveryJitterResetPerTrial",
         "stochasticStateResetPerTrial"
       ],
       "properties": {
         "faultHarnessResetPerTrial": { "type": "boolean", "const": true },
         "cacheStateResetPerTrial": { "type": "boolean", "const": true },
         "transportSessionResetPerTrial": { "type": "boolean", "const": true },
+        "recoveryJitterResetPerTrial": { "type": "boolean", "const": true },
         "stochasticStateResetPerTrial": { "type": "boolean" }
       },
       "additionalProperties": false

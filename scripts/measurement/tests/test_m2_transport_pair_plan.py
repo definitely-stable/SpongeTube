@@ -321,6 +321,18 @@ class TransportPairPlanTest(unittest.TestCase):
         backoff_drift["recoveryPolicy"]["backoffCapMs"] = 4000
         cases.append(backoff_drift)
 
+        backoff_algorithm_drift = inputs()
+        backoff_algorithm_drift["recoveryPolicy"]["backoffAlgorithm"] = "FIXED"
+        cases.append(backoff_algorithm_drift)
+
+        jitter_protocol_drift = inputs()
+        jitter_protocol_drift["recoveryPolicy"]["jitterProtocol"] = "KOTLIN_RANDOM"
+        cases.append(jitter_protocol_drift)
+
+        jitter_seed_drift = inputs()
+        jitter_seed_drift["recoveryPolicy"]["jitterSeed"] = 424242
+        cases.append(jitter_seed_drift)
+
         ambient_route = inputs()
         ambient_route["routePolicy"]["ambientFallback"] = True
         cases.append(ambient_route)
@@ -450,7 +462,11 @@ class TransportPairPlanTest(unittest.TestCase):
                 plan, scenario=scenario("n0-control.json"), inputs=inputs()
             )
 
-        for field in ("faultHarnessResetPerTrial", "cacheStateResetPerTrial"):
+        for field in (
+            "faultHarnessResetPerTrial",
+            "cacheStateResetPerTrial",
+            "recoveryJitterResetPerTrial",
+        ):
             broken = plan_for()
             broken["resetPolicy"][field] = False
             with self.subTest(field=field):
@@ -499,6 +515,37 @@ class TransportPairPlanTest(unittest.TestCase):
     def test_odd_block_count_is_rejected_before_execution(self):
         with self.assertRaises(TransportPairPlanError):
             plan_for(blocks=3)
+
+    def test_recovery_jitter_protocol_has_frozen_cross_language_vectors(self):
+        self.assertNotEqual(
+            module.FROZEN_RECOVERY_JITTER_SEED,
+            module.FROZEN_STOCHASTIC_SEEDS[("N5", "BURST_LOSS")],
+        )
+        windows = [500, 1000, 2000, 4000, 5000]
+        expected = [367, 411, 1655, 2005, 4312]
+        actual = [
+            module.recovery_jitter_sample(
+                seed=module.FROZEN_RECOVERY_JITTER_SEED,
+                sample_index=index,
+                window_ms=window,
+            )
+            for index, window in enumerate(windows)
+        ]
+        self.assertEqual(expected, actual)
+        self.assertTrue(all(0 <= value <= window for value, window in zip(actual, windows)))
+
+    def test_recovery_jitter_is_reset_for_every_measured_trial(self):
+        plan = plan_for(scenario("n6-transport-reset.json"))
+        self.assertTrue(plan["resetPolicy"]["recoveryJitterResetPerTrial"])
+        recovery = inputs()["recoveryPolicy"]
+        self.assertEqual(
+            module.RECOVERY_JITTER_PROTOCOL,
+            recovery["jitterProtocol"],
+        )
+        self.assertEqual(
+            module.FROZEN_RECOVERY_JITTER_SEED,
+            recovery["jitterSeed"],
+        )
 
     def test_fingerprint_is_key_order_independent_and_float_rejecting(self):
         self.assertEqual(

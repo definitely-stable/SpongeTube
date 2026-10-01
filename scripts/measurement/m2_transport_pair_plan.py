@@ -44,6 +44,10 @@ FROZEN_STOCHASTIC_SEEDS = {
     ("N2", "HIGH_RTT_JITTER"): 424_242,
     ("N5", "BURST_LOSS"): 424_242,
 }
+FROZEN_RECOVERY_JITTER_SEED = 424_243
+RECOVERY_BACKOFF_ALGORITHM = "EXPONENTIAL_FULL_JITTER"
+RECOVERY_JITTER_PROTOCOL = "SHA256_COUNTER_REJECTION_V1"
+RECOVERY_JITTER_DOMAIN = "spongetube-g2-recovery-jitter-v1"
 CANONICAL_G2_SCENARIO_HASHES = {
     ("N0", "CONTROL"): "e4d6044e7f5221dd4adc07f08d29822b7613e2174bde3ee31c623f1a787bd537",
     ("N2", "HIGH_RTT_JITTER"): "0a4b3ec961d3925bbe46d58697c9b0031d8f970ec45845ffe2e3c96a1e83b8ac",
@@ -106,6 +110,44 @@ def canonical_bytes(value: Any) -> bytes:
 
 def fingerprint(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def recovery_jitter_sample(
+    *,
+    seed: int,
+    sample_index: int,
+    window_ms: int,
+) -> int:
+    """Reference SHA256_COUNTER_REJECTION_V1 sampler.
+
+    sample_index starts at zero for each measured backend trial. For a sample,
+    hash UTF-8:
+      spongetube-g2-recovery-jitter-v1:<seed>:<sample_index>:<draw_index>
+    Take the first 8 digest bytes as an unsigned big-endian integer. Rejection
+    sampling removes modulo bias; return the accepted value modulo
+    (window_ms + 1). draw_index starts at zero and increments only on rejection.
+    """
+    for name, value in (
+        ("seed", seed),
+        ("sample_index", sample_index),
+        ("window_ms", window_ms),
+    ):
+        require(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0,
+            f"{name} must be a non-negative integer",
+        )
+    span = window_ms + 1
+    unsigned_64 = 1 << 64
+    limit = unsigned_64 - (unsigned_64 % span)
+    draw_index = 0
+    while True:
+        material = (
+            f"{RECOVERY_JITTER_DOMAIN}:{seed}:{sample_index}:{draw_index}"
+        ).encode("utf-8")
+        value = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        if value < limit:
+            return value % span
+        draw_index += 1
 
 
 def scenario_is_stochastic(scenario: Mapping[str, Any]) -> bool:
@@ -246,6 +288,9 @@ def _validate_g2_input_semantics(
             "deliveryBindingRefreshLimit",
             "backoffBaseMs",
             "backoffCapMs",
+            "backoffAlgorithm",
+            "jitterProtocol",
+            "jitterSeed",
         ),
     )
     require(
@@ -263,6 +308,18 @@ def _validate_g2_input_semantics(
     require(
         recovery["backoffBaseMs"] == 500 and recovery["backoffCapMs"] == 5_000,
         "G2 v1 recovery backoff must remain 500/5000 ms",
+    )
+    require(
+        recovery["backoffAlgorithm"] == RECOVERY_BACKOFF_ALGORITHM,
+        "G2 recovery backoff algorithm drift",
+    )
+    require(
+        recovery["jitterProtocol"] == RECOVERY_JITTER_PROTOCOL,
+        "G2 recovery jitter protocol drift",
+    )
+    require(
+        recovery["jitterSeed"] == FROZEN_RECOVERY_JITTER_SEED,
+        "G2 recovery jitter seed drift",
     )
 
     route = inputs["routePolicy"]
@@ -423,6 +480,10 @@ def build_plan(
             "faultHarnessResetPerTrial": True,
             "cacheStateResetPerTrial": True,
             "transportSessionResetPerTrial": True,
+            # Application-level RecoveryPolicy full-jitter is a separate
+            # experimental RNG from N2/N5 netem randomness. Reset its sampler
+            # to sample_index=0 before EVERY measured backend trial.
+            "recoveryJitterResetPerTrial": True,
             # N2/N5 must restart tc/netem with the same persisted seed before
             # EACH backend trial rather than continue one random stream.
             "stochasticStateResetPerTrial": stochastic,
@@ -514,6 +575,10 @@ def validate_plan(
     require(
         reset["transportSessionResetPerTrial"] is True,
         "transport session must reset before every v1 COLD trial",
+    )
+    require(
+        reset["recoveryJitterResetPerTrial"] is True,
+        "recovery jitter sampler must reset before every measured trial",
     )
 
     expected_blocks = list(range(1, plan["blockCount"] + 1))
