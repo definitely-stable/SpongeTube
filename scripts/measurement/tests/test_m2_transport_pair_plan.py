@@ -28,37 +28,21 @@ def scenario(name: str) -> dict:
     )
 
 
+def _g2_input(name: str) -> dict:
+    return json.loads(
+        (ROOT / "test-fixtures" / "network" / "m2" / "g2" / name).read_text(
+            encoding="utf-8"
+        )
+    )
+
+
 def inputs() -> dict[str, dict]:
     return {
-        "work": {
-            "fixtureId": "F1",
-            "trackId": "audio-main",
-            "representationId": "f1-audio-1",
-            "byteStart": 0,
-            "byteEndExclusive": 81811,
-            "expectedSha256": (
-                "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
-            ),
-        },
-        "deviceState": {
-            "androidApi": 36,
-            "deviceClass": "ANDROID_EMULATOR",
-            "abi": "x86_64",
-            "batteryPolicy": "CI_POWERED",
-        },
-        "cacheState": {
-            "extentStore": "EMPTY_FOR_TRIAL",
-            "httpCache": "DISABLED",
-        },
-        "recoveryPolicy": {
-            "policyId": "sponge-recovery-v1",
-            "remoteAttemptLimit": 4,
-        },
-        "routePolicy": {
-            "defaultRouteRequired": True,
-            "ambientFallback": False,
-            "processWideBinding": False,
-        },
+        "work": _g2_input("work-f1-audio-segment-1.json"),
+        "deviceState": _g2_input("device-api36-emulator.json"),
+        "cacheState": _g2_input("cache-empty-http-disabled.json"),
+        "recoveryPolicy": _g2_input("recovery-sponge-v2.json"),
+        "routePolicy": _g2_input("route-exact-default.json"),
     }
 
 
@@ -324,6 +308,18 @@ class TransportPairPlanTest(unittest.TestCase):
         weak_recovery = inputs()
         weak_recovery["recoveryPolicy"]["remoteAttemptLimit"] = 5
         cases.append(weak_recovery)
+
+        stale_recovery = inputs()
+        stale_recovery["recoveryPolicy"]["policyId"] = "sponge-recovery-v1"
+        cases.append(stale_recovery)
+
+        refresh_drift = inputs()
+        refresh_drift["recoveryPolicy"]["deliveryBindingRefreshLimit"] = 2
+        cases.append(refresh_drift)
+
+        backoff_drift = inputs()
+        backoff_drift["recoveryPolicy"]["backoffCapMs"] = 4000
+        cases.append(backoff_drift)
 
         ambient_route = inputs()
         ambient_route["routePolicy"]["ambientFallback"] = True

@@ -237,14 +237,32 @@ def _validate_g2_input_semantics(
     )
 
     recovery = inputs["recoveryPolicy"]
-    _require_keys(recovery, "recoveryPolicy", ("policyId", "remoteAttemptLimit"))
+    _require_keys(
+        recovery,
+        "recoveryPolicy",
+        (
+            "policyId",
+            "remoteAttemptLimit",
+            "deliveryBindingRefreshLimit",
+            "backoffBaseMs",
+            "backoffCapMs",
+        ),
+    )
     require(
-        recovery["policyId"] == "sponge-recovery-v1",
-        "G2 v1 recovery policy must remain sponge-recovery-v1",
+        recovery["policyId"] == "sponge-recovery-v2",
+        "G2 v1 recovery policy must match runtime sponge-recovery-v2",
     )
     require(
         recovery["remoteAttemptLimit"] == 4,
         "G2 v1 recovery remoteAttemptLimit must remain 4",
+    )
+    require(
+        recovery["deliveryBindingRefreshLimit"] == 1,
+        "G2 v1 recovery deliveryBindingRefreshLimit must remain 1",
+    )
+    require(
+        recovery["backoffBaseMs"] == 500 and recovery["backoffCapMs"] == 5_000,
+        "G2 v1 recovery backoff must remain 500/5000 ms",
     )
 
     route = inputs["routePolicy"]
