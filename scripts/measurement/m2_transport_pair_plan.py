@@ -156,6 +156,110 @@ def _reject_raw_locators(value: Any, path: str) -> None:
         )
 
 
+def _require_keys(
+    value: Mapping[str, Any],
+    label: str,
+    required: tuple[str, ...],
+) -> None:
+    missing = [key for key in required if key not in value]
+    require(not missing, f"{label} fingerprint input missing: {', '.join(missing)}")
+
+
+def _validate_g2_input_semantics(
+    inputs: Mapping[str, Mapping[str, Any]],
+) -> None:
+    work = inputs["work"]
+    _require_keys(
+        work,
+        "work",
+        (
+            "fixtureId",
+            "trackId",
+            "representationId",
+            "byteStart",
+            "byteEndExclusive",
+            "expectedSha256",
+        ),
+    )
+    require(
+        all(
+            isinstance(work[key], str) and bool(work[key])
+            for key in ("fixtureId", "trackId", "representationId")
+        ),
+        "work identity strings must be non-empty",
+    )
+    start = work["byteStart"]
+    end = work["byteEndExclusive"]
+    require(
+        isinstance(start, int) and not isinstance(start, bool) and start >= 0,
+        "work.byteStart must be a non-negative integer",
+    )
+    require(
+        isinstance(end, int) and not isinstance(end, bool) and end > start,
+        "work.byteEndExclusive must be an integer greater than byteStart",
+    )
+    require(
+        isinstance(work["expectedSha256"], str)
+        and re.fullmatch(r"[0-9a-f]{64}", work["expectedSha256"]) is not None,
+        "work.expectedSha256 must be lowercase SHA-256",
+    )
+
+    device = inputs["deviceState"]
+    _require_keys(
+        device,
+        "deviceState",
+        ("androidApi", "deviceClass", "abi", "batteryPolicy"),
+    )
+    require(device["androidApi"] == 36, "G2 canonical emulator plan requires Android API 36")
+    require(
+        device["deviceClass"] == "ANDROID_EMULATOR",
+        "G2 canonical plan requires ANDROID_EMULATOR deviceClass",
+    )
+    require(
+        isinstance(device["abi"], str) and bool(device["abi"]),
+        "deviceState.abi must be non-empty",
+    )
+    require(
+        isinstance(device["batteryPolicy"], str) and bool(device["batteryPolicy"]),
+        "deviceState.batteryPolicy must be explicit",
+    )
+
+    cache = inputs["cacheState"]
+    _require_keys(cache, "cacheState", ("extentStore", "httpCache"))
+    require(
+        cache["extentStore"] == "EMPTY_FOR_TRIAL",
+        "G2 v1 requires ExtentStore EMPTY_FOR_TRIAL before each measured trial",
+    )
+    require(
+        cache["httpCache"] == "DISABLED",
+        "G2 v1 requires transport HTTP cache disabled",
+    )
+
+    recovery = inputs["recoveryPolicy"]
+    _require_keys(recovery, "recoveryPolicy", ("policyId", "remoteAttemptLimit"))
+    require(
+        recovery["policyId"] == "sponge-recovery-v1",
+        "G2 v1 recovery policy must remain sponge-recovery-v1",
+    )
+    require(
+        recovery["remoteAttemptLimit"] == 4,
+        "G2 v1 recovery remoteAttemptLimit must remain 4",
+    )
+
+    route = inputs["routePolicy"]
+    _require_keys(
+        route,
+        "routePolicy",
+        ("defaultRouteRequired", "ambientFallback", "processWideBinding"),
+    )
+    require(
+        route["defaultRouteRequired"] is True
+        and route["ambientFallback"] is False
+        and route["processWideBinding"] is False,
+        "G2 v1 route policy must require exact default route with no ambient/process fallback",
+    )
+
+
 def _validate_fingerprint_inputs(
     inputs: Mapping[str, Mapping[str, Any]],
 ) -> None:
@@ -169,6 +273,7 @@ def _validate_fingerprint_inputs(
                 f"{name} fingerprint input privacy failure: {error}"
             ) from error
         _reject_raw_locators(inputs[name], f"$.{name}")
+    _validate_g2_input_semantics(inputs)
 
 
 def _comparison(

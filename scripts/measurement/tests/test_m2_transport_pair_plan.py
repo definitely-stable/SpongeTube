@@ -290,6 +290,55 @@ class TransportPairPlanTest(unittest.TestCase):
                 plan, duplicated, scenario=scenario("n0-control.json"), inputs=inputs()
             )
 
+    def test_all_canonical_g2_scenarios_match_frozen_hashes(self):
+        for name in (
+            "n0-control.json",
+            "n2-high-rtt-jitter.json",
+            "n3-burst-packet-loss.json",
+            "n5-burst-loss.json",
+            "n6-transport-reset.json",
+        ):
+            with self.subTest(name=name):
+                plan = plan_for(scenario(name))
+                key = (plan["scenario"]["family"], plan["scenario"]["variant"])
+                self.assertEqual(
+                    module.CANONICAL_G2_SCENARIO_HASHES[key],
+                    plan["scenario"]["hash"],
+                )
+
+    def test_incomplete_or_semantically_weak_fingerprint_inputs_are_rejected(self):
+        cases = []
+        empty = inputs()
+        empty["work"] = {}
+        cases.append(empty)
+
+        bad_device = inputs()
+        bad_device["deviceState"]["androidApi"] = 35
+        cases.append(bad_device)
+
+        dirty_cache = inputs()
+        dirty_cache["cacheState"]["extentStore"] = "PREPOPULATED"
+        cases.append(dirty_cache)
+
+        weak_recovery = inputs()
+        weak_recovery["recoveryPolicy"]["remoteAttemptLimit"] = 5
+        cases.append(weak_recovery)
+
+        ambient_route = inputs()
+        ambient_route["routePolicy"]["ambientFallback"] = True
+        cases.append(ambient_route)
+
+        for values in cases:
+            with self.subTest(values=values):
+                with self.assertRaises(TransportPairPlanError):
+                    module.build_plan(
+                        run_id="m2-g2-n0",
+                        pair_id="pair-n0-cold",
+                        scenario=scenario("n0-control.json"),
+                        inputs=values,
+                        ordering_seed=1,
+                    )
+
     def test_canonical_scenario_parameter_drift_is_rejected(self):
         mutations = [
             ("n2-high-rtt-jitter.json", ("networkFaults", 0, "parameters", "delayUs"), 100001),
