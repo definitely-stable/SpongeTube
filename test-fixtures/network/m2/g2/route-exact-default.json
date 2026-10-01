@@ -1,0 +1,5 @@
+{
+  "defaultRouteRequired": true,
+  "ambientFallback": false,
+  "processWideBinding": false
+}

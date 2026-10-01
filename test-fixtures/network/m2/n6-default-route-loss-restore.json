@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "scenarioFamily": "N6",
+  "variant": "DEFAULT_ROUTE_LOSS_RESTORE",
+  "primaryPlane": "ROUTE",
+  "deliveryFaults": [],
+  "transportFaults": [],
+  "networkFaults": [],
+  "providerFaults": [],
+  "routeFaults": [
+    {
+      "faultId": "default-route-loss-restore",
+      "plane": "ROUTE",
+      "kind": "DEFAULT_ROUTE_LOSS_RESTORE",
+      "stochastic": false,
+      "parameters": {
+        "replacementDefault": "NON_VPN",
+        "resume": "NON_VPN"
+      }
+    }
+  ],
+  "storageFaults": [],
+  "randomSeed": null,
+  "requiresActualDefaultNetwork": true
+}

@@ -1,0 +1,10 @@
+{
+  "policyId": "sponge-recovery-v2",
+  "remoteAttemptLimit": 4,
+  "deliveryBindingRefreshLimit": 1,
+  "backoffBaseMs": 500,
+  "backoffCapMs": 5000,
+  "backoffAlgorithm": "EXPONENTIAL_FULL_JITTER",
+  "jitterProtocol": "SHA256_COUNTER_REJECTION_V1",
+  "jitterSeed": 424243
+}

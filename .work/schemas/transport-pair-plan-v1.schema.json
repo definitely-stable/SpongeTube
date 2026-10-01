@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/transport-pair-plan-v1.schema.json",
+  "title": "SpongeTube M2-G2 Transport Pair Plan v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "pairId",
+    "scenario",
+    "orderingProtocol",
+    "orderingSeed",
+    "backends",
+    "comparison",
+    "comparisonFingerprint",
+    "blockCount",
+    "blocks",
+    "resetPolicy",
+    "executionPolicy",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
+    "pairId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
+    "scenario": {
+      "type": "object",
+      "required": ["family", "variant", "hash", "randomSeed", "stochastic"],
+      "properties": {
+        "family": { "type": "string", "pattern": "^N(?:[0-9]|1[01])$" },
+        "variant": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+        "hash": { "$ref": "#/$defs/sha256" },
+        "randomSeed": { "type": ["integer", "null"], "minimum": 0 },
+        "stochastic": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "orderingProtocol": { "type": "string", "const": "COUNTERBALANCED_PAIRS" },
+    "orderingSeed": { "type": "integer", "minimum": 0 },
+    "backends": {
+      "type": "array",
+      "const": [
+        "HTTP_URL_CONNECTION_ROUTE_BOUND",
+        "PLATFORM_HTTP_ENGINE"
+      ]
+    },
+    "comparison": { "$ref": "#/$defs/comparison" },
+    "comparisonFingerprint": { "$ref": "#/$defs/sha256" },
+    "blockCount": { "type": "integer", "minimum": 2 },
+    "blocks": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/block" }
+    },
+    "resetPolicy": {
+      "type": "object",
+      "required": [
+        "faultHarnessResetPerTrial",
+        "cacheStateResetPerTrial",
+        "transportSessionResetPerTrial",
+        "recoveryJitterResetPerTrial",
+        "stochasticStateResetPerTrial"
+      ],
+      "properties": {
+        "faultHarnessResetPerTrial": { "type": "boolean", "const": true },
+        "cacheStateResetPerTrial": { "type": "boolean", "const": true },
+        "transportSessionResetPerTrial": { "type": "boolean", "const": true },
+        "recoveryJitterResetPerTrial": { "type": "boolean", "const": true },
+        "stochasticStateResetPerTrial": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "executionPolicy": {
+      "type": "object",
+      "required": [
+        "retainAllPlannedTrials",
+        "resultDependentReorderingForbidden",
+        "correctnessBeforePerformance"
+      ],
+      "properties": {
+        "retainAllPlannedTrials": { "type": "boolean", "const": true },
+        "resultDependentReorderingForbidden": { "type": "boolean", "const": true },
+        "correctnessBeforePerformance": { "type": "boolean", "const": true }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "backend": {
+      "type": "string",
+      "enum": [
+        "HTTP_URL_CONNECTION_ROUTE_BOUND",
+        "PLATFORM_HTTP_ENGINE"
+      ]
+    },
+    "comparison": {
+      "type": "object",
+      "required": [
+        "workFingerprint",
+        "scenarioHash",
+        "deviceStateFingerprint",
+        "playbackMode",
+        "cacheStateFingerprint",
+        "recoveryPolicyFingerprint",
+        "routePolicyFingerprint",
+        "connectionState"
+      ],
+      "properties": {
+        "workFingerprint": { "$ref": "#/$defs/sha256" },
+        "scenarioHash": { "$ref": "#/$defs/sha256" },
+        "deviceStateFingerprint": { "$ref": "#/$defs/sha256" },
+        "playbackMode": { "type": "string", "enum": ["DIRECT", "SPONGE"] },
+        "cacheStateFingerprint": { "$ref": "#/$defs/sha256" },
+        "recoveryPolicyFingerprint": { "$ref": "#/$defs/sha256" },
+        "routePolicyFingerprint": { "$ref": "#/$defs/sha256" },
+        "connectionState": { "type": "string", "const": "COLD" }
+      },
+      "additionalProperties": false
+    },
+    "trial": {
+      "type": "object",
+      "required": [
+        "trialId",
+        "backendId",
+        "positionInBlock",
+        "scenarioHash",
+        "comparisonFingerprint",
+        "connectionState"
+      ],
+      "properties": {
+        "trialId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+        },
+        "backendId": { "$ref": "#/$defs/backend" },
+        "positionInBlock": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "scenarioHash": { "$ref": "#/$defs/sha256" },
+        "comparisonFingerprint": { "$ref": "#/$defs/sha256" },
+        "connectionState": { "type": "string", "const": "COLD" }
+      },
+      "additionalProperties": false
+    },
+    "block": {
+      "type": "object",
+      "required": ["orderingBlock", "trials"],
+      "properties": {
+        "orderingBlock": { "type": "integer", "minimum": 1 },
+        "trials": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/trial" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

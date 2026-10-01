@@ -1,0 +1,6 @@
+{
+  "androidApi": 36,
+  "deviceClass": "ANDROID_EMULATOR",
+  "abi": "x86_64",
+  "batteryPolicy": "CI_POWERED"
+}
