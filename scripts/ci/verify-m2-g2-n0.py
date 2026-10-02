@@ -175,13 +175,17 @@ def check_raw(
             f"{expected['trialId']}: no body progress observed")
     require(proof.get("attemptCorrelationCount") == 1, f"{expected['trialId']}: correlation count mismatch")
     require(proof.get("remoteAttemptChargeCount") == 1, f"{expected['trialId']}: recovery charge mismatch")
+    chain_started_ns = proof.get("chainStartedElapsedRealtimeNs")
+    chain_terminated_ns = proof.get("chainTerminatedElapsedRealtimeNs")
     attempt_started_ns = proof.get("attemptStartedElapsedRealtimeNs")
     attempt_completed_ns = proof.get("attemptCompletedElapsedRealtimeNs")
     require(
-        type(attempt_started_ns) is int
+        type(chain_started_ns) is int
+        and type(chain_terminated_ns) is int
+        and type(attempt_started_ns) is int
         and type(attempt_completed_ns) is int
-        and 0 <= attempt_started_ns <= attempt_completed_ns,
-        f"{expected['trialId']}: physical attempt timing bounds missing",
+        and 0 <= chain_started_ns <= attempt_started_ns <= attempt_completed_ns <= chain_terminated_ns,
+        f"{expected['trialId']}: recovery/attempt timing bounds missing",
     )
     transport_phases = proof.get("transportPhases")
     require(
@@ -220,6 +224,16 @@ def check_raw(
     require(
         attempt_started_ns <= phase_times[0] <= phase_times[1] <= phase_times[2] <= attempt_completed_ns,
         f"{expected['trialId']}: transport phases escaped physical attempt bounds",
+    )
+    expected_first_byte_us = (transport_phases[1]["elapsedRealtimeNs"] - chain_started_ns) // 1_000
+    expected_completion_us = (chain_terminated_ns - chain_started_ns) // 1_000
+    require(
+        metrics["firstByteUs"] == expected_first_byte_us,
+        f"{expected['trialId']}: firstByteUs is not RecoveryChain-relative",
+    )
+    require(
+        metrics["completionUs"] == expected_completion_us,
+        f"{expected['trialId']}: completionUs is not RecoveryChain-relative",
     )
     require(proof.get("recoveryJitterProtocol") == RECOVERY_JITTER_PROTOCOL,
             f"{expected['trialId']}: recovery jitter protocol drift")
@@ -275,7 +289,7 @@ def check_raw(
         f"{expected['trialId']}: firstByteUs measurement boundary is not disclosed",
     )
     require(
-        "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION" in limitations,
+        "COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION" in limitations,
         f"{expected['trialId']}: completionUs measurement boundary is not disclosed",
     )
     return row, {

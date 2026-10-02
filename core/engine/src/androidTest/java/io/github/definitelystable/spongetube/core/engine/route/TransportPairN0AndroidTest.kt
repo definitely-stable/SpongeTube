@@ -252,14 +252,6 @@ class TransportPairN0AndroidTest {
             val attemptCompleted = events.single { it.event == FetchEventKind.ATTEMPT_COMPLETED }
             val correlation = events.single { it.event == FetchEventKind.ATTEMPT_CORRELATED }
             val originRequestId = checkNotNull(correlation.transportCorrelationId?.toLongOrNull())
-            val firstByteUs = nanosToMicros(
-                firstProgress.eventElapsedRealtimeNs - attemptStarted.eventElapsedRealtimeNs,
-            )
-            val completionUs = nanosToMicros(
-                attemptCompleted.eventElapsedRealtimeNs - attemptStarted.eventElapsedRealtimeNs,
-            )
-            assertTrue(firstByteUs >= 0)
-            assertTrue(completionUs >= firstByteUs)
             val phaseSnapshot = transportPhases.toList()
             assertEquals(
                 listOf(
@@ -282,6 +274,8 @@ class TransportPairN0AndroidTest {
 
             val budget = recoveryEvidence.budgetEvents()
             val chainStarts = budget.count { it.kind == RecoveryBudgetEventKind.CHAIN_STARTED }
+            val chainStarted = budget.single { it.kind == RecoveryBudgetEventKind.CHAIN_STARTED }
+            val chainTerminated = budget.single { it.kind == RecoveryBudgetEventKind.CHAIN_TERMINATED }
             val owners = budget.count { it.kind == RecoveryBudgetEventKind.OWNER_STARTED }
             val remoteCharges = budget.count { it.kind == RecoveryBudgetEventKind.CHARGE }
             val permitEpoch = budget.single {
@@ -291,6 +285,16 @@ class TransportPairN0AndroidTest {
             assertEquals(1, owners)
             assertEquals(1, remoteCharges)
             assertEquals(initialEpoch, permitEpoch)
+            assertTrue(chainStarted.elapsedRealtimeNs <= attemptStarted.eventElapsedRealtimeNs)
+            assertTrue(attemptCompleted.eventElapsedRealtimeNs <= chainTerminated.elapsedRealtimeNs)
+            val firstByteUs = nanosToMicros(
+                firstProgress.eventElapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
+            )
+            val completionUs = nanosToMicros(
+                chainTerminated.elapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
+            )
+            assertTrue(firstByteUs >= 0)
+            assertTrue(completionUs >= firstByteUs)
 
             val finalEpoch = (monitor.observations.value.state as? DefaultRouteState.Available)
                 ?.routeEpoch
@@ -358,7 +362,7 @@ class TransportPairN0AndroidTest {
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
                     put("FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK")
-                    put("COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION")
+                    put("COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION")
                     put("CANCELLATION_NOT_EXERCISED_IN_N0")
                 })
             }
@@ -397,6 +401,8 @@ class TransportPairN0AndroidTest {
                         it.event == FetchEventKind.ATTEMPT_CORRELATED
                     })
                     put("remoteAttemptChargeCount", remoteCharges)
+                    put("chainStartedElapsedRealtimeNs", chainStarted.elapsedRealtimeNs)
+                    put("chainTerminatedElapsedRealtimeNs", chainTerminated.elapsedRealtimeNs)
                     put("attemptStartedElapsedRealtimeNs", attemptStarted.eventElapsedRealtimeNs)
                     put("attemptCompletedElapsedRealtimeNs", attemptCompleted.eventElapsedRealtimeNs)
                     put("transportPhases", JSONArray().apply {

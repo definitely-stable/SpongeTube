@@ -103,8 +103,8 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 "internalRetryCount": None,
             },
             "metrics": {
-                "firstByteUs": 10_000,
-                "completionUs": 100_000,
+                "firstByteUs": 200,
+                "completionUs": 1_000,
                 "cancellationLatencyUs": None,
                 "cpuTimeUs": 20_000,
                 "maxRssBytes": 50_000_000,
@@ -123,7 +123,7 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 "API36_EMULATOR_DIRECTIONAL_ONLY",
                 "MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER",
                 "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK",
-                "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION",
+                "COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION",
                 "CANCELLATION_NOT_EXERCISED_IN_N0",
             ],
         },
@@ -147,8 +147,10 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "attemptProgressCount": 3,
             "attemptCorrelationCount": 1,
             "remoteAttemptChargeCount": 1,
-            "attemptStartedElapsedRealtimeNs": 1_000_000,
-            "attemptCompletedElapsedRealtimeNs": 2_000_000,
+            "chainStartedElapsedRealtimeNs": 1_000_000,
+            "chainTerminatedElapsedRealtimeNs": 2_000_000,
+            "attemptStartedElapsedRealtimeNs": 1_050_000,
+            "attemptCompletedElapsedRealtimeNs": 1_900_000,
             "transportPhases": [
                 {
                     "fetchKey": f"fixture:F1/video-main/f1-video-0/{schedule_row['trialId']}",
@@ -343,10 +345,28 @@ class G2N0VerifierTest(unittest.TestCase):
         self.mutate_raw(
             trial_id,
             lambda raw: raw["trial"]["limitations"].remove(
-                "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION"
+                "COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION"
             ),
         )
         with self.assertRaisesRegex(ValueError, "completionUs measurement boundary"):
+            self.verify()
+
+    def test_g0_timings_must_be_recovery_chain_relative(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["trial"]["metrics"].__setitem__("firstByteUs", 150),
+        )
+        with self.assertRaisesRegex(ValueError, "firstByteUs is not RecoveryChain-relative"):
+            self.verify()
+
+        self.setUp_fresh()
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["trial"]["metrics"].__setitem__("completionUs", 900),
+        )
+        with self.assertRaisesRegex(ValueError, "completionUs is not RecoveryChain-relative"):
             self.verify()
 
     def test_transport_phase_order_or_bounds_drift_is_rejected(self):
