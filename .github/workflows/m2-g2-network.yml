@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout
@@ -138,7 +138,11 @@ jobs:
           output_root="$root/output"
           mkdir -p "$tools" "$raw_root" "$trial_root" "$server_root" "$output_root"
 
-          test "$(git rev-parse HEAD)" = "$GIT_SHA"
+          checkout_sha="$(git rev-parse HEAD)"
+          [[ "$SOURCE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$checkout_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf '%s\n' "$SOURCE_HEAD_SHA" > "$root/source-head-commit.txt"
+          printf '%s\n' "$checkout_sha" > "$root/checkout-commit.txt"
 
           bash scripts/faults/install_iproute2_tc.sh "$tools" > "$root/tc-version.txt"
           export M2_TC_BIN="$tools/tc"
@@ -211,7 +215,8 @@ jobs:
 
           python3 scripts/measurement/m2_transport_environment.py build \
             --run-id m2-g2-n2-api36 \
-            --git-commit "$GIT_SHA" \
+            --source-head-commit "$SOURCE_HEAD_SHA" \
+            --checkout-commit "$checkout_sha" \
             --fault-engine-fingerprint "$root/fault-engine-fingerprint.json" \
             --link-state "$root/link-state.json" \
             --android-runtime "$root/android-runtime.json" \

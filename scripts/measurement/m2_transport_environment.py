@@ -125,7 +125,8 @@ def validate_device_runtime(runtime: Mapping[str, Any]) -> None:
 def build(
     *,
     run_id: str,
-    git_commit: str,
+    source_head_commit: str,
+    checkout_commit: str,
     fault_engine: Mapping[str, Any],
     link_state: Mapping[str, Any],
     android_runtime: Mapping[str, Any],
@@ -135,12 +136,16 @@ def build(
         isinstance(run_id, str) and run_id and len(run_id) <= 96,
         "runId missing or too long",
     )
-    require(
-        isinstance(git_commit, str)
-        and len(git_commit) == 40
-        and all(ch in "0123456789abcdef" for ch in git_commit),
-        "gitCommit must be a lowercase 40-hex commit",
-    )
+    for value, name in (
+        (source_head_commit, "sourceHeadCommit"),
+        (checkout_commit, "checkoutCommit"),
+    ):
+        require(
+            isinstance(value, str)
+            and len(value) == 40
+            and all(ch in "0123456789abcdef" for ch in value),
+            f"{name} must be a lowercase 40-hex commit",
+        )
     validate_fault_engine(fault_engine)
     validate_link_state(link_state, fault_engine)
     validate_device_runtime(android_runtime)
@@ -148,7 +153,8 @@ def build(
     document = {
         "schemaVersion": 1,
         "runId": run_id,
-        "gitCommit": git_commit,
+        "sourceHeadCommit": source_head_commit,
+        "checkoutCommit": checkout_commit,
         "faultEngineFingerprintSha256": canonical_sha256(fault_engine),
         "mediaLink": {
             "mtu": link_state["mtu"],
@@ -229,7 +235,8 @@ def main() -> int:
 
     build_parser = sub.add_parser("build")
     build_parser.add_argument("--run-id", required=True)
-    build_parser.add_argument("--git-commit", required=True)
+    build_parser.add_argument("--source-head-commit", required=True)
+    build_parser.add_argument("--checkout-commit", required=True)
     build_parser.add_argument("--fault-engine-fingerprint", required=True, type=pathlib.Path)
     build_parser.add_argument("--link-state", required=True, type=pathlib.Path)
     build_parser.add_argument("--android-runtime", required=True, type=pathlib.Path)
@@ -249,7 +256,8 @@ def main() -> int:
     if args.command == "build":
         document = build(
             run_id=args.run_id,
-            git_commit=args.git_commit,
+            source_head_commit=args.source_head_commit,
+            checkout_commit=args.checkout_commit,
             fault_engine=fault_engine,
             link_state=link_state,
             android_runtime=android_runtime,

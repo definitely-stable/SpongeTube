@@ -63,7 +63,8 @@ class TransportEnvironmentTest(unittest.TestCase):
     def build(self, **overrides):
         values = {
             "run_id": "m2-g2-c-n2",
-            "git_commit": "a" * 40,
+            "source_head_commit": "a" * 40,
+            "checkout_commit": "b" * 40,
             "fault_engine": copy.deepcopy(FAULT_ENGINE),
             "link_state": copy.deepcopy(LINK_STATE),
             "android_runtime": copy.deepcopy(DEVICE),
@@ -158,11 +159,20 @@ class TransportEnvironmentTest(unittest.TestCase):
             after = envmod.code_fingerprint(root)
             self.assertNotEqual(before["sha256"], after["sha256"])
 
-    def test_git_commit_is_exact_lowercase_sha1(self):
-        for value in ("A" * 40, "a" * 39, "z" * 40):
-            with self.subTest(value=value):
-                with self.assertRaisesRegex(envmod.TransportEnvironmentError, "40-hex"):
-                    self.build(git_commit=value)
+    def test_source_and_checkout_commits_are_exact_lowercase_sha1(self):
+        for field in ("source_head_commit", "checkout_commit"):
+            for value in ("A" * 40, "a" * 39, "z" * 40):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaisesRegex(envmod.TransportEnvironmentError, "40-hex"):
+                        self.build(**{field: value})
+
+    def test_source_and_checkout_commits_are_retained_separately(self):
+        document = self.build(
+            source_head_commit="1" * 40,
+            checkout_commit="2" * 40,
+        )
+        self.assertEqual("1" * 40, document["sourceHeadCommit"])
+        self.assertEqual("2" * 40, document["checkoutCommit"])
 
 
 if __name__ == "__main__":

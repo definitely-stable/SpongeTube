@@ -6,7 +6,8 @@
   "required": [
     "schemaVersion",
     "runId",
-    "gitCommit",
+    "sourceHeadCommit",
+    "checkoutCommit",
     "faultEngineFingerprintSha256",
     "mediaLink",
     "androidRuntime",
@@ -20,7 +21,11 @@
       "minLength": 1,
       "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
     },
-    "gitCommit": {
+    "sourceHeadCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "checkoutCommit": {
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
     },
