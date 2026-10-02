@@ -430,6 +430,11 @@ class TransportPairNetworkAndroidTest {
                         }
                     })
                     put("recoveryFailureCount", recoveryEvidence.failures().size)
+                    put("recoveryFailures", JSONArray().apply {
+                        recoveryEvidence.failures().forEach { failure ->
+                            put(JSONObject(failure.toArtifactMap()))
+                        }
+                    })
                     put("recoveryBackoffs", JSONArray().apply {
                         backoffs.forEach { event ->
                             val backoff = checkNotNull(event.backoff)

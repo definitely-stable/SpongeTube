@@ -32,6 +32,7 @@ CODE_PATHS = (
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/TransportEvaluationSelector.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/TransportPhaseObserver.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/recovery/RecoveryCoordinator.kt",
+    "scripts/ci/run-m2-g2-network.sh",
     "scripts/ci/verify-m2-g2-network.py",
     "scripts/faults/m2_network_environment.py",
     "scripts/faults/m2_network_harness.py",
