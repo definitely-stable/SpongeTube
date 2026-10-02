@@ -780,7 +780,13 @@ class MediaLabProviderIntegrationTest {
         if (!Files.exists(tracePath)) {
             return rows;
         }
-        for (String line : Files.readAllLines(tracePath)) {
+        String raw = Files.readString(tracePath);
+        int completeEnd = raw.lastIndexOf('\n');
+        if (completeEnd < 0) {
+            return rows;
+        }
+        String complete = raw.substring(0, completeEnd);
+        for (String line : complete.split("\\R")) {
             if (!line.isBlank()) {
                 rows.add(document(line));
             }
