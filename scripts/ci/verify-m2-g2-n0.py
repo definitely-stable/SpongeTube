@@ -64,6 +64,7 @@ def check_raw(
     expected: dict[str, Any],
     plan: dict[str, Any],
     device_state: dict[str, Any],
+    recovery_policy: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     require(raw.get("schemaVersion") == 1, "wrong G2-B raw schema")
     require(raw.get("phase") == "M2-G2-B-N0", "wrong G2-B phase")
@@ -170,6 +171,27 @@ def check_raw(
         proof.get("readTimeoutMs") == READ_TIMEOUT_MS,
         f"{expected['trialId']}: read timeout policy drift",
     )
+    runtime_recovery = {
+        "policyId": proof.get("runtimeRecoveryPolicyId"),
+        "remoteAttemptLimit": proof.get("runtimeRemoteAttemptLimit"),
+        "deliveryBindingRefreshLimit": proof.get("runtimeDeliveryBindingRefreshLimit"),
+        "backoffBaseMs": proof.get("runtimeBackoffBaseMs"),
+        "backoffCapMs": proof.get("runtimeBackoffCapMs"),
+    }
+    expected_recovery = {
+        key: recovery_policy[key]
+        for key in (
+            "policyId",
+            "remoteAttemptLimit",
+            "deliveryBindingRefreshLimit",
+            "backoffBaseMs",
+            "backoffCapMs",
+        )
+    }
+    require(
+        runtime_recovery == expected_recovery,
+        f"{expected['trialId']}: runtime RecoveryPolicy.DEFAULT drifted from frozen input",
+    )
     process_id = proof.get("processInstanceId")
     require(isinstance(process_id, str) and process_id, f"{expected['trialId']}: process reset proof missing")
     process_pid = proof.get("processPid")
@@ -224,6 +246,7 @@ def verify(
             expected=expected,
             plan=plan,
             device_state=contract_inputs["deviceState"],
+            recovery_policy=contract_inputs["recoveryPolicy"],
         )
         rows.append(row)
         proofs.append(proof)

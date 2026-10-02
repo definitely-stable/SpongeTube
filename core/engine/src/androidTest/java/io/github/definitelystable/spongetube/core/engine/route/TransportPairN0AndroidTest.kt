@@ -23,6 +23,7 @@ import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindin
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRefresher
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAttemptGate
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryBudgetDimension
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryBudgetEventKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumer
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumerId
@@ -369,6 +370,25 @@ class TransportPairN0AndroidTest {
                     put("recoveryJitterSamples", JSONArray(jitter.samples))
                     put("firstResponseTimeoutMs", FIRST_RESPONSE_TIMEOUT_MS)
                     put("readTimeoutMs", READ_TIMEOUT_MS)
+                    put("runtimeRecoveryPolicyId", RecoveryPolicy.DEFAULT.policyId)
+                    put(
+                        "runtimeRemoteAttemptLimit",
+                        checkNotNull(
+                            RecoveryPolicy.DEFAULT.budget.limit(
+                                RecoveryBudgetDimension.REMOTE_ATTEMPT,
+                            ),
+                        ),
+                    )
+                    put(
+                        "runtimeDeliveryBindingRefreshLimit",
+                        checkNotNull(
+                            RecoveryPolicy.DEFAULT.budget.limit(
+                                RecoveryBudgetDimension.DELIVERY_BINDING_REFRESH,
+                            ),
+                        ),
+                    )
+                    put("runtimeBackoffBaseMs", RecoveryPolicy.DEFAULT.backoff.baseMs)
+                    put("runtimeBackoffCapMs", RecoveryPolicy.DEFAULT.backoff.capMs)
                 })
             }
             PlatformTestStorageRegistry.getInstance().openOutputFile(

@@ -152,6 +152,13 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "recoveryJitterSamples": [],
             "firstResponseTimeoutMs": verifier.FIRST_RESPONSE_TIMEOUT_MS,
             "readTimeoutMs": verifier.READ_TIMEOUT_MS,
+            "runtimeRecoveryPolicyId": INPUTS["recoveryPolicy"]["policyId"],
+            "runtimeRemoteAttemptLimit": INPUTS["recoveryPolicy"]["remoteAttemptLimit"],
+            "runtimeDeliveryBindingRefreshLimit": (
+                INPUTS["recoveryPolicy"]["deliveryBindingRefreshLimit"]
+            ),
+            "runtimeBackoffBaseMs": INPUTS["recoveryPolicy"]["backoffBaseMs"],
+            "runtimeBackoffCapMs": INPUTS["recoveryPolicy"]["backoffCapMs"],
         },
     }
 
@@ -291,6 +298,15 @@ class G2N0VerifierTest(unittest.TestCase):
             ),
         )
         with self.assertRaisesRegex(ValueError, "distinct OS process"):
+            self.verify()
+
+    def test_runtime_recovery_policy_must_match_frozen_input(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["proof"].__setitem__("runtimeRemoteAttemptLimit", 3),
+        )
+        with self.assertRaisesRegex(ValueError, "RecoveryPolicy.DEFAULT drifted"):
             self.verify()
 
     def test_transport_timeout_policy_drift_is_rejected(self):
