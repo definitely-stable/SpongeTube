@@ -404,14 +404,14 @@ class TransportPairN0AndroidTest {
     }
 
     private fun request(id: String): FetchRequest = FetchRequest(
-        fetchKey = FetchKey("fixture:F1/audio-main/f1-audio-1/" + id),
+        fetchKey = FetchKey("fixture:F1/video-main/f1-video-0/" + id),
         extentSpec = ExtentSpec(
             mediaAssetId = MediaAssetId("fixture:F1"),
             extentId = ExtentId(id),
-            trackId = "audio-main",
-            representationId = "f1-audio-1",
+            trackId = "video-main",
+            representationId = "f1-video-0",
             mediaStartUs = 0,
-            mediaEndUs = 9_941_333,
+            mediaEndUs = 10_000_000,
             byteStart = 0,
             byteEndExclusive = RESOURCE_LENGTH,
             expectedLength = RESOURCE_LENGTH,
@@ -481,10 +481,10 @@ class TransportPairN0AndroidTest {
         const val ARG_TRIAL_ID = "spongetube.m2g2.trialId"
         const val ARG_RECOVERY_JITTER_SEED = "spongetube.m2g2.recoveryJitterSeed"
         const val PLAN_ASSET = "m2-g2-n0-plan.json"
-        const val RESOURCE_PATH = "/fixtures/F1/segment-1-00001.m4s"
-        const val RESOURCE_LENGTH = 81_811L
+        const val RESOURCE_PATH = "/fixtures/F1/segment-0-00001.m4s"
+        const val RESOURCE_LENGTH = 711_501L
         const val RESOURCE_SHA256 =
-            "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
+            "f3e8a844487d57a05c69975389566bde3bcb38d9afa1d53538be18c959d77fa3"
         const val RECOVERY_JITTER_PROTOCOL = "SHA256_COUNTER_REJECTION_V1"
         const val RECOVERY_JITTER_DOMAIN = "spongetube-g2-recovery-jitter-v1"
         const val FIRST_RESPONSE_TIMEOUT_MS = 12_000

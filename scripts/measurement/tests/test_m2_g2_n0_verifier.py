@@ -108,9 +108,9 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 "cancellationLatencyUs": None,
                 "cpuTimeUs": 20_000,
                 "maxRssBytes": 50_000_000,
-                "bytesRequested": 81_811,
-                "bytesReceived": 81_811,
-                "bytesPublished": 81_811,
+                "bytesRequested": verifier.RESOURCE_LENGTH,
+                "bytesReceived": verifier.RESOURCE_LENGTH,
+                "bytesPublished": verifier.RESOURCE_LENGTH,
             },
             "negotiatedProtocol": (
                 "UNKNOWN"
@@ -169,7 +169,7 @@ def origin_row(plan: dict, request_id: int) -> dict:
         "scenarioHash": LAB_SCENARIO_HASH,
         "method": "GET",
         "path": verifier.RESOURCE_PATH,
-        "rangeHeader": "bytes=0-81810",
+        "rangeHeader": f"bytes=0-{verifier.RESOURCE_LENGTH - 1}",
         "resolvedRangeStart": 0,
         "resolvedRangeEndExclusive": verifier.RESOURCE_LENGTH,
         "status": 206,
@@ -331,7 +331,9 @@ class G2N0VerifierTest(unittest.TestCase):
         trial_id = self.schedule[0]["trialId"]
         self.mutate_raw(
             trial_id,
-            lambda raw: raw["trial"]["metrics"].__setitem__("bytesReceived", 81_810),
+            lambda raw: raw["trial"]["metrics"].__setitem__(
+                "bytesReceived", verifier.RESOURCE_LENGTH - 1
+            ),
         )
         with self.assertRaisesRegex(ValueError, "received bytes"):
             self.verify()
@@ -362,7 +364,7 @@ class G2N0VerifierTest(unittest.TestCase):
     def test_origin_range_body_or_scenario_drift_is_rejected(self):
         cases = (
             ("rangeHeader", "bytes=1-81810"),
-            ("bodyBytesWritten", 81_810),
+            ("bodyBytesWritten", verifier.RESOURCE_LENGTH - 1),
             ("scenarioHash", "0" * 64),
         )
         for field, value in cases:

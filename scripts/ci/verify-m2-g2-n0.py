@@ -20,9 +20,9 @@ from m2_transport_pair_plan import (  # noqa: E402
     validate_trials_against_plan,
 )
 
-RESOURCE_PATH = "/fixtures/F1/segment-1-00001.m4s"
-RESOURCE_LENGTH = 81_811
-RESOURCE_SHA256 = "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
+RESOURCE_PATH = "/fixtures/F1/segment-0-00001.m4s"
+RESOURCE_LENGTH = 711_501
+RESOURCE_SHA256 = "f3e8a844487d57a05c69975389566bde3bcb38d9afa1d53538be18c959d77fa3"
 RECOVERY_JITTER_PROTOCOL = "SHA256_COUNTER_REJECTION_V1"
 RECOVERY_JITTER_SEED = 424_243
 FIRST_RESPONSE_TIMEOUT_MS = 12_000
@@ -266,7 +266,10 @@ def verify(
         row = by_id[proof["originRequestId"]]
         require(row.get("profileId") == "N0", f"{expected['trialId']}: wrong Media Lab profile")
         require(row.get("scenarioId") == "N0", f"{expected['trialId']}: wrong Media Lab scenario")
-        require(row.get("rangeHeader") == "bytes=0-81810", f"{expected['trialId']}: Range drift")
+        require(
+            row.get("rangeHeader") == f"bytes=0-{RESOURCE_LENGTH - 1}",
+            f"{expected['trialId']}: Range drift",
+        )
         require(row.get("resolvedRangeStart") == 0, f"{expected['trialId']}: range start drift")
         require(row.get("resolvedRangeEndExclusive") == RESOURCE_LENGTH,
                 f"{expected['trialId']}: range end drift")

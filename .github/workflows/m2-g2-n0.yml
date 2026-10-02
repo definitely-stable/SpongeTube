@@ -72,7 +72,7 @@ jobs:
 
           python3 scripts/measurement/m2_transport_pair_plan.py build \
             --scenario test-fixtures/network/m2/n0-control.json \
-            --work test-fixtures/network/m2/g2/work-f1-audio-segment-1.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
             --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
             --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
             --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
@@ -88,7 +88,7 @@ jobs:
           python3 scripts/measurement/m2_transport_pair_plan.py verify \
             --plan "$plan" \
             --scenario test-fixtures/network/m2/n0-control.json \
-            --work test-fixtures/network/m2/g2/work-f1-audio-segment-1.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
             --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
             --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
             --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
@@ -238,7 +238,7 @@ jobs:
             --raw-dir "$raw_root" \
             --origin-trace "$trace" \
             --scenario test-fixtures/network/m2/n0-control.json \
-            --work test-fixtures/network/m2/g2/work-f1-audio-segment-1.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
             --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
             --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
             --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
@@ -250,7 +250,7 @@ jobs:
             --plan "$root/plan.json" \
             --trials "$output_root/transport-evaluation-trials-v1.json" \
             --scenario test-fixtures/network/m2/n0-control.json \
-            --work test-fixtures/network/m2/g2/work-f1-audio-segment-1.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
             --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
             --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
             --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
