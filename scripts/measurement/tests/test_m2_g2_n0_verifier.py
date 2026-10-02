@@ -226,11 +226,11 @@ class G2N0VerifierTest(unittest.TestCase):
         self.assertEqual(2, result["pairedBlockCount"])
         self.assertIsNone(result["selectedBackend"])
         for row in trials["trials"]:
-            self.assertEqual("PROVEN_ZERO", row["recovery"]["internalRetryVisibility"])
+            self.assertEqual("OBSERVABLE", row["recovery"]["internalRetryVisibility"])
             self.assertEqual(0, row["recovery"]["internalRetryCount"])
             self.assertTrue(row["performanceSampleEligible"])
             self.assertIn(
-                "INTERNAL_RETRY_ZERO_DERIVED_FROM_EXACT_ORIGIN_GET_BIJECTION",
+                "INTERNAL_HTTP_REPLAY_ZERO_OBSERVED_FROM_EXACT_ORIGIN_GET_BIJECTION",
                 row["limitations"],
             )
             self.assertNotIn(

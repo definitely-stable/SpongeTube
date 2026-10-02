@@ -279,18 +279,22 @@ def verify(
 
     # Only after the full serialized run proves that there were exactly four
     # measured origin GETs (one bijectively correlated GET per planned row) can
-    # raw OPAQUE device rows be finalized as origin-visible retry PROVEN_ZERO.
+    # raw OPAQUE device rows be finalized with an explicit origin-visible HTTP
+    # replay count. This is OBSERVABLE/0, not PROVEN_ZERO: Android HttpEngine
+    # callbacks do not expose every lower-level internal connection attempt.
     finalized_rows: list[dict[str, Any]] = []
     for raw_row in rows:
         row = json.loads(json.dumps(raw_row))
-        row["recovery"]["internalRetryVisibility"] = "PROVEN_ZERO"
+        row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
         row["recovery"]["internalRetryCount"] = 0
         row["performanceSampleEligible"] = True
         row["limitations"] = [
             item for item in row["limitations"]
             if item != "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"
         ]
-        row["limitations"].append("INTERNAL_RETRY_ZERO_DERIVED_FROM_EXACT_ORIGIN_GET_BIJECTION")
+        row["limitations"].append(
+            "INTERNAL_HTTP_REPLAY_ZERO_OBSERVED_FROM_EXACT_ORIGIN_GET_BIJECTION"
+        )
         finalized_rows.append(row)
 
     require(runtime.get("deviceClass") == contract_inputs["deviceState"]["deviceClass"],
