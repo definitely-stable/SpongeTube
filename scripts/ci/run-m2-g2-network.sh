@@ -75,6 +75,12 @@ test "$(wc -l < "$ROOT/schedule.txt")" -eq 4
 ./gradlew --dependency-verification=strict --configuration-cache   :core:engine:assembleDebugAndroidTest   :tools:media-lab:installDist
 
 bash scripts/ci/prepare-emulator.sh 36 "m2-g2-$slug-api36" "$ROOT/device"
+SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+test -n "$SDK_ROOT"
+export PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
+export ANDROID_AVD_HOME="${RUNNER_TEMP}/spongetube-avd-36-m2-g2-$slug-api36"
+command -v adb >/dev/null
+adb get-state | grep -Fxq device
 
 checkout_sha="$(git rev-parse HEAD)"
 [[ "$SOURCE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
