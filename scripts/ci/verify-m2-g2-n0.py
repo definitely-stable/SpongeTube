@@ -175,6 +175,52 @@ def check_raw(
             f"{expected['trialId']}: no body progress observed")
     require(proof.get("attemptCorrelationCount") == 1, f"{expected['trialId']}: correlation count mismatch")
     require(proof.get("remoteAttemptChargeCount") == 1, f"{expected['trialId']}: recovery charge mismatch")
+    attempt_started_ns = proof.get("attemptStartedElapsedRealtimeNs")
+    attempt_completed_ns = proof.get("attemptCompletedElapsedRealtimeNs")
+    require(
+        type(attempt_started_ns) is int
+        and type(attempt_completed_ns) is int
+        and 0 <= attempt_started_ns <= attempt_completed_ns,
+        f"{expected['trialId']}: physical attempt timing bounds missing",
+    )
+    transport_phases = proof.get("transportPhases")
+    require(
+        isinstance(transport_phases, list) and len(transport_phases) == 3,
+        f"{expected['trialId']}: transport phase timeline incomplete",
+    )
+    expected_phase_kinds = [
+        "RESPONSE_HEADERS",
+        "FIRST_BODY_BYTES",
+        "RESPONSE_BODY_COMPLETE",
+    ]
+    require(
+        [phase.get("kind") for phase in transport_phases] == expected_phase_kinds,
+        f"{expected['trialId']}: transport phase order drift",
+    )
+    phase_times = []
+    phase_fetch_keys = set()
+    for phase in transport_phases:
+        require(
+            type(phase.get("attempt")) is int and phase["attempt"] == 1,
+            f"{expected['trialId']}: transport phase attempt drift",
+        )
+        fetch_key = phase.get("fetchKey")
+        require(
+            isinstance(fetch_key, str) and fetch_key,
+            f"{expected['trialId']}: transport phase fetch key missing",
+        )
+        phase_fetch_keys.add(fetch_key)
+        elapsed = phase.get("elapsedRealtimeNs")
+        require(
+            type(elapsed) is int and elapsed >= 0,
+            f"{expected['trialId']}: transport phase timestamp missing",
+        )
+        phase_times.append(elapsed)
+    require(len(phase_fetch_keys) == 1, f"{expected['trialId']}: transport phase fetch key changed")
+    require(
+        attempt_started_ns <= phase_times[0] <= phase_times[1] <= phase_times[2] <= attempt_completed_ns,
+        f"{expected['trialId']}: transport phases escaped physical attempt bounds",
+    )
     require(proof.get("recoveryJitterProtocol") == RECOVERY_JITTER_PROTOCOL,
             f"{expected['trialId']}: recovery jitter protocol drift")
     require(proof.get("recoveryJitterSeed") == RECOVERY_JITTER_SEED,

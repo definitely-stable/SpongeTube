@@ -147,6 +147,28 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "attemptProgressCount": 3,
             "attemptCorrelationCount": 1,
             "remoteAttemptChargeCount": 1,
+            "attemptStartedElapsedRealtimeNs": 1_000_000,
+            "attemptCompletedElapsedRealtimeNs": 2_000_000,
+            "transportPhases": [
+                {
+                    "fetchKey": f"fixture:F1/video-main/f1-video-0/{schedule_row['trialId']}",
+                    "attempt": 1,
+                    "kind": "RESPONSE_HEADERS",
+                    "elapsedRealtimeNs": 1_100_000,
+                },
+                {
+                    "fetchKey": f"fixture:F1/video-main/f1-video-0/{schedule_row['trialId']}",
+                    "attempt": 1,
+                    "kind": "FIRST_BODY_BYTES",
+                    "elapsedRealtimeNs": 1_200_000,
+                },
+                {
+                    "fetchKey": f"fixture:F1/video-main/f1-video-0/{schedule_row['trialId']}",
+                    "attempt": 1,
+                    "kind": "RESPONSE_BODY_COMPLETE",
+                    "elapsedRealtimeNs": 1_800_000,
+                },
+            ],
             "recoveryJitterProtocol": verifier.RECOVERY_JITTER_PROTOCOL,
             "recoveryJitterSeed": verifier.RECOVERY_JITTER_SEED,
             "recoveryJitterSampleCount": 0,
@@ -325,6 +347,28 @@ class G2N0VerifierTest(unittest.TestCase):
             ),
         )
         with self.assertRaisesRegex(ValueError, "completionUs measurement boundary"):
+            self.verify()
+
+    def test_transport_phase_order_or_bounds_drift_is_rejected(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["proof"]["transportPhases"][1].__setitem__(
+                "elapsedRealtimeNs", 900_000
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "escaped physical attempt bounds"):
+            self.verify()
+
+        self.setUp_fresh()
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["proof"]["transportPhases"][2].__setitem__(
+                "kind", "FIRST_BODY_BYTES"
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "transport phase order drift"):
             self.verify()
 
     def test_transport_timeout_policy_drift_is_rejected(self):

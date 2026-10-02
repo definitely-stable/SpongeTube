@@ -3,6 +3,7 @@ package io.github.definitelystable.spongetube.core.engine.route
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
@@ -19,6 +20,9 @@ import io.github.definitelystable.spongetube.core.engine.PlatformHttpRangeFetchE
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationBackend
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationEligibility
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationSelector
+import io.github.definitelystable.spongetube.core.engine.TransportPhaseKind
+import io.github.definitelystable.spongetube.core.engine.TransportPhaseObservation
+import io.github.definitelystable.spongetube.core.engine.TransportPhaseObserver
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingRefresher
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMaterial
@@ -123,6 +127,13 @@ class TransportPairN0AndroidTest {
             val deliveryMaterial = object : DeliveryMaterial {}
             val bindingHits = AtomicInteger()
             val protocol = AtomicReference("UNKNOWN")
+            val transportPhases = CopyOnWriteArrayList<RecordedTransportPhase>()
+            val phaseObserver = TransportPhaseObserver { observation ->
+                transportPhases += RecordedTransportPhase(
+                    observation = observation,
+                    elapsedRealtimeNs = SystemClock.elapsedRealtimeNanos(),
+                )
+            }
             val target = HttpRangeTarget(uri, RESOURCE_LENGTH)
             val control = HttpRangeFetchExecutor(
                 targetFor = { target },
@@ -133,6 +144,7 @@ class TransportPairN0AndroidTest {
                 },
                 connectTimeoutMs = FIRST_RESPONSE_TIMEOUT_MS,
                 readTimeoutMs = READ_TIMEOUT_MS,
+                phaseObserver = phaseObserver,
             )
 
             val candidate = if (backend == TransportEvaluationBackend.PLATFORM_HTTP_ENGINE) {
@@ -150,6 +162,7 @@ class TransportPairN0AndroidTest {
                     firstResponseTimeoutMs = FIRST_RESPONSE_TIMEOUT_MS.toLong(),
                     readTimeoutMs = READ_TIMEOUT_MS.toLong(),
                     onProtocolObserved = protocol::set,
+                    phaseObserver = phaseObserver,
                 )
             } else {
                 null
@@ -247,6 +260,25 @@ class TransportPairN0AndroidTest {
             )
             assertTrue(firstByteUs >= 0)
             assertTrue(completionUs >= firstByteUs)
+            val phaseSnapshot = transportPhases.toList()
+            assertEquals(
+                listOf(
+                    TransportPhaseKind.RESPONSE_HEADERS,
+                    TransportPhaseKind.FIRST_BODY_BYTES,
+                    TransportPhaseKind.RESPONSE_BODY_COMPLETE,
+                ),
+                phaseSnapshot.map { it.observation.kind },
+            )
+            assertTrue(
+                phaseSnapshot.all {
+                    it.observation.fetchKey == attemptStarted.fetchKey &&
+                        it.observation.attempt == attemptStarted.attempt
+                },
+            )
+            val phaseTimes = phaseSnapshot.map { it.elapsedRealtimeNs }
+            assertTrue(attemptStarted.eventElapsedRealtimeNs <= phaseTimes.first())
+            assertTrue(phaseTimes.zipWithNext().all { (left, right) -> left <= right })
+            assertTrue(phaseTimes.last() <= attemptCompleted.eventElapsedRealtimeNs)
 
             val budget = recoveryEvidence.budgetEvents()
             val chainStarts = budget.count { it.kind == RecoveryBudgetEventKind.CHAIN_STARTED }
@@ -365,6 +397,18 @@ class TransportPairN0AndroidTest {
                         it.event == FetchEventKind.ATTEMPT_CORRELATED
                     })
                     put("remoteAttemptChargeCount", remoteCharges)
+                    put("attemptStartedElapsedRealtimeNs", attemptStarted.eventElapsedRealtimeNs)
+                    put("attemptCompletedElapsedRealtimeNs", attemptCompleted.eventElapsedRealtimeNs)
+                    put("transportPhases", JSONArray().apply {
+                        phaseSnapshot.forEach { phase ->
+                            put(JSONObject().apply {
+                                put("fetchKey", phase.observation.fetchKey.value)
+                                put("attempt", phase.observation.attempt)
+                                put("kind", phase.observation.kind.name)
+                                put("elapsedRealtimeNs", phase.elapsedRealtimeNs)
+                            })
+                        }
+                    })
                     put("recoveryJitterProtocol", RECOVERY_JITTER_PROTOCOL)
                     put("recoveryJitterSeed", jitterSeed)
                     put("recoveryJitterSampleCount", jitter.samples.size)
@@ -467,6 +511,11 @@ class TransportPairN0AndroidTest {
             .toLongOrNull() ?: return null
         return kib * 1_024L
     }
+
+    private data class RecordedTransportPhase(
+        val observation: TransportPhaseObservation,
+        val elapsedRealtimeNs: Long,
+    )
 
     private class G2RecoveryJitter(
         private val seed: Long,
