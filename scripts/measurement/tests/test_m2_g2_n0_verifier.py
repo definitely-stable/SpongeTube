@@ -42,7 +42,7 @@ RUNTIME_DEVICE = {
     "acPowered": True,
 }
 INPUTS = {
-    "work": load("test-fixtures/network/m2/g2/work-f1-audio-segment-1.json"),
+    "work": load("test-fixtures/network/m2/g2/work-f1-video-segment-1.json"),
     "deviceState": load("test-fixtures/network/m2/g2/device-api36-emulator.json"),
     "cacheState": load("test-fixtures/network/m2/g2/cache-empty-http-disabled.json"),
     "recoveryPolicy": load("test-fixtures/network/m2/g2/recovery-sponge-v2.json"),
@@ -299,6 +299,12 @@ class G2N0VerifierTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "distinct OS process"):
             self.verify()
+
+    def test_work_fingerprint_input_must_match_executed_video_unit(self):
+        bad = copy.deepcopy(INPUTS["work"])
+        bad["trackId"] = "audio-main"
+        with self.assertRaisesRegex(ValueError, "does not match the executed F1 video unit"):
+            verifier.validate_frozen_work(bad)
 
     def test_runtime_recovery_policy_must_match_frozen_input(self):
         trial_id = self.schedule[0]["trialId"]

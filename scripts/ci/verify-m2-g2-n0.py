@@ -23,6 +23,9 @@ from m2_transport_pair_plan import (  # noqa: E402
 RESOURCE_PATH = "/fixtures/F1/segment-0-00001.m4s"
 RESOURCE_LENGTH = 711_501
 RESOURCE_SHA256 = "f3e8a844487d57a05c69975389566bde3bcb38d9afa1d53538be18c959d77fa3"
+WORK_FIXTURE_ID = "F1"
+WORK_TRACK_ID = "video-main"
+WORK_REPRESENTATION_ID = "f1-video-0"
 RECOVERY_JITTER_PROTOCOL = "SHA256_COUNTER_REJECTION_V1"
 RECOVERY_JITTER_SEED = 424_243
 FIRST_RESPONSE_TIMEOUT_MS = 12_000
@@ -56,6 +59,21 @@ def load_inputs(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
         "recoveryPolicy": load_json(args.recovery_policy),
         "routePolicy": load_json(args.route_policy),
     }
+
+
+def validate_frozen_work(work: dict[str, Any]) -> None:
+    expected = {
+        "fixtureId": WORK_FIXTURE_ID,
+        "trackId": WORK_TRACK_ID,
+        "representationId": WORK_REPRESENTATION_ID,
+        "byteStart": 0,
+        "byteEndExclusive": RESOURCE_LENGTH,
+        "expectedSha256": RESOURCE_SHA256,
+    }
+    require(
+        work == expected,
+        "frozen G2 work fingerprint input does not match the executed F1 video unit",
+    )
 
 
 def check_raw(
@@ -229,6 +247,7 @@ def verify(
     runtime = inputs.get("_runtimeDevice")
     require(isinstance(runtime, dict), "host device readback missing")
     contract_inputs = {key: value for key, value in inputs.items() if key != "_runtimeDevice"}
+    validate_frozen_work(contract_inputs["work"])
     validate_plan(plan, scenario=scenario, inputs=contract_inputs)
     schedule = planned_trial_schedule(plan)
     require(len(schedule) == 4, "G2-B N0 requires exactly two complete paired blocks")
