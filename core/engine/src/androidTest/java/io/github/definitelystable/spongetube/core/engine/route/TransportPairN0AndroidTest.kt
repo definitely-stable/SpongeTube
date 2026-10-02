@@ -293,8 +293,11 @@ class TransportPairN0AndroidTest {
                     put("recoveryChainCount", chainStarts)
                     put("ownerCount", owners)
                     put("originRequestCount", 1)
-                    put("internalRetryVisibility", "OBSERVABLE")
-                    put("internalRetryCount", 0)
+                    // Raw device evidence cannot self-certify transport-internal
+                    // retry visibility. The independent host verifier upgrades
+                    // this only after reconciling the complete origin trace.
+                    put("internalRetryVisibility", "OPAQUE")
+                    put("internalRetryCount", JSONObject.NULL)
                 })
                 put("metrics", JSONObject().apply {
                     put("firstByteUs", firstByteUs)
@@ -314,8 +317,11 @@ class TransportPairN0AndroidTest {
                         "UNKNOWN"
                     },
                 )
-                put("performanceSampleEligible", true)
+                // G0 eligibility is finalized on the host only after origin
+                // amplification is independently falsified.
+                put("performanceSampleEligible", false)
                 put("limitations", JSONArray().apply {
+                    put("RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION")
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
                     put("FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK")

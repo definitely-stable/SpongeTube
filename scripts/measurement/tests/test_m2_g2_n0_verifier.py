@@ -99,8 +99,8 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 "recoveryChainCount": 1,
                 "ownerCount": 1,
                 "originRequestCount": 1,
-                "internalRetryVisibility": "OBSERVABLE",
-                "internalRetryCount": 0,
+                "internalRetryVisibility": "OPAQUE",
+                "internalRetryCount": None,
             },
             "metrics": {
                 "firstByteUs": 10_000,
@@ -117,8 +117,9 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 if backend == "HTTP_URL_CONNECTION_ROUTE_BOUND"
                 else "HTTP_2"
             ),
-            "performanceSampleEligible": True,
+            "performanceSampleEligible": False,
             "limitations": [
+                "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION",
                 "API36_EMULATOR_DIRECTIONAL_ONLY",
                 "MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER",
                 "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK",
@@ -222,6 +223,18 @@ class G2N0VerifierTest(unittest.TestCase):
         self.assertEqual("API36_EMULATOR_DIRECTIONAL_ONLY", result["claimScope"])
         self.assertEqual(2, result["pairedBlockCount"])
         self.assertIsNone(result["selectedBackend"])
+        for row in trials["trials"]:
+            self.assertEqual("PROVEN_ZERO", row["recovery"]["internalRetryVisibility"])
+            self.assertEqual(0, row["recovery"]["internalRetryCount"])
+            self.assertTrue(row["performanceSampleEligible"])
+            self.assertIn(
+                "INTERNAL_RETRY_ZERO_DERIVED_FROM_EXACT_ORIGIN_GET_BIJECTION",
+                row["limitations"],
+            )
+            self.assertNotIn(
+                "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION",
+                row["limitations"],
+            )
 
     def test_missing_or_extra_trial_is_rejected(self):
         missing = self.raw_dir / f"{self.schedule[-1]['trialId']}.json"
@@ -348,6 +361,26 @@ class G2N0VerifierTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.verify()
                 self.origin[0][field] = original
+
+    def test_device_row_cannot_self_claim_internal_retry_visibility(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: (
+                raw["trial"]["recovery"].update(
+                    {"internalRetryVisibility": "OBSERVABLE", "internalRetryCount": 0}
+                ),
+                raw["trial"].__setitem__("performanceSampleEligible", True),
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "must not self-certify internal retries"):
+            self.verify()
+
+    def test_any_extra_origin_get_breaks_proven_zero(self):
+        extra = origin_row(self.plan, 99)
+        self.origin.append(extra)
+        with self.assertRaisesRegex(ValueError, "exactly four measured GETs"):
+            self.verify()
 
     def test_retry_or_jitter_activity_in_n0_is_rejected(self):
         trial_id = self.schedule[0]["trialId"]

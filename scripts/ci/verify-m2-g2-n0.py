@@ -109,10 +109,10 @@ def check_raw(
             "recoveryChainCount": 1,
             "ownerCount": 1,
             "originRequestCount": 1,
-            "internalRetryVisibility": "OBSERVABLE",
-            "internalRetryCount": 0,
+            "internalRetryVisibility": "OPAQUE",
+            "internalRetryCount": None,
         },
-        f"{expected['trialId']}: N0 recovery lineage drift",
+        f"{expected['trialId']}: raw device row must not self-certify internal retries",
     )
     metrics = row.get("metrics")
     require(isinstance(metrics, dict), f"{expected['trialId']}: metrics missing")
@@ -125,7 +125,16 @@ def check_raw(
     require(metrics.get("cancellationLatencyUs") is None, f"{expected['trialId']}: N0 cancellation metric must be null")
     rss = metrics.get("maxRssBytes")
     require(rss is None or (type(rss) is int and rss > 0), f"{expected['trialId']}: max RSS malformed")
-    require(row.get("performanceSampleEligible") is True, f"{expected['trialId']}: eligible N0 sample suppressed")
+    require(
+        row.get("performanceSampleEligible") is False,
+        f"{expected['trialId']}: raw device row cannot pre-authorize a performance sample",
+    )
+    limitations = row.get("limitations")
+    require(
+        isinstance(limitations, list)
+        and "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION" in limitations,
+        f"{expected['trialId']}: host retry-finalization boundary is not disclosed",
+    )
 
     request_id = proof.get("originRequestId")
     require(type(request_id) is int and request_id > 0, f"{expected['trialId']}: origin correlation missing")
@@ -165,10 +174,8 @@ def check_raw(
     )
     require(type(process_pid) is int and process_pid > 0, f"{expected['trialId']}: OS process pid missing")
     require(type(process_start) is int and process_start > 0, f"{expected['trialId']}: OS process starttime missing")
-    limitations = row.get("limitations")
     require(
-        isinstance(limitations, list)
-        and "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK" in limitations,
+        "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK" in limitations,
         f"{expected['trialId']}: firstByteUs measurement boundary is not disclosed",
     )
     return row, {
@@ -260,6 +267,22 @@ def verify(
                 f"{expected['trialId']}: incomplete origin body")
         require(row.get("outcome") == "SUCCESS", f"{expected['trialId']}: origin outcome not success")
 
+    # Only after the full serialized run proves that there were exactly four
+    # measured origin GETs (one bijectively correlated GET per planned row) can
+    # raw OPAQUE device rows be finalized as origin-visible retry PROVEN_ZERO.
+    finalized_rows: list[dict[str, Any]] = []
+    for raw_row in rows:
+        row = json.loads(json.dumps(raw_row))
+        row["recovery"]["internalRetryVisibility"] = "PROVEN_ZERO"
+        row["recovery"]["internalRetryCount"] = 0
+        row["performanceSampleEligible"] = True
+        row["limitations"] = [
+            item for item in row["limitations"]
+            if item != "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"
+        ]
+        row["limitations"].append("INTERNAL_RETRY_ZERO_DERIVED_FROM_EXACT_ORIGIN_GET_BIJECTION")
+        finalized_rows.append(row)
+
     require(runtime.get("deviceClass") == contract_inputs["deviceState"]["deviceClass"],
             "host emulator class does not match frozen device state")
     require(runtime.get("androidApi") == contract_inputs["deviceState"]["androidApi"],
@@ -280,7 +303,7 @@ def verify(
         "clockDomain": "ANDROID_MONOTONIC",
         "orderingProtocol": plan["orderingProtocol"],
         "orderingSeed": plan["orderingSeed"],
-        "trials": rows,
+        "trials": finalized_rows,
         "limitations": [
             "API36_EMULATOR_DIRECTIONAL_ONLY",
             "N0_ONLY_G2_B",
