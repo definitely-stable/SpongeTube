@@ -1186,6 +1186,9 @@ M2_SLICE_SCHEMAS = frozenset({
     # M2-G2 execution plan is a new owning-slice artifact. It freezes order and
     # comparison fingerprints before Android outcomes exist; G0 schemas remain unchanged.
     "transport-pair-plan-v1.schema.json",
+    # G2-C binds host fault-engine, live link fidelity, Android runtime and
+    # exact experiment code without mutating frozen G0 evidence schemas.
+    "transport-experiment-environment-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and

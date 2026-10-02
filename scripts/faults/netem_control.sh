@@ -111,6 +111,24 @@ if enabled:
 PY
 }
 
+inspect_link_state() {
+  local raw offloads
+  raw="$(sudo -n ip netns exec "$NS" ip -j link show dev "$LAB_IF")"
+  offloads="$(inspect_offloads)"
+  python3 - "$raw" "$offloads" <<'PY'
+import json, sys
+links = json.loads(sys.argv[1])
+offloads = json.loads(sys.argv[2])
+if not isinstance(links, list) or len(links) != 1:
+    raise SystemExit("expected exactly one media link")
+link = links[0]
+mtu = link.get("mtu")
+if type(mtu) is not int or mtu < 576 or mtu > 65535:
+    raise SystemExit(f"invalid media link MTU: {mtu!r}")
+print(json.dumps({"mtu": mtu, "offloads": offloads}, sort_keys=True))
+PY
+}
+
 clear_root() {
   tc_ns qdisc del dev "$LAB_IF" root 2>/dev/null || true
 }
@@ -210,6 +228,9 @@ case "$COMMAND" in
     ;;
   inspect-offloads)
     inspect_offloads
+    ;;
+  inspect-link-state)
+    inspect_link_state
     ;;
   remove)
     clear_root
