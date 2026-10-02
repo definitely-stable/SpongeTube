@@ -195,11 +195,20 @@ def verify(
     by_id = {row.get("requestId"): row for row in data}
     require(len(data) == 4 and len(by_id) == 4, "N0 origin must receive exactly four measured GETs")
     require(set(by_id) == set(request_ids), "raw trials do not bijectively map to origin GETs")
+    # Media Lab's resolved-scenario hash has its own schema/namespace and is
+    # deliberately NOT the M2 resolved-scenario hash from the pair plan.
+    # Prove one stable N0 Media Lab configuration instead of conflating them.
+    lab_hashes = {row.get("scenarioHash") for row in data}
+    require(
+        len(lab_hashes) == 1
+        and isinstance(next(iter(lab_hashes)), str)
+        and len(next(iter(lab_hashes))) == 64,
+        "Media Lab N0 scenario hash changed within the paired run",
+    )
     for expected, proof in zip(schedule, proofs):
         row = by_id[proof["originRequestId"]]
         require(row.get("profileId") == "N0", f"{expected['trialId']}: wrong Media Lab profile")
-        require(row.get("scenarioHash") == plan["scenario"]["hash"],
-                f"{expected['trialId']}: origin scenario hash drift")
+        require(row.get("scenarioId") == "N0", f"{expected['trialId']}: wrong Media Lab scenario")
         require(row.get("rangeHeader") == "bytes=0-81810", f"{expected['trialId']}: Range drift")
         require(row.get("resolvedRangeStart") == 0, f"{expected['trialId']}: range start drift")
         require(row.get("resolvedRangeEndExclusive") == RESOURCE_LENGTH,

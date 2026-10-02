@@ -33,6 +33,7 @@ def load(path: str) -> dict:
 
 
 SCENARIO = load("test-fixtures/network/m2/n0-control.json")
+LAB_SCENARIO_HASH = "7" * 64
 INPUTS = {
     "work": load("test-fixtures/network/m2/g2/work-f1-audio-segment-1.json"),
     "deviceState": load("test-fixtures/network/m2/g2/device-api36-emulator.json"),
@@ -150,7 +151,7 @@ def origin_row(plan: dict, request_id: int) -> dict:
         "resourceId": "segment-1-00001.m4s",
         "profileId": "N0",
         "scenarioId": "N0",
-        "scenarioHash": plan["scenario"]["hash"],
+        "scenarioHash": LAB_SCENARIO_HASH,
         "method": "GET",
         "path": verifier.RESOURCE_PATH,
         "rangeHeader": "bytes=0-81810",
