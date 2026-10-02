@@ -123,6 +123,7 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 "API36_EMULATOR_DIRECTIONAL_ONLY",
                 "MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER",
                 "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK",
+                "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION",
                 "CANCELLATION_NOT_EXERCISED_IN_N0",
             ],
         },
@@ -313,6 +314,17 @@ class G2N0VerifierTest(unittest.TestCase):
             lambda raw: raw["proof"].__setitem__("runtimeRemoteAttemptLimit", 3),
         )
         with self.assertRaisesRegex(ValueError, "RecoveryPolicy.DEFAULT drifted"):
+            self.verify()
+
+    def test_completion_boundary_must_be_disclosed(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["trial"]["limitations"].remove(
+                "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION"
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "completionUs measurement boundary"):
             self.verify()
 
     def test_transport_timeout_policy_drift_is_rejected(self):

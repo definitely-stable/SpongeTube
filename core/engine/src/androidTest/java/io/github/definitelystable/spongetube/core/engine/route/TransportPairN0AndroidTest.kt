@@ -326,6 +326,7 @@ class TransportPairN0AndroidTest {
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
                     put("FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK")
+                    put("COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION")
                     put("CANCELLATION_NOT_EXERCISED_IN_N0")
                 })
             }

@@ -228,6 +228,10 @@ def check_raw(
         "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK" in limitations,
         f"{expected['trialId']}: firstByteUs measurement boundary is not disclosed",
     )
+    require(
+        "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION" in limitations,
+        f"{expected['trialId']}: completionUs measurement boundary is not disclosed",
+    )
     return row, {
         "originRequestId": request_id,
         "processInstanceId": process_id,
