@@ -404,6 +404,7 @@ class TransportPairN0AndroidTest {
                     put("chainStartedElapsedRealtimeNs", chainStarted.elapsedRealtimeNs)
                     put("chainTerminatedElapsedRealtimeNs", chainTerminated.elapsedRealtimeNs)
                     put("attemptStartedElapsedRealtimeNs", attemptStarted.eventElapsedRealtimeNs)
+                    put("firstProgressElapsedRealtimeNs", firstProgress.eventElapsedRealtimeNs)
                     put("attemptCompletedElapsedRealtimeNs", attemptCompleted.eventElapsedRealtimeNs)
                     put("transportPhases", JSONArray().apply {
                         phaseSnapshot.forEach { phase ->

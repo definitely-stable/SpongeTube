@@ -103,7 +103,7 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 "internalRetryCount": None,
             },
             "metrics": {
-                "firstByteUs": 200,
+                "firstByteUs": 250,
                 "completionUs": 1_000,
                 "cancellationLatencyUs": None,
                 "cpuTimeUs": 20_000,
@@ -150,6 +150,7 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "chainStartedElapsedRealtimeNs": 1_000_000,
             "chainTerminatedElapsedRealtimeNs": 2_000_000,
             "attemptStartedElapsedRealtimeNs": 1_050_000,
+            "firstProgressElapsedRealtimeNs": 1_250_000,
             "attemptCompletedElapsedRealtimeNs": 1_900_000,
             "transportPhases": [
                 {
