@@ -123,7 +123,7 @@ if not isinstance(links, list) or len(links) != 1:
     raise SystemExit("expected exactly one media link")
 link = links[0]
 mtu = link.get("mtu")
-if type(mtu) is not int or mtu < 576 or mtu > 65535:
+if type(mtu) is not int or mtu < 512 or mtu > 65535:
     raise SystemExit(f"invalid media link MTU: {mtu!r}")
 print(json.dumps({"mtu": mtu, "offloads": offloads}, sort_keys=True))
 PY

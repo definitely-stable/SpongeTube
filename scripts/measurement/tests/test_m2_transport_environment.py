@@ -76,6 +76,7 @@ class TransportEnvironmentTest(unittest.TestCase):
         document = self.build()
         self.assertEqual(1, document["schemaVersion"])
         self.assertEqual(1500, document["mediaLink"]["mtu"])
+        self.assertEqual("STANDARD_MTU1500_V1", document["mediaLink"]["packetizationProfile"])
         self.assertEqual(
             {"gro": False, "gso": False, "tso": False},
             document["mediaLink"]["offloads"],
@@ -107,7 +108,7 @@ class TransportEnvironmentTest(unittest.TestCase):
     def test_mtu_drift_is_rejected_on_verify(self):
         document = self.build()
         link = copy.deepcopy(LINK_STATE)
-        link["mtu"] = 1400
+        link["mtu"] = 512
         with self.assertRaisesRegex(envmod.TransportEnvironmentError, "media link environment drift"):
             envmod.verify(
                 document,
@@ -115,6 +116,28 @@ class TransportEnvironmentTest(unittest.TestCase):
                 link_state=link,
                 android_runtime=DEVICE,
             )
+
+    def test_n5_effect_amplification_profile_is_explicit(self):
+        link = copy.deepcopy(LINK_STATE)
+        link["mtu"] = 512
+        document = self.build(link_state=link)
+        self.assertEqual(512, document["mediaLink"]["mtu"])
+        self.assertEqual(
+            "N5_EFFECT_AMPLIFICATION_MTU512_V1",
+            document["mediaLink"]["packetizationProfile"],
+        )
+        envmod.verify(
+            document,
+            fault_engine=FAULT_ENGINE,
+            link_state=link,
+            android_runtime=DEVICE,
+        )
+
+    def test_unfrozen_intermediate_mtu_is_rejected(self):
+        link = copy.deepcopy(LINK_STATE)
+        link["mtu"] = 576
+        with self.assertRaisesRegex(envmod.TransportEnvironmentError, "frozen G2 packetization profile"):
+            self.build(link_state=link)
 
     def test_android_runtime_drift_is_rejected(self):
         document = self.build()

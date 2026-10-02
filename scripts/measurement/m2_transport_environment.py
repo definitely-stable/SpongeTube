@@ -95,12 +95,20 @@ def validate_fault_engine(fingerprint: Mapping[str, Any]) -> None:
     )
 
 
+def packetization_profile(mtu: Any) -> str:
+    require(type(mtu) is int, "media link MTU missing or outside accepted range")
+    if mtu == 1500:
+        return "STANDARD_MTU1500_V1"
+    if mtu == 512:
+        return "N5_EFFECT_AMPLIFICATION_MTU512_V1"
+    raise TransportEnvironmentError(
+        "media link MTU must match a frozen G2 packetization profile"
+    )
+
+
 def validate_link_state(link_state: Mapping[str, Any], fault_engine: Mapping[str, Any]) -> None:
     mtu = link_state.get("mtu")
-    require(
-        type(mtu) is int and 576 <= mtu <= 65_535,
-        "media link MTU missing or outside accepted range",
-    )
+    packetization_profile(mtu)
     offloads = link_state.get("offloads")
     require(
         offloads == {"gro": False, "gso": False, "tso": False},
@@ -161,6 +169,7 @@ def build(
             "mtu": link_state["mtu"],
             "offloads": dict(link_state["offloads"]),
             "packetizationFidelity": "GRO_GSO_TSO_DISABLED",
+            "packetizationProfile": packetization_profile(link_state["mtu"]),
         },
         "androidRuntime": {
             key: android_runtime[key]
@@ -210,6 +219,7 @@ def verify(
             "mtu": link_state["mtu"],
             "offloads": dict(link_state["offloads"]),
             "packetizationFidelity": "GRO_GSO_TSO_DISABLED",
+            "packetizationProfile": packetization_profile(link_state["mtu"]),
         },
         "media link environment drift",
     )

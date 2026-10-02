@@ -473,7 +473,13 @@ class G2NetworkVerifierTest(unittest.TestCase):
     def test_n5_requires_effect_amplified_mtu(self):
         case = NetworkCase("N5")
         try:
+            self.assertEqual(512, case.link_state["mtu"])
+            self.assertEqual(
+                "N5_EFFECT_AMPLIFICATION_MTU512_V1",
+                case.environment["mediaLink"]["packetizationProfile"],
+            )
             case.environment["mediaLink"]["mtu"] = 1500
+            case.environment["mediaLink"]["packetizationProfile"] = "STANDARD_MTU1500_V1"
             case.link_state["mtu"] = 1500
             with self.assertRaisesRegex(
                 verifier.NetworkEvidenceError,

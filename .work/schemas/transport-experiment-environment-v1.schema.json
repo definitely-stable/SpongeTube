@@ -32,13 +32,20 @@
     "faultEngineFingerprintSha256": { "$ref": "#/$defs/sha256" },
     "mediaLink": {
       "type": "object",
-      "required": ["mtu", "offloads", "packetizationFidelity"],
+      "required": ["mtu", "offloads", "packetizationFidelity", "packetizationProfile"],
       "properties": {
-        "mtu": { "type": "integer", "minimum": 576, "maximum": 65535 },
+        "mtu": { "type": "integer", "minimum": 512, "maximum": 1500 },
         "offloads": { "$ref": "#/$defs/offloadsDisabled" },
         "packetizationFidelity": {
           "type": "string",
           "const": "GRO_GSO_TSO_DISABLED"
+        },
+        "packetizationProfile": {
+          "type": "string",
+          "enum": [
+            "STANDARD_MTU1500_V1",
+            "N5_EFFECT_AMPLIFICATION_MTU512_V1"
+          ]
         }
       },
       "additionalProperties": false

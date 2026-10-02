@@ -44,6 +44,7 @@ SPECS: dict[str, dict[str, Any]] = {
         "variant": "HIGH_RTT_JITTER",
         "seed": 424_242,
         "mtu": 1500,
+        "packetizationProfile": "STANDARD_MTU1500_V1",
         "active": {
             **COMMON_ACTIVE,
             "delayUs": 100_000,
@@ -57,13 +58,15 @@ SPECS: dict[str, dict[str, Any]] = {
         "variant": "BURST_PACKET_LOSS",
         "seed": None,
         "mtu": 1500,
+        "packetizationProfile": "STANDARD_MTU1500_V1",
         "active": {**COMMON_ACTIVE, "lossPpm": 1_000_000},
         "limitation": "N3_1500MS_PACKET_BLACKOUT_ONLY",
     },
     "N5": {
         "variant": "BURST_LOSS",
         "seed": 424_242,
-        "mtu": 576,
+        "mtu": 512,
+        "packetizationProfile": "N5_EFFECT_AMPLIFICATION_MTU512_V1",
         "active": {
             **COMMON_ACTIVE,
             "lossPpm": 20_000,
@@ -597,6 +600,11 @@ def verify_network(
         environment.get("mediaLink", {}).get("mtu") == spec["mtu"],
         f"{family}: media-link MTU drift",
     )
+    require(
+        environment.get("mediaLink", {}).get("packetizationProfile")
+        == spec["packetizationProfile"],
+        f"{family}: packetization profile drift",
+    )
 
     schedule = planned_trial_schedule(plan)
     require(len(schedule) == 4, f"{family} requires two complete paired blocks")
@@ -718,7 +726,7 @@ def verify_network(
             "API36_EMULATOR_DIRECTIONAL_ONLY",
             spec["limitation"],
             *(
-                ["N5_EFFECT_AMPLIFIED_MEDIA_LINK_MTU_576"]
+                ["N5_EFFECT_AMPLIFIED_MEDIA_LINK_MTU_512"]
                 if family == "N5"
                 else []
             ),

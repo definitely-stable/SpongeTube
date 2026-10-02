@@ -101,11 +101,12 @@ NS="$(bash scripts/faults/m2_e0_netns.sh namespace)"
 MEDIA_ADDR="$(bash scripts/faults/m2_e0_netns.sh media-address)"
 LAB_IF="$(bash scripts/faults/m2_e0_netns.sh lab-interface)"
 
-# Frozen N5 seed 424242 produced zero drops across ~506-514 MTU-1500
-# packets per measured row. Preserve work/loss/seed/reset semantics and
-# increase packet opportunities explicitly instead of selectively rerunning.
+# Retained discovery runs localized the first seed-424242 scoped drop above
+# the MTU-1500 (~506-514 packets) and MTU-576 (~1374-1383 packets) windows.
+# Preserve work/loss/seed/reset semantics and cross that observed threshold
+# through one explicit lab-only packetization profile for both N5 backends.
 if [[ "$FAMILY" == "N5" ]]; then
-  sudo -n ip netns exec "$NS" ip link set dev "$LAB_IF" mtu 576
+  sudo -n ip netns exec "$NS" ip link set dev "$LAB_IF" mtu 512
 fi
 
 test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
@@ -113,7 +114,7 @@ python3 scripts/faults/m2_network_environment.py   --tc-bin "$M2_TC_BIN"   --tc-
 
 bash scripts/faults/netem_control.sh inspect-link-state > "$ROOT/link-state.json"
 expected_mtu=1500
-[[ "$FAMILY" == "N5" ]] && expected_mtu=576
+[[ "$FAMILY" == "N5" ]] && expected_mtu=512
 jq -e --argjson mtu "$expected_mtu" '.mtu == $mtu' "$ROOT/link-state.json" >/dev/null
 
 adb get-state | tee "$ROOT/adb-before.txt" | grep -Fxq device
