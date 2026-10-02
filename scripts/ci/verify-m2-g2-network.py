@@ -243,7 +243,15 @@ def validate_harness(
     final_packets = _counter(final_netem, "packets")
     final_bytes = _counter(final_netem, "bytes")
     final_drops = _counter(final_netem, "drops")
-    require(final_packets > 0 and final_bytes > 0, f"{family}: netem saw no media traffic")
+    if family == "N3":
+        # A 100% blackout may legitimately report only drops while the pulse is
+        # active. End-to-end namespace counters below prove media-path traffic.
+        require(final_drops > 0, "N3 blackout produced no scoped drop")
+    else:
+        require(
+            final_packets > 0 and final_bytes > 0,
+            f"{family}: netem saw no media traffic",
+        )
 
     filters = load_json_array(harness_dir / "filter.json")
     flowers = [

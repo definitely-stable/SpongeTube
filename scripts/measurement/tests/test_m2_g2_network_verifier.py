@@ -411,6 +411,21 @@ class G2NetworkVerifierTest(unittest.TestCase):
         finally:
             case.close()
 
+    def test_n3_accepts_drop_only_qdisc_counters(self):
+        case = NetworkCase("N3")
+        try:
+            for row in case.schedule:
+                trial_id = row["trialId"]
+                final_path = case.trial_root / trial_id / "harness" / "qdisc-final.json"
+                value = qdisc("N3", drops=5, packets=0)
+                value[0]["bytes"] = 0
+                write_json(final_path, value)
+            trials, _, result = case.verify()
+            self.assertEqual(4, len(trials["trials"]))
+            self.assertEqual("PASS", result["status"])
+        finally:
+            case.close()
+
     def test_origin_partition_detects_unassigned_replay(self):
         case = NetworkCase("N2")
         try:
