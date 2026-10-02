@@ -43,6 +43,7 @@ SPECS: dict[str, dict[str, Any]] = {
     "N2": {
         "variant": "HIGH_RTT_JITTER",
         "seed": 424_242,
+        "mtu": 1500,
         "active": {
             **COMMON_ACTIVE,
             "delayUs": 100_000,
@@ -55,12 +56,14 @@ SPECS: dict[str, dict[str, Any]] = {
     "N3": {
         "variant": "BURST_PACKET_LOSS",
         "seed": None,
+        "mtu": 1500,
         "active": {**COMMON_ACTIVE, "lossPpm": 1_000_000},
         "limitation": "N3_1500MS_PACKET_BLACKOUT_ONLY",
     },
     "N5": {
         "variant": "BURST_LOSS",
         "seed": 424_242,
+        "mtu": 576,
         "active": {
             **COMMON_ACTIVE,
             "lossPpm": 20_000,
@@ -590,6 +593,10 @@ def verify_network(
         link_state=link_state,
         android_runtime=android_runtime,
     )
+    require(
+        environment.get("mediaLink", {}).get("mtu") == spec["mtu"],
+        f"{family}: media-link MTU drift",
+    )
 
     schedule = planned_trial_schedule(plan)
     require(len(schedule) == 4, f"{family} requires two complete paired blocks")
@@ -601,7 +608,25 @@ def verify_network(
     proofs: list[dict[str, Any]] = []
     timing_rows: list[dict[str, Any]] = []
     slices: list[list[dict[str, Any]]] = []
-    previous_end = 0
+
+    first_trial_id = schedule[0]["trialId"]
+    previous_end = load_count(
+        trial_root / first_trial_id / "origin-before-count.txt"
+    )
+    require(
+        previous_end == 1 and previous_end <= len(origin),
+        f"{family}: expected exactly one traced Media Lab readiness prelude",
+    )
+    prelude = origin[:previous_end]
+    require(
+        len(prelude) == 1
+        and prelude[0].get("plane") == "control"
+        and prelude[0].get("method") == "GET"
+        and prelude[0].get("path") == "/__lab/config"
+        and prelude[0].get("status") == 200
+        and prelude[0].get("outcome") == "SUCCESS",
+        f"{family}: unexpected origin trace prelude",
+    )
 
     for expected in schedule:
         trial_id = expected["trialId"]
@@ -692,6 +717,11 @@ def verify_network(
         "limitations": [
             "API36_EMULATOR_DIRECTIONAL_ONLY",
             spec["limitation"],
+            *(
+                ["N5_EFFECT_AMPLIFIED_MEDIA_LINK_MTU_576"]
+                if family == "N5"
+                else []
+            ),
             "NO_PRODUCTION_TRANSPORT_SELECTION",
             "NETEM_SEED_BINDS_CONFIGURATION_NOT_BIT_EXACT_EFFECT_REPLAY",
         ],
@@ -731,6 +761,7 @@ def verify_network(
         "recoveryEquivalent": analysis["comparisonResult"]["recoveryEquivalent"],
         "routeBindingEquivalent": analysis["comparisonResult"]["routeBindingEquivalent"],
         "netemSeed": spec["seed"],
+        "mediaLinkMtu": spec["mtu"],
         "originVisibleInternalRetryCount": total_internal_replays,
         "selectedBackend": None,
     }

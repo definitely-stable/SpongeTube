@@ -214,6 +214,36 @@ def raw_case(family: str, plan: dict, schedule_row: dict, request_id: int) -> di
     }
 
 
+def control_row() -> dict:
+    return {
+        "schemaVersion": 2,
+        "sessionId": "m2-g2-network",
+        "requestId": 1,
+        "plane": "control",
+        "fixtureId": None,
+        "resourceId": None,
+        "profileId": "N0",
+        "scenarioId": "N0",
+        "scenarioHash": LAB_SCENARIO_HASH,
+        "method": "GET",
+        "path": "/__lab/config",
+        "rangeHeader": None,
+        "resolvedRangeStart": None,
+        "resolvedRangeEndExclusive": None,
+        "status": 200,
+        "plannedResponseBytes": 1,
+        "bodyBytesWritten": 1,
+        "handlerStartedAtMonotonicNs": 1,
+        "firstBodyWriteAtMonotonicNs": 2,
+        "completedAtMonotonicNs": 3,
+        "serverFirstBodyWriteDelayMs": 0,
+        "handlerDurationMs": 1,
+        "configuredRateBps": None,
+        "noProgressWaitMs": 0,
+        "outcome": "SUCCESS",
+    }
+
+
 def origin_row(request_id: int) -> dict:
     return {
         "schemaVersion": 1,
@@ -329,8 +359,8 @@ class NetworkCase:
         self.raw_dir = self.root / "raw"
         self.trial_root = self.root / "trials"
         self.raw_dir.mkdir()
-        self.origin = []
-        for index, schedule_row in enumerate(self.schedule, start=1):
+        self.origin = [control_row()]
+        for index, schedule_row in enumerate(self.schedule, start=2):
             write_json(
                 self.raw_dir / f"{schedule_row['trialId']}.json",
                 raw_case(family, self.plan, schedule_row, index),
@@ -344,12 +374,14 @@ class NetworkCase:
                 index - 1,
                 index,
             )
+        self.link_state = copy.deepcopy(LINK_STATE)
+        self.link_state["mtu"] = verifier.SPECS[family]["mtu"]
         self.environment = envmod.build(
             run_id=self.plan["runId"],
             source_head_commit="a" * 40,
             checkout_commit="b" * 40,
             fault_engine=FAULT_ENGINE,
-            link_state=LINK_STATE,
+            link_state=self.link_state,
             android_runtime=ANDROID_RUNTIME,
         )
 
@@ -366,7 +398,7 @@ class NetworkCase:
             inputs=INPUTS,
             environment=self.environment,
             fault_engine=FAULT_ENGINE,
-            link_state=LINK_STATE,
+            link_state=self.link_state,
             android_runtime=ANDROID_RUNTIME,
         )
 
@@ -423,6 +455,31 @@ class G2NetworkVerifierTest(unittest.TestCase):
             trials, _, result = case.verify()
             self.assertEqual(4, len(trials["trials"]))
             self.assertEqual("PASS", result["status"])
+        finally:
+            case.close()
+
+    def test_origin_prelude_must_be_exact_control_readiness_request(self):
+        case = NetworkCase("N2")
+        try:
+            case.origin[0] = origin_row(1)
+            with self.assertRaisesRegex(
+                verifier.NetworkEvidenceError,
+                "unexpected origin trace prelude",
+            ):
+                case.verify()
+        finally:
+            case.close()
+
+    def test_n5_requires_effect_amplified_mtu(self):
+        case = NetworkCase("N5")
+        try:
+            case.environment["mediaLink"]["mtu"] = 1500
+            case.link_state["mtu"] = 1500
+            with self.assertRaisesRegex(
+                verifier.NetworkEvidenceError,
+                "media-link MTU drift",
+            ):
+                case.verify()
         finally:
             case.close()
 

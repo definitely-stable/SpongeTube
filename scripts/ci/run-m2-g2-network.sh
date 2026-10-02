@@ -101,10 +101,20 @@ NS="$(bash scripts/faults/m2_e0_netns.sh namespace)"
 MEDIA_ADDR="$(bash scripts/faults/m2_e0_netns.sh media-address)"
 LAB_IF="$(bash scripts/faults/m2_e0_netns.sh lab-interface)"
 
+# Frozen N5 seed 424242 produced zero drops across ~506-514 MTU-1500
+# packets per measured row. Preserve work/loss/seed/reset semantics and
+# increase packet opportunities explicitly instead of selectively rerunning.
+if [[ "$FAMILY" == "N5" ]]; then
+  sudo -n ip netns exec "$NS" ip link set dev "$LAB_IF" mtu 576
+fi
+
 test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
 python3 scripts/faults/m2_network_environment.py   --tc-bin "$M2_TC_BIN"   --tc-source-sha "$TOOLS/iproute2-source.sha256"   --runner-image-os "$ImageOS"   --runner-image-version "$ImageVersion"   --output "$ROOT/fault-engine-fingerprint.json"
 
 bash scripts/faults/netem_control.sh inspect-link-state > "$ROOT/link-state.json"
+expected_mtu=1500
+[[ "$FAMILY" == "N5" ]] && expected_mtu=576
+jq -e --argjson mtu "$expected_mtu" '.mtu == $mtu' "$ROOT/link-state.json" >/dev/null
 
 adb get-state | tee "$ROOT/adb-before.txt" | grep -Fxq device
 serial="$(adb get-serialno | tr -d '\r')"
