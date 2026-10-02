@@ -310,7 +310,8 @@ class G2NetworkVerifierTest(unittest.TestCase):
             self.origin.append(origin_row(self.plan, index))
         self.environment = envmod.build(
             run_id=self.plan["runId"],
-            git_commit="a" * 40,
+            source_head_commit="a" * 40,
+            checkout_commit="b" * 40,
             fault_engine=FAULT_ENGINE,
             link_state=LINK_STATE,
             android_runtime=ANDROID_RUNTIME,
