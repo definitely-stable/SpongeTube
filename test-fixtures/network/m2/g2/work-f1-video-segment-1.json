@@ -1,0 +1,8 @@
+{
+  "fixtureId": "F1",
+  "trackId": "video-main",
+  "representationId": "f1-video-0",
+  "byteStart": 0,
+  "byteEndExclusive": 711501,
+  "expectedSha256": "f3e8a844487d57a05c69975389566bde3bcb38d9afa1d53538be18c959d77fa3"
+}
