@@ -318,6 +318,7 @@ class TransportPairN0AndroidTest {
                 put("limitations", JSONArray().apply {
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
+                    put("FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK")
                     put("CANCELLATION_NOT_EXERCISED_IN_N0")
                 })
             }
@@ -333,6 +334,8 @@ class TransportPairN0AndroidTest {
                     put("committedSha256", committed.sha256.hex)
                     put("committedBytes", committed.length)
                     put("processInstanceId", PROCESS_INSTANCE_ID)
+                    put("processPid", Process.myPid())
+                    put("processStartClockTicks", readProcessStartClockTicks())
                     put("extentStoreInitiallyEmpty", extentStoreInitiallyEmpty)
                     put("transportSessionFresh", true)
                     put("routeEpochBefore", initialEpoch)
@@ -409,6 +412,17 @@ class TransportPairN0AndroidTest {
     private fun nanosToMicros(value: Long): Long {
         require(value >= 0)
         return value / 1_000L
+    }
+
+    private fun readProcessStartClockTicks(): Long {
+        val stat = File("/proc/self/stat").readText()
+        // /proc/<pid>/stat field 2 is parenthesized and may contain spaces.
+        // Field 22 (starttime) is token index 19 after the closing parenthesis.
+        val close = stat.lastIndexOf(')')
+        require(close > 0) { "malformed /proc/self/stat" }
+        val fields = stat.substring(close + 1).trim().split(Regex("\\s+"))
+        require(fields.size > 19) { "missing process starttime in /proc/self/stat" }
+        return fields[19].toLong().also { require(it > 0) }
     }
 
     private fun readVmHwmBytes(): Long? {

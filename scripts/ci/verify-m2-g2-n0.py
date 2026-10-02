@@ -152,7 +152,22 @@ def check_raw(
             f"{expected['trialId']}: N0 unexpectedly consumed recovery jitter")
     process_id = proof.get("processInstanceId")
     require(isinstance(process_id, str) and process_id, f"{expected['trialId']}: process reset proof missing")
-    return row, {"originRequestId": request_id, "processInstanceId": process_id}
+    process_pid = proof.get("processPid")
+    process_start = proof.get("processStartClockTicks")
+    require(type(process_pid) is int and process_pid > 0, f"{expected['trialId']}: OS process pid missing")
+    require(type(process_start) is int and process_start > 0, f"{expected['trialId']}: OS process starttime missing")
+    limitations = row.get("limitations")
+    require(
+        isinstance(limitations, list)
+        and "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK" in limitations,
+        f"{expected['trialId']}: firstByteUs measurement boundary is not disclosed",
+    )
+    return row, {
+        "originRequestId": request_id,
+        "processInstanceId": process_id,
+        "processPid": process_pid,
+        "processStartClockTicks": process_start,
+    }
 
 
 def verify(
@@ -182,6 +197,14 @@ def verify(
     process_ids = [item["processInstanceId"] for item in proofs]
     require(len(set(process_ids)) == len(process_ids),
             "COLD v1 requires a fresh instrumentation process for every trial")
+    process_keys = [
+        (item["processPid"], item["processStartClockTicks"])
+        for item in proofs
+    ]
+    require(
+        len(set(process_keys)) == len(process_keys),
+        "COLD v1 requires a distinct OS process identity/starttime for every trial",
+    )
     request_ids = [item["originRequestId"] for item in proofs]
     require(len(set(request_ids)) == len(request_ids), "origin correlation id reused between trials")
     require(request_ids == sorted(request_ids), "physical origin order differs from frozen trial order")

@@ -114,6 +114,7 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "limitations": [
                 "API36_EMULATOR_DIRECTIONAL_ONLY",
                 "MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER",
+                "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK",
                 "CANCELLATION_NOT_EXERCISED_IN_N0",
             ],
         },
@@ -122,6 +123,8 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "committedSha256": verifier.RESOURCE_SHA256,
             "committedBytes": verifier.RESOURCE_LENGTH,
             "processInstanceId": f"process-{request_id}",
+            "processPid": 10_000 + request_id,
+            "processStartClockTicks": 1_000_000 + request_id,
             "extentStoreInitiallyEmpty": True,
             "transportSessionFresh": True,
             "routeEpochBefore": 1,
@@ -232,6 +235,32 @@ class G2N0VerifierTest(unittest.TestCase):
         process_id = first_value["proof"]["processInstanceId"]
         self.mutate_raw(second, lambda raw: raw["proof"].__setitem__("processInstanceId", process_id))
         with self.assertRaisesRegex(ValueError, "fresh instrumentation process"):
+            self.verify()
+
+    def test_reused_os_process_identity_fails_cold_reset_proof(self):
+        first = self.schedule[0]["trialId"]
+        second = self.schedule[1]["trialId"]
+        first_value = json.loads((self.raw_dir / f"{first}.json").read_text())
+        pid = first_value["proof"]["processPid"]
+        start = first_value["proof"]["processStartClockTicks"]
+        self.mutate_raw(
+            second,
+            lambda raw: raw["proof"].update(
+                {"processPid": pid, "processStartClockTicks": start}
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "distinct OS process"):
+            self.verify()
+
+    def test_first_byte_boundary_must_be_disclosed(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["trial"]["limitations"].remove(
+                "FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK"
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "firstByteUs measurement boundary"):
             self.verify()
 
     def test_result_reordering_or_origin_relabeling_is_rejected(self):
