@@ -190,6 +190,75 @@ trace_count() {
   fi
 }
 
+await_trace_settle() {
+  local raw_file="$1"
+  local before_count="$2"
+  python3 - "$TRACE" "$raw_file" "$before_count" <<'PY'
+import json
+import pathlib
+import sys
+import time
+
+trace_path = pathlib.Path(sys.argv[1])
+raw_path = pathlib.Path(sys.argv[2])
+before = int(sys.argv[3])
+raw_trial = json.loads(raw_path.read_text(encoding="utf-8"))
+physical_attempts = len(raw_trial["proof"]["physicalAttempts"])
+correlated = {
+    int(value) for value in raw_trial["proof"]["correlatedOriginRequestIds"]
+}
+deadline = time.monotonic() + 5.0
+stable_signature = None
+stable_since = None
+
+def complete_rows():
+    if not trace_path.exists():
+        return []
+    raw = trace_path.read_text(encoding="utf-8")
+    complete_end = raw.rfind("\n")
+    if complete_end < 0:
+        return []
+    rows = []
+    for line in raw[:complete_end].splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+while time.monotonic() < deadline:
+    rows = complete_rows()
+    trial_rows = rows[before:]
+    ids = {
+        row.get("requestId")
+        for row in trial_rows
+        if isinstance(row.get("requestId"), int)
+    }
+    enough = len(trial_rows) >= physical_attempts and correlated.issubset(ids)
+    signature = (
+        len(rows),
+        tuple(row.get("requestId") for row in trial_rows),
+    )
+    now = time.monotonic()
+    if enough:
+        if signature == stable_signature:
+            if stable_since is not None and now - stable_since >= 0.5:
+                print(len(rows))
+                raise SystemExit(0)
+        else:
+            stable_signature = signature
+            stable_since = now
+    else:
+        stable_signature = None
+        stable_since = None
+    time.sleep(0.05)
+
+raise SystemExit(
+    "Media Lab trace did not settle with all device-correlated requests "
+    f"within 5s: before={before}, attempts={physical_attempts}, "
+    f"correlated={sorted(correlated)}"
+)
+PY
+}
+
 verify_active_state() {
   local path="$1"
   python3 - "$FAMILY" "$path" <<'PY'
@@ -277,31 +346,7 @@ while IFS= read -r trial_id; do
   test -n "$source_file"
   cp "$source_file" "$RAW_ROOT/$trial_id.json"
 
-  expected_attempts="$(python3 - "$RAW_ROOT/$trial_id.json" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1], encoding="utf-8"))
-print(len(value["proof"]["physicalAttempts"]))
-PY
-)"
-  stable=0
-  last=-1
-  for _ in {1..80}; do
-    now="$(trace_count)"
-    if (( now >= origin_before + expected_attempts )); then
-      if [[ "$now" = "$last" ]]; then
-        stable=$((stable + 1))
-      else
-        stable=0
-      fi
-      if (( stable >= 3 )); then
-        break
-      fi
-    fi
-    last="$now"
-    sleep 0.05
-  done
-  origin_after="$(trace_count)"
-  (( origin_after >= origin_before + expected_attempts ))
+  origin_after="$(await_trace_settle "$RAW_ROOT/$trial_id.json" "$origin_before")"
   printf '%s\n' "$origin_after" > "$one/origin-after-count.txt"
   adb get-state | grep -Fxq device
 done < "$ROOT/schedule.txt"
