@@ -336,6 +336,8 @@ class TransportPairN0AndroidTest {
                     put("processInstanceId", PROCESS_INSTANCE_ID)
                     put("processPid", Process.myPid())
                     put("processStartClockTicks", readProcessStartClockTicks())
+                    put("androidApi", Build.VERSION.SDK_INT)
+                    put("primaryAbi", Build.SUPPORTED_ABIS.firstOrNull() ?: "")
                     put("extentStoreInitiallyEmpty", extentStoreInitiallyEmpty)
                     put("transportSessionFresh", true)
                     put("routeEpochBefore", initialEpoch)

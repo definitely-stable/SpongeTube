@@ -179,6 +179,28 @@ jobs:
           done
 
           adb get-state | tee "$root/adb-before.txt" | grep -Fxq device
+          serial="$(adb get-serialno | tr -d '\r')"
+          [[ "$serial" =~ ^emulator-[0-9]+$ ]]
+          actual_api="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
+          actual_abi="$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
+          test "$actual_api" = "36"
+          test "$actual_abi" = "x86_64"
+          adb shell dumpsys battery > "$root/battery.txt"
+          grep -Fq 'AC powered: true' "$root/battery.txt"
+          python3 - "$root/device-runtime.json" "$actual_api" "$actual_abi" <<'PY'
+          import json, sys
+          path, api, abi = sys.argv[1:]
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump({
+                  "deviceClass": "ANDROID_EMULATOR",
+                  "androidApi": int(api),
+                  "abi": abi,
+                  "batteryPolicy": "CI_POWERED",
+                  "acPowered": True,
+              }, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+
           if adb reverse --list | grep -Eq 'tcp:18081([[:space:]]|$)'; then
             echo "M2-G2 media path must use the Android default Network, not adb reverse" >&2
             exit 1
@@ -221,6 +243,7 @@ jobs:
             --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
             --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
             --route-policy test-fixtures/network/m2/g2/route-exact-default.json \
+            --device-runtime "$root/device-runtime.json" \
             --output-dir "$output_root"
 
           python3 scripts/measurement/m2_transport_pair_plan.py verify-results \

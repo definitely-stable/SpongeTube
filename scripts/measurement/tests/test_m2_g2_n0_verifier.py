@@ -34,6 +34,13 @@ def load(path: str) -> dict:
 
 SCENARIO = load("test-fixtures/network/m2/n0-control.json")
 LAB_SCENARIO_HASH = "7" * 64
+RUNTIME_DEVICE = {
+    "deviceClass": "ANDROID_EMULATOR",
+    "androidApi": 36,
+    "abi": "x86_64",
+    "batteryPolicy": "CI_POWERED",
+    "acPowered": True,
+}
 INPUTS = {
     "work": load("test-fixtures/network/m2/g2/work-f1-audio-segment-1.json"),
     "deviceState": load("test-fixtures/network/m2/g2/device-api36-emulator.json"),
@@ -125,6 +132,8 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "processInstanceId": f"process-{request_id}",
             "processPid": 10_000 + request_id,
             "processStartClockTicks": 1_000_000 + request_id,
+            "androidApi": 36,
+            "primaryAbi": "x86_64",
             "extentStoreInitiallyEmpty": True,
             "transportSessionFresh": True,
             "routeEpochBefore": 1,
@@ -197,7 +206,7 @@ class G2N0VerifierTest(unittest.TestCase):
             raw_dir=self.raw_dir,
             origin=self.origin,
             scenario=SCENARIO,
-            inputs=INPUTS,
+            inputs={**INPUTS, "_runtimeDevice": copy.deepcopy(RUNTIME_DEVICE)},
         )
 
     def mutate_raw(self, trial_id: str, mutator):
@@ -235,6 +244,23 @@ class G2N0VerifierTest(unittest.TestCase):
         process_id = first_value["proof"]["processInstanceId"]
         self.mutate_raw(second, lambda raw: raw["proof"].__setitem__("processInstanceId", process_id))
         with self.assertRaisesRegex(ValueError, "fresh instrumentation process"):
+            self.verify()
+
+    def test_runtime_device_readback_must_match_frozen_device_state(self):
+        original = RUNTIME_DEVICE["abi"]
+        RUNTIME_DEVICE["abi"] = "arm64-v8a"
+        try:
+            with self.assertRaisesRegex(ValueError, "host ABI"):
+                self.verify()
+        finally:
+            RUNTIME_DEVICE["abi"] = original
+
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["proof"].__setitem__("androidApi", 35),
+        )
+        with self.assertRaisesRegex(ValueError, "device Android API"):
             self.verify()
 
     def test_reused_os_process_identity_fails_cold_reset_proof(self):

@@ -61,6 +61,7 @@ def check_raw(
     raw: dict[str, Any],
     expected: dict[str, Any],
     plan: dict[str, Any],
+    device_state: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     require(raw.get("schemaVersion") == 1, "wrong G2-B raw schema")
     require(raw.get("phase") == "M2-G2-B-N0", "wrong G2-B phase")
@@ -154,6 +155,14 @@ def check_raw(
     require(isinstance(process_id, str) and process_id, f"{expected['trialId']}: process reset proof missing")
     process_pid = proof.get("processPid")
     process_start = proof.get("processStartClockTicks")
+    require(
+        proof.get("androidApi") == device_state["androidApi"],
+        f"{expected['trialId']}: device Android API drifted from frozen input",
+    )
+    require(
+        proof.get("primaryAbi") == device_state["abi"],
+        f"{expected['trialId']}: device ABI drifted from frozen input",
+    )
     require(type(process_pid) is int and process_pid > 0, f"{expected['trialId']}: OS process pid missing")
     require(type(process_start) is int and process_start > 0, f"{expected['trialId']}: OS process starttime missing")
     limitations = row.get("limitations")
@@ -178,7 +187,10 @@ def verify(
     scenario: dict[str, Any],
     inputs: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    validate_plan(plan, scenario=scenario, inputs=inputs)
+    runtime = inputs.get("_runtimeDevice")
+    require(isinstance(runtime, dict), "host device readback missing")
+    contract_inputs = {key: value for key, value in inputs.items() if key != "_runtimeDevice"}
+    validate_plan(plan, scenario=scenario, inputs=contract_inputs)
     schedule = planned_trial_schedule(plan)
     require(len(schedule) == 4, "G2-B N0 requires exactly two complete paired blocks")
 
@@ -190,7 +202,12 @@ def verify(
     proofs: list[dict[str, Any]] = []
     for expected in schedule:
         raw = load_json(raw_dir / (expected["trialId"] + ".json"))
-        row, proof = check_raw(raw=raw, expected=expected, plan=plan)
+        row, proof = check_raw(
+            raw=raw,
+            expected=expected,
+            plan=plan,
+            device_state=contract_inputs["deviceState"],
+        )
         rows.append(row)
         proofs.append(proof)
 
@@ -243,6 +260,17 @@ def verify(
                 f"{expected['trialId']}: incomplete origin body")
         require(row.get("outcome") == "SUCCESS", f"{expected['trialId']}: origin outcome not success")
 
+    require(runtime.get("deviceClass") == contract_inputs["deviceState"]["deviceClass"],
+            "host emulator class does not match frozen device state")
+    require(runtime.get("androidApi") == contract_inputs["deviceState"]["androidApi"],
+            "host Android API does not match frozen device state")
+    require(runtime.get("abi") == contract_inputs["deviceState"]["abi"],
+            "host ABI does not match frozen device state")
+    require(runtime.get("batteryPolicy") == contract_inputs["deviceState"]["batteryPolicy"],
+            "host battery policy does not match frozen device state")
+    require(runtime.get("acPowered") is True,
+            "CI_POWERED requires independent AC-powered readback")
+
     trials = {
         "schemaVersion": 1,
         "runId": plan["runId"],
@@ -259,7 +287,7 @@ def verify(
             "NO_PRODUCTION_TRANSPORT_SELECTION",
         ],
     }
-    validate_trials_against_plan(plan, trials, scenario=scenario, inputs=inputs)
+    validate_trials_against_plan(plan, trials, scenario=scenario, inputs=contract_inputs)
     analysis = analyze_trials(trials)
     require(analysis["comparisonResult"]["correctnessEquivalent"] is True,
             "N0 correctness equivalence failed")
@@ -298,6 +326,7 @@ def main() -> None:
     parser.add_argument("--cache-state", required=True, type=pathlib.Path)
     parser.add_argument("--recovery-policy", required=True, type=pathlib.Path)
     parser.add_argument("--route-policy", required=True, type=pathlib.Path)
+    parser.add_argument("--device-runtime", required=True, type=pathlib.Path)
     parser.add_argument("--output-dir", required=True, type=pathlib.Path)
     args = parser.parse_args()
 
@@ -312,6 +341,7 @@ def main() -> None:
     plan = load_json(args.plan)
     scenario = load_json(args.scenario)
     inputs = load_inputs(args)
+    inputs["_runtimeDevice"] = load_json(args.device_runtime)
     trials, verification = verify(
         plan=plan,
         raw_dir=args.raw_dir,
