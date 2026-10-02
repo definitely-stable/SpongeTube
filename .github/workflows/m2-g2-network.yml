@@ -22,6 +22,7 @@ on:
       - "test-fixtures/network/m2/n2-high-rtt-jitter.json"
       - "test-fixtures/network/m2/n3-burst-packet-loss.json"
       - "test-fixtures/network/m2/n5-burst-loss.json"
+      - "test-fixtures/network/m2/n5-ge-moment-match.json"
       - "test-fixtures/network/m2/g2/**"
   push:
     branches: [ main ]
@@ -38,6 +39,7 @@ on:
       - "test-fixtures/network/m2/n2-high-rtt-jitter.json"
       - "test-fixtures/network/m2/n3-burst-packet-loss.json"
       - "test-fixtures/network/m2/n5-burst-loss.json"
+      - "test-fixtures/network/m2/n5-ge-moment-match.json"
   workflow_dispatch:
 
 permissions:
@@ -62,6 +64,8 @@ jobs:
             slug: n3
           - family: N5
             slug: n5
+          - family: N5GE
+            slug: n5-ge
     env:
       SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 

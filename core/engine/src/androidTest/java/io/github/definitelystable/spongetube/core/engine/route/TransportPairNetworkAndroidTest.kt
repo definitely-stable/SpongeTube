@@ -474,7 +474,7 @@ class TransportPairNetworkAndroidTest {
                 })
             }
             PlatformTestStorageRegistry.getInstance().openOutputFile(
-                "m2-g2-network/" + scenario.family.lowercase() + "/" +
+                "m2-g2-network/" + scenario.artifactSlug + "/" +
                     planned.getString("trialId") + ".json",
             ).bufferedWriter().use { writer ->
                 writer.write(raw.toString())
@@ -595,12 +595,19 @@ class TransportPairNetworkAndroidTest {
         val family: String,
         val variant: String,
         val planAsset: String,
+        val artifactSlug: String,
     ) {
         companion object {
             fun parse(raw: String?): Scenario = when (raw) {
-                "N2" -> Scenario("N2", "HIGH_RTT_JITTER", "m2-g2-n2-plan.json")
-                "N3" -> Scenario("N3", "BURST_PACKET_LOSS", "m2-g2-n3-plan.json")
-                "N5" -> Scenario("N5", "BURST_LOSS", "m2-g2-n5-plan.json")
+                "N2" -> Scenario("N2", "HIGH_RTT_JITTER", "m2-g2-n2-plan.json", "n2")
+                "N3" -> Scenario("N3", "BURST_PACKET_LOSS", "m2-g2-n3-plan.json", "n3")
+                "N5" -> Scenario("N5", "BURST_LOSS", "m2-g2-n5-plan.json", "n5")
+                "N5GE" -> Scenario(
+                    "N5",
+                    "BURST_LOSS_GE_MOMENT_MATCH",
+                    "m2-g2-n5-ge-plan.json",
+                    "n5-ge",
+                )
                 else -> error("unsupported G2-C NETWORK scenario: $raw")
             }
         }

@@ -37,6 +37,7 @@ SCENARIOS = {
     "N2": load("test-fixtures/network/m2/n2-high-rtt-jitter.json"),
     "N3": load("test-fixtures/network/m2/n3-burst-packet-loss.json"),
     "N5": load("test-fixtures/network/m2/n5-burst-loss.json"),
+    "N5GE": load("test-fixtures/network/m2/n5-ge-moment-match.json"),
 }
 INPUTS = {
     "work": load("test-fixtures/network/m2/g2/work-f1-video-segment-1.json"),
@@ -67,12 +68,12 @@ ANDROID_RUNTIME = {
 LAB_SCENARIO_HASH = "7" * 64
 
 
-def build_plan(family: str) -> dict:
-    slug = family.lower()
+def build_plan(profile: str) -> dict:
+    slug = "n5-ge" if profile == "N5GE" else profile.lower()
     return pair_plan.build_plan(
         run_id=f"m2-g2-{slug}-api36",
         pair_id=f"m2-g2-{slug}-api36-cold",
-        scenario=SCENARIOS[family],
+        scenario=SCENARIOS[profile],
         inputs=INPUTS,
         ordering_seed=20261001,
         block_count=2,
@@ -81,9 +82,10 @@ def build_plan(family: str) -> dict:
     )
 
 
-def raw_case(family: str, plan: dict, schedule_row: dict, request_id: int) -> dict:
+def raw_case(profile: str, plan: dict, schedule_row: dict, request_id: int) -> dict:
     backend = schedule_row["backendId"]
-    spec = verifier.SPECS[family]
+    spec = verifier.SPECS[profile]
+    family = spec["family"]
     chain_start = 1_000_000_000 + request_id * 10_000_000
     attempt_start = chain_start + 1_000_000
     headers = attempt_start + 100_000_000
@@ -279,17 +281,27 @@ def write_json(path: pathlib.Path, value) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def qdisc(family: str, *, drops: int, packets: int = 100) -> list[dict]:
-    if family == "N2":
+def qdisc(profile: str, *, drops: int, packets: int = 100) -> list[dict]:
+    if profile == "N2":
         options = {
             "delay": {"delay": 0.1, "jitter": 0.03, "correlation": 0.25},
             "seed": 424242,
         }
-    elif family == "N3":
+    elif profile == "N3":
         options = {"loss-random": {"loss": 1.0, "correlation": 0.0}}
-    else:
+    elif profile == "N5":
         options = {
             "loss-random": {"loss": 0.02, "correlation": 0.25},
+            "seed": 424242,
+        }
+    else:
+        options = {
+            "loss-gemodel": {
+                "p": 0.015,
+                "r": 0.735,
+                "1-h": 1.0,
+                "1-k": 0.0,
+            },
             "seed": 424242,
         }
     return [{
@@ -302,9 +314,9 @@ def qdisc(family: str, *, drops: int, packets: int = 100) -> list[dict]:
     }]
 
 
-def write_trial_harness(root: pathlib.Path, family: str, trial_id: str, plan: dict, before: int, after: int) -> None:
+def write_trial_harness(root: pathlib.Path, profile: str, trial_id: str, plan: dict, before: int, after: int) -> None:
     trial = root / trial_id
-    write_json(trial / "harness" / "netem-active-state.json", verifier.SPECS[family]["active"])
+    write_json(trial / "harness" / "netem-active-state.json", verifier.SPECS[profile]["active"])
     write_json(trial / "harness" / "netem-clean-state.json", {"filters": 0, "netem": 0, "prio": 0})
     write_json(
         trial / "harness" / "fault-harness-events.json",
@@ -323,15 +335,15 @@ def write_trial_harness(root: pathlib.Path, family: str, trial_id: str, plan: di
             ],
         },
     )
-    if family == "N3":
-        write_json(trial / "harness" / "qdisc-applied.json", qdisc(family, drops=1))
-        write_json(trial / "harness" / "qdisc-final.json", qdisc(family, drops=5))
-    elif family == "N5":
-        write_json(trial / "harness" / "qdisc-applied.json", qdisc(family, drops=0))
-        write_json(trial / "harness" / "qdisc-final.json", qdisc(family, drops=2))
+    if profile == "N3":
+        write_json(trial / "harness" / "qdisc-applied.json", qdisc(profile, drops=1))
+        write_json(trial / "harness" / "qdisc-final.json", qdisc(profile, drops=5))
+    elif profile == "N5GE":
+        write_json(trial / "harness" / "qdisc-applied.json", qdisc(profile, drops=0))
+        write_json(trial / "harness" / "qdisc-final.json", qdisc(profile, drops=2))
     else:
-        write_json(trial / "harness" / "qdisc-applied.json", qdisc(family, drops=0))
-        write_json(trial / "harness" / "qdisc-final.json", qdisc(family, drops=0))
+        write_json(trial / "harness" / "qdisc-applied.json", qdisc(profile, drops=0))
+        write_json(trial / "harness" / "qdisc-final.json", qdisc(profile, drops=0))
     write_json(
         trial / "harness" / "filter.json",
         [{
@@ -350,9 +362,9 @@ def write_trial_harness(root: pathlib.Path, family: str, trial_id: str, plan: di
 
 
 class NetworkCase:
-    def __init__(self, family: str):
-        self.family = family
-        self.plan = build_plan(family)
+    def __init__(self, profile: str):
+        self.profile = profile
+        self.plan = build_plan(profile)
         self.schedule = pair_plan.planned_trial_schedule(self.plan)
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
@@ -363,19 +375,19 @@ class NetworkCase:
         for index, schedule_row in enumerate(self.schedule, start=2):
             write_json(
                 self.raw_dir / f"{schedule_row['trialId']}.json",
-                raw_case(family, self.plan, schedule_row, index),
+                raw_case(profile, self.plan, schedule_row, index),
             )
             self.origin.append(origin_row(index))
             write_trial_harness(
                 self.trial_root,
-                family,
+                profile,
                 schedule_row["trialId"],
                 self.plan,
                 index - 1,
                 index,
             )
         self.link_state = copy.deepcopy(LINK_STATE)
-        self.link_state["mtu"] = verifier.SPECS[family]["mtu"]
+        self.link_state["mtu"] = verifier.SPECS[profile]["mtu"]
         self.environment = envmod.build(
             run_id=self.plan["runId"],
             source_head_commit="a" * 40,
@@ -394,7 +406,7 @@ class NetworkCase:
             raw_dir=self.raw_dir,
             trial_root=self.trial_root,
             origin=self.origin,
-            scenario=SCENARIOS[self.family],
+            scenario=SCENARIOS[self.profile],
             inputs=INPUTS,
             environment=self.environment,
             fault_engine=FAULT_ENGINE,
@@ -404,30 +416,57 @@ class NetworkCase:
 
 
 class G2NetworkVerifierTest(unittest.TestCase):
-    def test_all_canonical_network_families_emit_paired_evidence(self):
-        for family in ("N2", "N3", "N5"):
-            case = NetworkCase(family)
+    def test_network_profiles_emit_claims_at_their_actual_evidence_strength(self):
+        for profile in ("N2", "N3", "N5", "N5GE"):
+            case = NetworkCase(profile)
             try:
                 trials, timings, result = case.verify()
                 self.assertEqual(4, len(trials["trials"]))
                 self.assertEqual(4, len(timings["rows"]))
                 self.assertEqual("PASS", result["status"])
-                self.assertEqual(2, result["pairedBlockCount"])
+                expected_blocks = 0 if profile == "N5" else 2
+                self.assertEqual(expected_blocks, result["pairedBlockCount"])
                 self.assertIsNone(result["selectedBackend"])
+                if profile == "N5":
+                    self.assertEqual(
+                        "CONFIGURATION_BOUND_STOCHASTIC_OBSERVATION",
+                        result["claimScope"],
+                    )
+                    self.assertEqual(
+                        "INCONCLUSIVE_STOCHASTIC_EFFECT",
+                        result["resilienceClaim"],
+                    )
+                else:
+                    self.assertEqual(
+                        "OBSERVED_EFFECT_EQUIVALENT",
+                        result["resilienceClaim"],
+                    )
                 for row in trials["trials"]:
                     self.assertEqual("OBSERVABLE", row["recovery"]["internalRetryVisibility"])
                     self.assertEqual(0, row["recovery"]["internalRetryCount"])
-                    self.assertTrue(row["performanceSampleEligible"])
+                    self.assertEqual(profile != "N5", row["performanceSampleEligible"])
             finally:
                 case.close()
 
-    def test_n5_zero_effect_trial_is_rejected(self):
+    def test_legacy_n5_zero_effect_is_retained_but_ineligible(self):
         case = NetworkCase("N5")
+        try:
+            trials, _, result = case.verify()
+            self.assertEqual(0, result["effectPositiveTrialCount"])
+            self.assertEqual(0, result["pairedBlockCount"])
+            self.assertTrue(
+                all(not row["performanceSampleEligible"] for row in trials["trials"])
+            )
+        finally:
+            case.close()
+
+    def test_n5_ge_zero_effect_trial_is_rejected(self):
+        case = NetworkCase("N5GE")
         try:
             trial_id = case.schedule[0]["trialId"]
             path = case.trial_root / trial_id / "harness" / "qdisc-final.json"
-            write_json(path, qdisc("N5", drops=0))
-            with self.assertRaisesRegex(verifier.NetworkEvidenceError, "zero scoped drops"):
+            write_json(path, qdisc("N5GE", drops=0))
+            with self.assertRaisesRegex(verifier.NetworkEvidenceError, "N5GE.*zero scoped drops"):
                 case.verify()
         finally:
             case.close()
@@ -470,12 +509,12 @@ class G2NetworkVerifierTest(unittest.TestCase):
         finally:
             case.close()
 
-    def test_n5_requires_effect_amplified_mtu(self):
-        case = NetworkCase("N5")
+    def test_n5_ge_requires_distinct_effect_packetization_profile(self):
+        case = NetworkCase("N5GE")
         try:
             self.assertEqual(512, case.link_state["mtu"])
             self.assertEqual(
-                "N5_EFFECT_AMPLIFICATION_MTU512_V1",
+                "G2_EFFECT_MTU512_V1",
                 case.environment["mediaLink"]["packetizationProfile"],
             )
             case.environment["mediaLink"]["mtu"] = 1500

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-FAMILY="${1:?scenario family N2/N3/N5 required}"
+FAMILY="${1:?scenario profile N2/N3/N5/N5GE required}"
 case "$FAMILY" in
   N2)
     slug="n2"
@@ -21,8 +21,14 @@ case "$FAMILY" in
     scenario="test-fixtures/network/m2/n5-burst-loss.json"
     harness_mode="start"
     ;;
+  N5GE)
+    slug="n5-ge"
+    variant="BURST_LOSS_GE_MOMENT_MATCH"
+    scenario="test-fixtures/network/m2/n5-ge-moment-match.json"
+    harness_mode="start"
+    ;;
   *)
-    echo "unsupported G2-C NETWORK family: $FAMILY" >&2
+    echo "unsupported G2-C NETWORK profile: $FAMILY" >&2
     exit 2
     ;;
 esac
@@ -101,11 +107,10 @@ NS="$(bash scripts/faults/m2_e0_netns.sh namespace)"
 MEDIA_ADDR="$(bash scripts/faults/m2_e0_netns.sh media-address)"
 LAB_IF="$(bash scripts/faults/m2_e0_netns.sh lab-interface)"
 
-# Retained discovery runs localized the first seed-424242 scoped drop above
-# the MTU-1500 (~506-514 packets) and MTU-576 (~1374-1383 packets) windows.
-# Preserve work/loss/seed/reset semantics and cross that observed threshold
-# through one explicit lab-only packetization profile for both N5 backends.
-if [[ "$FAMILY" == "N5" ]]; then
+# Canonical N5 remains at the standard packetization profile. The separate
+# deterministic GE effect profile uses MTU 512 to provide a larger, frozen
+# packet opportunity window without mutating application work.
+if [[ "$FAMILY" == "N5GE" ]]; then
   sudo -n ip netns exec "$NS" ip link set dev "$LAB_IF" mtu 512
 fi
 
@@ -114,7 +119,7 @@ python3 scripts/faults/m2_network_environment.py   --tc-bin "$M2_TC_BIN"   --tc-
 
 bash scripts/faults/netem_control.sh inspect-link-state > "$ROOT/link-state.json"
 expected_mtu=1500
-[[ "$FAMILY" == "N5" ]] && expected_mtu=512
+[[ "$FAMILY" == "N5GE" ]] && expected_mtu=512
 jq -e --argjson mtu "$expected_mtu" '.mtu == $mtu' "$ROOT/link-state.json" >/dev/null
 
 adb get-state | tee "$ROOT/adb-before.txt" | grep -Fxq device
@@ -287,6 +292,14 @@ expected = {
     "N2": {**common, "delayUs": 100000, "jitterUs": 30000, "delayCorrelationPpm": 250000, "randomSeed": 424242},
     "N3": {**common, "lossPpm": 1000000},
     "N5": {**common, "lossPpm": 20000, "burstCorrelationPpm": 250000, "randomSeed": 424242},
+    "N5GE": {
+        **common,
+        "goodToBadPpm": 15000,
+        "badToGoodPpm": 735000,
+        "badLossPpm": 1000000,
+        "goodLossPpm": 0,
+        "randomSeed": 424242,
+    },
 }[family]
 if value != expected:
     raise SystemExit(f"{family} active netem state drift: {value!r}")

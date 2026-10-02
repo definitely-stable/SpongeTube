@@ -41,6 +41,7 @@ COMMON_ACTIVE = {
 }
 SPECS: dict[str, dict[str, Any]] = {
     "N2": {
+        "family": "N2",
         "variant": "HIGH_RTT_JITTER",
         "seed": 424_242,
         "mtu": 1500,
@@ -53,33 +54,60 @@ SPECS: dict[str, dict[str, Any]] = {
             "randomSeed": 424_242,
         },
         "limitation": "N2_HIGH_RTT_JITTER_ONLY",
+        "performanceEligible": True,
+        "requireEffectEveryRow": False,
     },
     "N3": {
+        "family": "N3",
         "variant": "BURST_PACKET_LOSS",
         "seed": None,
         "mtu": 1500,
         "packetizationProfile": "STANDARD_MTU1500_V1",
         "active": {**COMMON_ACTIVE, "lossPpm": 1_000_000},
         "limitation": "N3_1500MS_PACKET_BLACKOUT_ONLY",
+        "performanceEligible": True,
+        "requireEffectEveryRow": True,
     },
     "N5": {
+        "family": "N5",
         "variant": "BURST_LOSS",
         "seed": 424_242,
-        "mtu": 512,
-        "packetizationProfile": "N5_EFFECT_AMPLIFICATION_MTU512_V1",
+        "mtu": 1500,
+        "packetizationProfile": "STANDARD_MTU1500_V1",
         "active": {
             **COMMON_ACTIVE,
             "lossPpm": 20_000,
             "burstCorrelationPpm": 250_000,
             "randomSeed": 424_242,
         },
-        "limitation": "N5_2PCT_CORRELATED_BURST_LOSS_ONLY",
+        "limitation": "N5_LEGACY_CORRELATED_RANDOM_CONFIGURATION_BOUND_ONLY",
+        "performanceEligible": False,
+        "requireEffectEveryRow": False,
+    },
+    "N5GE": {
+        "family": "N5",
+        "variant": "BURST_LOSS_GE_MOMENT_MATCH",
+        "seed": 424_242,
+        "mtu": 512,
+        "packetizationProfile": "G2_EFFECT_MTU512_V1",
+        "active": {
+            **COMMON_ACTIVE,
+            "goodToBadPpm": 15_000,
+            "badToGoodPpm": 735_000,
+            "badLossPpm": 1_000_000,
+            "goodLossPpm": 0,
+            "randomSeed": 424_242,
+        },
+        "limitation": "N5_GE_MOMENT_MATCH_V1",
+        "performanceEligible": True,
+        "requireEffectEveryRow": True,
     },
 }
 
 N2_ACTIVE_STATE = SPECS["N2"]["active"]
 N3_ACTIVE_STATE = SPECS["N3"]["active"]
 N5_ACTIVE_STATE = SPECS["N5"]["active"]
+N5_GE_ACTIVE_STATE = SPECS["N5GE"]["active"]
 
 
 class NetworkEvidenceError(ValueError):
@@ -145,12 +173,17 @@ def validate_frozen_work(work: Mapping[str, Any]) -> None:
 
 def scenario_spec(scenario: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     family = scenario.get("scenarioFamily")
-    require(family in SPECS, f"unsupported G2-C NETWORK family {family!r}")
-    spec = SPECS[str(family)]
-    require(scenario.get("variant") == spec["variant"], f"{family}: variant drift")
-    require(scenario.get("primaryPlane") == "NETWORK", f"{family}: primary plane drift")
-    require(scenario.get("randomSeed") == spec["seed"], f"{family}: canonical seed drift")
-    return str(family), spec
+    variant = scenario.get("variant")
+    matches = [
+        (profile, spec)
+        for profile, spec in SPECS.items()
+        if spec["family"] == family and spec["variant"] == variant
+    ]
+    require(len(matches) == 1, f"unsupported G2-C NETWORK scenario {family!r}/{variant!r}")
+    profile, spec = matches[0]
+    require(scenario.get("primaryPlane") == "NETWORK", f"{profile}: primary plane drift")
+    require(scenario.get("randomSeed") == spec["seed"], f"{profile}: canonical seed drift")
+    return profile, spec
 
 
 def _find_kind(value: Any, kind: str) -> dict[str, Any] | None:
@@ -198,33 +231,42 @@ def _counter(entry: Mapping[str, Any], name: str) -> int:
     raise NetworkEvidenceError(f"netem {name} counter missing")
 
 
-def validate_netem_options(family: str, netem: Mapping[str, Any]) -> None:
+def validate_netem_options(profile: str, netem: Mapping[str, Any]) -> None:
     options = netem.get("options")
-    require(isinstance(options, Mapping), f"{family}: netem options missing")
-    if family == "N2":
+    require(isinstance(options, Mapping), f"{profile}: netem options missing")
+    if profile == "N2":
         delay = options.get("delay")
         require(isinstance(delay, Mapping), "N2 delay readback missing")
         require(_us(delay.get("delay"), "delay") == 100_000, "N2 delay readback drift")
         require(_us(delay.get("jitter"), "jitter") == 30_000, "N2 jitter readback drift")
         require(_ppm(delay.get("correlation"), "delay correlation") == 250_000, "N2 correlation readback drift")
         require(options.get("seed") == 424_242, "N2 seed readback drift")
-    else:
+    elif profile in {"N3", "N5"}:
         loss = options.get("loss-random")
-        require(isinstance(loss, Mapping), f"{family}: loss readback missing")
-        expected_loss = 1_000_000 if family == "N3" else 20_000
-        require(_ppm(loss.get("loss"), "loss") == expected_loss, f"{family}: loss readback drift")
-        if family == "N5":
+        require(isinstance(loss, Mapping), f"{profile}: loss readback missing")
+        expected_loss = 1_000_000 if profile == "N3" else 20_000
+        require(_ppm(loss.get("loss"), "loss") == expected_loss, f"{profile}: loss readback drift")
+        if profile == "N5":
             require(_ppm(loss.get("correlation"), "loss correlation") == 250_000, "N5 loss correlation drift")
             require(options.get("seed") == 424_242, "N5 seed readback drift")
+    else:
+        loss = options.get("loss-gemodel")
+        require(isinstance(loss, Mapping), "N5GE Gilbert-Elliott readback missing")
+        require(_ppm(loss.get("p"), "GE good-to-bad") == 15_000, "N5GE good-to-bad drift")
+        require(_ppm(loss.get("r"), "GE bad-to-good") == 735_000, "N5GE bad-to-good drift")
+        require(_ppm(loss.get("1-h"), "GE bad-state loss") == 1_000_000, "N5GE bad-state loss drift")
+        require(_ppm(loss.get("1-k"), "GE good-state loss") == 0, "N5GE good-state loss drift")
+        require(options.get("seed") == 424_242, "N5GE seed readback drift")
 
 
 def validate_harness(
     *,
-    family: str,
+    profile: str,
     trial_dir: pathlib.Path,
     plan: Mapping[str, Any],
 ) -> dict[str, int]:
-    spec = SPECS[family]
+    spec = SPECS[profile]
+    family = spec["family"]
     harness_dir = trial_dir / "harness"
     active = load_json(harness_dir / "netem-active-state.json")
     require(active == spec["active"], f"{family} active netem readback drift")
@@ -245,7 +287,7 @@ def validate_harness(
     final_netem = _find_kind(final_qdisc, "netem")
     require(isinstance(final_netem, Mapping), f"{family}: final qdisc has no netem node")
     require(final_netem.get("parent") == "1:1", f"{family}: netem left scoped impaired band")
-    validate_netem_options(family, final_netem)
+    validate_netem_options(profile, final_netem)
     final_packets = _counter(final_netem, "packets")
     final_bytes = _counter(final_netem, "bytes")
     final_drops = _counter(final_netem, "drops")
@@ -282,18 +324,18 @@ def validate_harness(
     require(after["mediaBytes"] > before["mediaBytes"], f"{family}: media byte counter did not advance")
 
     baseline_drops = 0
-    if family in {"N3", "N5"}:
+    if profile in {"N3", "N5", "N5GE"}:
         applied = load_json_array(harness_dir / "qdisc-applied.json")
         applied_netem = _find_kind(applied, "netem")
-        require(isinstance(applied_netem, Mapping), f"{family}: applied qdisc has no netem node")
+        require(isinstance(applied_netem, Mapping), f"{profile}: applied qdisc has no netem node")
         baseline_drops = _counter(applied_netem, "drops")
-        if family == "N3":
+        if profile == "N3":
             require(baseline_drops > 0, "N3 blackout rendezvous did not observe its first scoped drop")
             require(final_drops >= baseline_drops, "N3 final drop counter regressed")
-        else:
+        elif spec["requireEffectEveryRow"]:
             require(
                 final_drops > baseline_drops,
-                "N5 measured trial observed zero scoped drops above its pre-trial baseline",
+                f"{profile} measured trial observed zero scoped drops above its pre-trial baseline",
             )
 
     return {
@@ -333,7 +375,7 @@ def validate_failure_lineage(failures: Any, *, trial_id: str) -> None:
 
 def check_raw(
     *,
-    family: str,
+    profile: str,
     raw: dict[str, Any],
     expected: Mapping[str, Any],
     plan: Mapping[str, Any],
@@ -341,7 +383,8 @@ def check_raw(
     recovery_policy: Mapping[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     trial_id = expected["trialId"]
-    spec = SPECS[family]
+    spec = SPECS[profile]
+    family = spec["family"]
     require(raw.get("schemaVersion") == 1, f"{trial_id}: wrong raw schema")
     require(raw.get("phase") == "M2-G2-C-NETWORK", f"{trial_id}: wrong phase")
     require(raw.get("scenarioFamily") == family, f"{trial_id}: wrong scenario family")
@@ -586,7 +629,8 @@ def verify_network(
     link_state: dict[str, Any],
     android_runtime: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    family, spec = scenario_spec(scenario)
+    profile, spec = scenario_spec(scenario)
+    family = spec["family"]
     validate_frozen_work(inputs["work"])
     validate_plan(plan, scenario=scenario, inputs=inputs)
     require(environment.get("runId") == plan["runId"], "environment runId drift")
@@ -616,6 +660,7 @@ def verify_network(
     proofs: list[dict[str, Any]] = []
     timing_rows: list[dict[str, Any]] = []
     slices: list[list[dict[str, Any]]] = []
+    effect_rows: list[dict[str, int]] = []
 
     first_trial_id = schedule[0]["trialId"]
     previous_end = load_count(
@@ -638,7 +683,9 @@ def verify_network(
 
     for expected in schedule:
         trial_id = expected["trialId"]
-        validate_harness(family=family, trial_dir=trial_root / trial_id, plan=plan)
+        effect_rows.append(
+            validate_harness(profile=profile, trial_dir=trial_root / trial_id, plan=plan)
+        )
         start = load_count(trial_root / trial_id / "origin-before-count.txt")
         end = load_count(trial_root / trial_id / "origin-after-count.txt")
         require(start == previous_end and start <= end <= len(origin), f"{trial_id}: origin trace partition drift")
@@ -651,7 +698,7 @@ def verify_network(
 
         raw = load_json(raw_dir / f"{trial_id}.json")
         row, proof, timing = check_raw(
-            family=family,
+            profile=profile,
             raw=raw,
             expected=expected,
             plan=plan,
@@ -702,7 +749,7 @@ def verify_network(
         row["recovery"]["originRequestCount"] = len(trial_origin)
         row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
         row["recovery"]["internalRetryCount"] = internal_retries
-        row["performanceSampleEligible"] = True
+        row["performanceSampleEligible"] = bool(spec["performanceEligible"])
         row["limitations"] = [
             item for item in row["limitations"]
             if item != "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"
@@ -710,6 +757,10 @@ def verify_network(
         row["limitations"].append(
             "INTERNAL_HTTP_REPLAY_COUNT_DERIVED_FROM_SERIALIZED_ORIGIN_TRACE_PARTITION"
         )
+        if profile == "N5":
+            row["limitations"].append(
+                "LEGACY_NETEM_CORRELATED_RANDOM_STATE_IS_NOT_FULLY_SEED_REPRODUCIBLE"
+            )
         finalized_rows.append(row)
 
     trials = {
@@ -726,8 +777,8 @@ def verify_network(
             "API36_EMULATOR_DIRECTIONAL_ONLY",
             spec["limitation"],
             *(
-                ["N5_EFFECT_AMPLIFIED_MEDIA_LINK_MTU_512"]
-                if family == "N5"
+                ["N5_GE_EFFECT_PROFILE_IS_DISTINCT_FROM_CANONICAL_M2E_N5"]
+                if profile == "N5GE"
                 else []
             ),
             "NO_PRODUCTION_TRANSPORT_SELECTION",
@@ -736,11 +787,15 @@ def verify_network(
     }
     validate_trials_against_plan(plan, trials, scenario=scenario, inputs=inputs)
     analysis = analyze_trials(trials)
-    require(analysis["comparisonResult"]["correctnessEquivalent"] is True, f"{family} correctness equivalence failed")
-    require(analysis["comparisonResult"]["recoveryEquivalent"] is True, f"{family} recovery equivalence failed")
-    require(analysis["comparisonResult"]["routeBindingEquivalent"] is True, f"{family} exact-route equivalence failed")
-    require(analysis["pairedPerformanceBlockCount"] == 2, f"{family} lost a complete paired block")
-    require(set(analysis["backendEligibility"].values()) == {"ELIGIBLE"}, f"{family} requires both API36 backends eligible")
+    require(analysis["comparisonResult"]["correctnessEquivalent"] is True, f"{profile} correctness equivalence failed")
+    require(analysis["comparisonResult"]["recoveryEquivalent"] is True, f"{profile} recovery equivalence failed")
+    require(analysis["comparisonResult"]["routeBindingEquivalent"] is True, f"{profile} exact-route equivalence failed")
+    expected_perf_blocks = 2 if spec["performanceEligible"] else 0
+    require(
+        analysis["pairedPerformanceBlockCount"] == expected_perf_blocks,
+        f"{profile} paired performance eligibility drift",
+    )
+    require(set(analysis["backendEligibility"].values()) == {"ELIGIBLE"}, f"{profile} requires both API36 backends eligible")
 
     timings = {
         "schemaVersion": 1,
@@ -758,16 +813,29 @@ def verify_network(
     validate_instance(load_json(PHASE_SCHEMA), timings)
     scan_evidence_privacy(timings)
 
+    effect_positive = sum(
+        row["finalDrops"] > row["baselineDrops"] for row in effect_rows
+    )
     verification = {
         "schemaVersion": 1,
-        "phase": f"M2-G2-C-{family}",
+        "phase": f"M2-G2-C-{profile}",
         "status": "PASS",
-        "claimScope": "API36_EMULATOR_DIRECTIONAL_ONLY",
+        "claimScope": (
+            "CONFIGURATION_BOUND_STOCHASTIC_OBSERVATION"
+            if profile == "N5"
+            else "API36_EMULATOR_DIRECTIONAL_ONLY"
+        ),
         "trialCount": len(finalized_rows),
         "pairedBlockCount": analysis["pairedPerformanceBlockCount"],
         "correctnessEquivalent": analysis["comparisonResult"]["correctnessEquivalent"],
         "recoveryEquivalent": analysis["comparisonResult"]["recoveryEquivalent"],
         "routeBindingEquivalent": analysis["comparisonResult"]["routeBindingEquivalent"],
+        "effectPositiveTrialCount": effect_positive,
+        "resilienceClaim": (
+            "INCONCLUSIVE_STOCHASTIC_EFFECT"
+            if profile == "N5"
+            else "OBSERVED_EFFECT_EQUIVALENT"
+        ),
         "netemSeed": spec["seed"],
         "mediaLinkMtu": spec["mtu"],
         "originVisibleInternalRetryCount": total_internal_replays,

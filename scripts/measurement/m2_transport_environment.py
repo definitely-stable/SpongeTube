@@ -100,7 +100,7 @@ def packetization_profile(mtu: Any) -> str:
     if mtu == 1500:
         return "STANDARD_MTU1500_V1"
     if mtu == 512:
-        return "N5_EFFECT_AMPLIFICATION_MTU512_V1"
+        return "G2_EFFECT_MTU512_V1"
     raise TransportEnvironmentError(
         "media link MTU must match a frozen G2 packetization profile"
     )

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "scenarioFamily": "N5",
+  "variant": "BURST_LOSS_GE_MOMENT_MATCH",
+  "primaryPlane": "NETWORK",
+  "deliveryFaults": [],
+  "transportFaults": [],
+  "networkFaults": [
+    {
+      "faultId": "media-path-loss-ge-moment-match",
+      "plane": "NETWORK",
+      "kind": "BURST_LOSS_GE_MOMENT_MATCH",
+      "stochastic": true,
+      "parameters": {
+        "goodToBadPpm": 15000,
+        "badToGoodPpm": 735000,
+        "badLossPpm": 1000000,
+        "goodLossPpm": 0,
+        "scope": "MEDIA_PATH_ONLY",
+        "direction": "DOWNSTREAM",
+        "ipFamily": "IPV4",
+        "l4Protocol": "TCP"
+      }
+    }
+  ],
+  "providerFaults": [],
+  "routeFaults": [],
+  "storageFaults": [],
+  "randomSeed": 424242,
+  "requiresActualDefaultNetwork": false
+}

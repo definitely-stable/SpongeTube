@@ -183,6 +183,20 @@ apply_burst_loss() {
   install_scoped_netem     loss random "$(ppm_to_percent "$loss_ppm")" "$(ppm_to_percent "$correlation_ppm")"     seed "$seed"
 }
 
+apply_ge_loss() {
+  local good_to_bad_ppm="${1:?goodToBadPpm required}"
+  local bad_to_good_ppm="${2:?badToGoodPpm required}"
+  local bad_loss_ppm="${3:?badLossPpm required}"
+  local good_loss_ppm="${4:?goodLossPpm required}"
+  local seed="${5:?seed required}"
+  require_ppm "$good_to_bad_ppm"
+  require_ppm "$bad_to_good_ppm"
+  require_ppm "$bad_loss_ppm"
+  require_ppm "$good_loss_ppm"
+  require_uint "$seed"
+  install_scoped_netem     loss gemodel     "$(ppm_to_percent "$good_to_bad_ppm")"     "$(ppm_to_percent "$bad_to_good_ppm")"     "$(ppm_to_percent "$bad_loss_ppm")"     "$(ppm_to_percent "$good_loss_ppm")"     seed "$seed"
+}
+
 inspect_qdisc() {
   tc_ns -s -j qdisc show dev "$LAB_IF"
 }
@@ -216,6 +230,9 @@ case "$COMMAND" in
     ;;
   apply-burst-loss)
     apply_burst_loss "$@"
+    ;;
+  apply-ge-loss)
+    apply_ge_loss "$@"
     ;;
   inspect-qdisc)
     inspect_qdisc

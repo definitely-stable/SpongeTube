@@ -44,7 +44,7 @@
           "type": "string",
           "enum": [
             "STANDARD_MTU1500_V1",
-            "N5_EFFECT_AMPLIFICATION_MTU512_V1"
+            "G2_EFFECT_MTU512_V1"
           ]
         }
       },

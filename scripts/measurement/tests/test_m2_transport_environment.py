@@ -117,13 +117,13 @@ class TransportEnvironmentTest(unittest.TestCase):
                 android_runtime=DEVICE,
             )
 
-    def test_n5_effect_amplification_profile_is_explicit(self):
+    def test_g2_effect_mtu512_profile_is_explicit(self):
         link = copy.deepcopy(LINK_STATE)
         link["mtu"] = 512
         document = self.build(link_state=link)
         self.assertEqual(512, document["mediaLink"]["mtu"])
         self.assertEqual(
-            "N5_EFFECT_AMPLIFICATION_MTU512_V1",
+            "G2_EFFECT_MTU512_V1",
             document["mediaLink"]["packetizationProfile"],
         )
         envmod.verify(
