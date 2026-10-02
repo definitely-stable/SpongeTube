@@ -72,6 +72,7 @@ internal class HttpRangeFetchExecutor(
         (statusCode: Int, header: (String) -> String?) -> ProviderSignal =
         { _, _ -> ProviderSignal.NONE },
     private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
+    private val phaseObserver: TransportPhaseObserver = TransportPhaseObserver.NONE,
 ) : DeliveryBoundFetchAttemptExecutor, RouteBoundFetchAttemptExecutor {
     init {
         require(connectTimeoutMs > 0)
@@ -242,6 +243,8 @@ internal class HttpRangeFetchExecutor(
                 try {
                     transfer(
                         connection = connection,
+                        fetchKey = request.fetchKey,
+                        attempt = attempt,
                         start = start,
                         endExclusive = endExclusive,
                         resourceLength = target.resourceLength,
@@ -258,6 +261,8 @@ internal class HttpRangeFetchExecutor(
 
     private suspend fun transfer(
         connection: HttpURLConnection,
+        fetchKey: FetchKey,
+        attempt: Int,
         start: Long,
         endExclusive: Long,
         resourceLength: Long,
@@ -280,6 +285,7 @@ internal class HttpRangeFetchExecutor(
             currentCoroutineContext().ensureActive()
             return transport(error.transportKind(), null)
         }
+        observePhase(fetchKey, attempt, TransportPhaseKind.RESPONSE_HEADERS)
         val correlation = connection.getHeaderField(LAB_REQUEST_HEADER)
         if (!correlation.isNullOrBlank()) {
             onTransportCorrelation(correlation)
@@ -343,6 +349,7 @@ internal class HttpRangeFetchExecutor(
         }
 
         var position = start
+        var firstBodyObserved = false
         try {
             connection.inputStream.use { input ->
                 val buffer = ByteArray(chunkSize)
@@ -358,6 +365,10 @@ internal class HttpRangeFetchExecutor(
                     }
                     if (read == 0) {
                         continue
+                    }
+                    if (!firstBodyObserved) {
+                        firstBodyObserved = true
+                        observePhase(fetchKey, attempt, TransportPhaseKind.FIRST_BODY_BYTES)
                     }
                     emitChunk(
                         FetchNetworkChunk(
@@ -388,6 +399,7 @@ internal class HttpRangeFetchExecutor(
         if (position != endExclusive) {
             return transport(TransportIoKind.PREMATURE_EOF, correlation)
         }
+        observePhase(fetchKey, attempt, TransportPhaseKind.RESPONSE_BODY_COMPLETE)
         return FetchAttemptDisposition.Success(
             transportCorrelationId = correlation,
         )
@@ -413,6 +425,23 @@ internal class HttpRangeFetchExecutor(
             observation = observation,
             transportCorrelationId = transportCorrelationId,
         )
+
+    private fun observePhase(
+        fetchKey: FetchKey,
+        attempt: Int,
+        kind: TransportPhaseKind,
+    ) {
+        // Measurement must never change transport correctness or recovery.
+        runCatching {
+            phaseObserver.onPhase(
+                TransportPhaseObservation(
+                    fetchKey = fetchKey,
+                    attempt = attempt,
+                    kind = kind,
+                ),
+            )
+        }
+    }
 
     /** Type-based only; exception messages are never inspected. */
     private fun IOException.transportKind(): TransportIoKind =

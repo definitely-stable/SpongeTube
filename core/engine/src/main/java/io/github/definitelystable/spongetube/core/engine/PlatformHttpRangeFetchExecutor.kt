@@ -49,6 +49,7 @@ internal class PlatformHttpRangeFetchExecutor(
     private val providerWallClock: ProviderWallClock = ProviderWallClock.SYSTEM,
     private val onProtocolObserved: (String) -> Unit = { },
     private val onTerminalObserved: (PlatformHttpTerminal) -> Unit = { },
+    private val phaseObserver: TransportPhaseObserver = TransportPhaseObserver.NONE,
 ) : RouteBoundFetchAttemptExecutor {
     init { require(firstResponseTimeoutMs > 0 && readTimeoutMs > 0 && chunkSize > 0) }
 
@@ -175,6 +176,7 @@ internal class PlatformHttpRangeFetchExecutor(
 
         var startInvoked = false
         var sawHeaders = false
+        var firstBodyObserved = false
         var position = start
         var correlation: String? = null
         try {
@@ -218,6 +220,11 @@ internal class PlatformHttpRangeFetchExecutor(
                         if (event is Event.Redirect) {
                             return failure(httpResponse(info, deliveryBinding), correlation)
                         }
+                        observePhase(
+                            request.fetchKey,
+                            attempt,
+                            TransportPhaseKind.RESPONSE_HEADERS,
+                        )
                         sawHeaders = true
                         // Descriptive observation only: never a ranking input.
                         onProtocolObserved(normalizedPlatformProtocol(info.negotiatedProtocol))
@@ -254,6 +261,14 @@ internal class PlatformHttpRangeFetchExecutor(
                             )
                         }
                         if (event.bytes.isNotEmpty()) {
+                            if (!firstBodyObserved) {
+                                firstBodyObserved = true
+                                observePhase(
+                                    request.fetchKey,
+                                    attempt,
+                                    TransportPhaseKind.FIRST_BODY_BYTES,
+                                )
+                            }
                             emitChunk(FetchNetworkChunk(
                                 byteStart = position,
                                 bytes = event.bytes,
@@ -268,6 +283,11 @@ internal class PlatformHttpRangeFetchExecutor(
                         }
                     }
                     Event.Done -> return if (position == end) {
+                        observePhase(
+                            request.fetchKey,
+                            attempt,
+                            TransportPhaseKind.RESPONSE_BODY_COMPLETE,
+                        )
                         FetchAttemptDisposition.Success(transportCorrelationId = correlation)
                     } else transport(TransportIoKind.PREMATURE_EOF, correlation)
                     is Event.Failed -> return transport(
@@ -291,6 +311,23 @@ internal class PlatformHttpRangeFetchExecutor(
                 }
             }
             events.close()
+        }
+    }
+
+    private fun observePhase(
+        fetchKey: FetchKey,
+        attempt: Int,
+        kind: TransportPhaseKind,
+    ) {
+        // Measurement must never change transport correctness or recovery.
+        runCatching {
+            phaseObserver.onPhase(
+                TransportPhaseObservation(
+                    fetchKey = fetchKey,
+                    attempt = attempt,
+                    kind = kind,
+                ),
+            )
         }
     }
 

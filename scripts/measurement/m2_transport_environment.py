@@ -27,6 +27,7 @@ CODE_PATHS = (
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/HttpRangeFetchExecutor.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/PlatformHttpRangeFetchExecutor.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/TransportEvaluationSelector.kt",
+    "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/TransportPhaseObserver.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/recovery/RecoveryCoordinator.kt",
     "scripts/faults/m2_network_harness.py",
     "scripts/faults/netem_control.sh",
