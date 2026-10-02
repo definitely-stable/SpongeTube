@@ -424,8 +424,7 @@ class G2NetworkVerifierTest(unittest.TestCase):
                 self.assertEqual(4, len(trials["trials"]))
                 self.assertEqual(4, len(timings["rows"]))
                 self.assertEqual("PASS", result["status"])
-                expected_blocks = 0 if profile == "N5" else 2
-                self.assertEqual(expected_blocks, result["pairedBlockCount"])
+                self.assertEqual(2, result["pairedBlockCount"])
                 self.assertIsNone(result["selectedBackend"])
                 if profile == "N5":
                     self.assertEqual(
@@ -444,7 +443,7 @@ class G2NetworkVerifierTest(unittest.TestCase):
                 for row in trials["trials"]:
                     self.assertEqual("OBSERVABLE", row["recovery"]["internalRetryVisibility"])
                     self.assertEqual(0, row["recovery"]["internalRetryCount"])
-                    self.assertEqual(profile != "N5", row["performanceSampleEligible"])
+                    self.assertTrue(row["performanceSampleEligible"])
             finally:
                 case.close()
 
@@ -453,9 +452,16 @@ class G2NetworkVerifierTest(unittest.TestCase):
         try:
             trials, _, result = case.verify()
             self.assertEqual(0, result["effectPositiveTrialCount"])
-            self.assertEqual(0, result["pairedBlockCount"])
+            self.assertEqual(2, result["pairedBlockCount"])
             self.assertTrue(
-                all(not row["performanceSampleEligible"] for row in trials["trials"])
+                all(row["performanceSampleEligible"] for row in trials["trials"])
+            )
+            self.assertTrue(
+                all(
+                    "LEGACY_NETEM_CORRELATED_RANDOM_STATE_IS_NOT_FULLY_SEED_REPRODUCIBLE"
+                    in row["limitations"]
+                    for row in trials["trials"]
+                )
             )
         finally:
             case.close()

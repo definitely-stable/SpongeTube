@@ -81,7 +81,7 @@ SPECS: dict[str, dict[str, Any]] = {
             "randomSeed": 424_242,
         },
         "limitation": "N5_LEGACY_CORRELATED_RANDOM_CONFIGURATION_BOUND_ONLY",
-        "performanceEligible": False,
+        "performanceEligible": True,
         "requireEffectEveryRow": False,
     },
     "N5GE": {
