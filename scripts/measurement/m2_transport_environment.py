@@ -22,13 +22,18 @@ from m2_contracts import scan_evidence_privacy  # noqa: E402
 from schema_subset import validate_instance  # noqa: E402
 
 CODE_PATHS = (
+    ".github/workflows/m2-g2-network.yml",
     ".work/schemas/transport-experiment-environment-v1.schema.json",
+    ".work/schemas/transport-phase-timings-v1.schema.json",
+    "core/engine/src/androidTest/java/io/github/definitelystable/spongetube/core/engine/route/TransportPairNetworkAndroidTest.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/FetchBroker.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/HttpRangeFetchExecutor.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/PlatformHttpRangeFetchExecutor.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/TransportEvaluationSelector.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/TransportPhaseObserver.kt",
     "core/engine/src/main/java/io/github/definitelystable/spongetube/core/engine/recovery/RecoveryCoordinator.kt",
+    "scripts/ci/verify-m2-g2-network.py",
+    "scripts/faults/m2_network_environment.py",
     "scripts/faults/m2_network_harness.py",
     "scripts/faults/netem_control.sh",
     "scripts/measurement/m2_transport_environment.py",
@@ -113,6 +118,8 @@ def validate_device_runtime(runtime: Mapping[str, Any]) -> None:
     for field in ("buildFingerprint", "buildId", "securityPatch", "kernelRelease"):
         value = runtime.get(field)
         require(isinstance(value, str) and value.strip(), f"Android runtime {field} missing")
+    require(runtime.get("batteryPolicy") == "CI_POWERED", "G2-C requires CI_POWERED battery policy")
+    require(runtime.get("acPowered") is True, "G2-C requires independent AC-powered readback")
 
 
 def build(
@@ -158,6 +165,8 @@ def build(
                 "buildId",
                 "securityPatch",
                 "kernelRelease",
+                "batteryPolicy",
+                "acPowered",
             )
         },
         "codeFingerprint": code_fingerprint(root),
@@ -207,6 +216,8 @@ def verify(
             "buildId",
             "securityPatch",
             "kernelRelease",
+            "batteryPolicy",
+            "acPowered",
         )
     }, "Android runtime binding drift")
     require(document["codeFingerprint"] == code_fingerprint(root), "experiment code fingerprint drift")

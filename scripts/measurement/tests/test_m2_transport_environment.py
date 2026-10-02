@@ -54,6 +54,8 @@ DEVICE = {
     "buildId": "ABC",
     "securityPatch": "2026-09-05",
     "kernelRelease": "6.1.0-android-test",
+    "batteryPolicy": "CI_POWERED",
+    "acPowered": True,
 }
 
 
@@ -136,6 +138,12 @@ class TransportEnvironmentTest(unittest.TestCase):
                 device[field] = value
                 with self.assertRaisesRegex(envmod.TransportEnvironmentError, message):
                     self.build(android_runtime=device)
+
+    def test_non_powered_runtime_is_rejected(self):
+        device = copy.deepcopy(DEVICE)
+        device["acPowered"] = False
+        with self.assertRaisesRegex(envmod.TransportEnvironmentError, "AC-powered"):
+            self.build(android_runtime=device)
 
     def test_code_fingerprint_detects_experiment_source_mutation(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -1,0 +1,388 @@
+name: M2-G2 N2 Paired API36 Network Evidence
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-network.yml"
+      - ".work/schemas/transport-experiment-environment-v1.schema.json"
+      - ".work/schemas/transport-phase-timings-v1.schema.json"
+      - ".work/schemas/transport-pair-plan-v1.schema.json"
+      - ".work/schemas/transport-evaluation-trials-v1.schema.json"
+      - ".work/milestones/M2.md"
+      - "core/engine/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/verify-m2-g2-network.py"
+      - "scripts/ci/prepare-emulator.sh"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/n2-high-rtt-jitter.json"
+      - "test-fixtures/network/m2/g2/**"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-network.yml"
+      - ".work/schemas/transport-experiment-environment-v1.schema.json"
+      - ".work/schemas/transport-phase-timings-v1.schema.json"
+      - "core/engine/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/verify-m2-g2-network.py"
+      - "test-fixtures/network/m2/g2/**"
+      - "test-fixtures/network/m2/n2-high-rtt-jitter.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-g2-network-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api36-n2-paired:
+    name: m2-g2-n2-api36-paired
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Freeze N2 pair plan before Android execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$PWD/build/m2-g2-network/n2"
+          mkdir -p "$root" core/engine/src/androidTest/assets
+          plan="$root/plan.json"
+
+          python3 scripts/measurement/m2_transport_pair_plan.py build \
+            --scenario test-fixtures/network/m2/n2-high-rtt-jitter.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
+            --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
+            --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
+            --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
+            --route-policy test-fixtures/network/m2/g2/route-exact-default.json \
+            --run-id m2-g2-n2-api36 \
+            --pair-id m2-g2-n2-api36-cold \
+            --ordering-seed 20261001 \
+            --blocks 2 \
+            --playback-mode SPONGE \
+            --connection-state COLD \
+            --output "$plan"
+
+          python3 scripts/measurement/m2_transport_pair_plan.py verify \
+            --plan "$plan" \
+            --scenario test-fixtures/network/m2/n2-high-rtt-jitter.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
+            --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
+            --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
+            --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
+            --route-policy test-fixtures/network/m2/g2/route-exact-default.json
+
+          cp "$plan" core/engine/src/androidTest/assets/m2-g2-n2-plan.json
+          python3 - "$plan" > "$root/schedule.txt" <<'PY'
+          import json, sys
+          plan = json.load(open(sys.argv[1], encoding="utf-8"))
+          for block in plan["blocks"]:
+              for row in sorted(block["trials"], key=lambda value: value["positionInBlock"]):
+                  print(row["trialId"])
+          PY
+          test "$(wc -l < "$root/schedule.txt")" -eq 4
+
+      - name: Build G2-C probe and Media Lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --dependency-verification=strict --configuration-cache \
+            :core:engine:assembleDebugAndroidTest \
+            :tools:media-lab:installDist
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh \
+            36 \
+            m2-g2-n2-api36 \
+            build/m2-g2-network/n2/device
+
+      - name: Execute frozen N2 schedule with per-trial netem reset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          root="$PWD/build/m2-g2-network/n2"
+          tools="$RUNNER_TEMP/m2-g2-network-tools"
+          raw_root="$root/raw"
+          trial_root="$root/trials"
+          server_root="$root/server"
+          output_root="$root/output"
+          mkdir -p "$tools" "$raw_root" "$trial_root" "$server_root" "$output_root"
+
+          test "$(git rev-parse HEAD)" = "$GIT_SHA"
+
+          bash scripts/faults/install_iproute2_tc.sh "$tools" > "$root/tc-version.txt"
+          export M2_TC_BIN="$tools/tc"
+
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          LAB_BIN="$(realpath "$LAB_BIN")"
+          trace="$server_root/requests.jsonl"
+          lab_pid=""
+
+          cleanup() {
+            set +e
+            if [[ -n "$lab_pid" ]] && kill -0 "$lab_pid" 2>/dev/null; then
+              kill "$lab_pid" >/dev/null 2>&1 || true
+              wait "$lab_pid" >/dev/null 2>&1 || true
+            fi
+            bash scripts/faults/netem_control.sh remove >/dev/null 2>&1 || true
+            bash scripts/faults/m2_e0_netns.sh teardown >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          bash scripts/faults/m2_e0_netns.sh prepare
+          bash scripts/faults/netem_control.sh prepare-fidelity
+          ns="$(bash scripts/faults/m2_e0_netns.sh namespace)"
+          media_addr="$(bash scripts/faults/m2_e0_netns.sh media-address)"
+          lab_if="$(bash scripts/faults/m2_e0_netns.sh lab-interface)"
+
+          test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
+          python3 scripts/faults/m2_network_environment.py \
+            --tc-bin "$M2_TC_BIN" \
+            --tc-source-sha "$tools/iproute2-source.sha256" \
+            --runner-image-os "$ImageOS" \
+            --runner-image-version "$ImageVersion" \
+            --output "$root/fault-engine-fingerprint.json"
+
+          bash scripts/faults/netem_control.sh inspect-link-state > "$root/link-state.json"
+
+          adb get-state | tee "$root/adb-before.txt" | grep -Fxq device
+          serial="$(adb get-serialno | tr -d '\r')"
+          [[ "$serial" =~ ^emulator-[0-9]+$ ]]
+          api="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
+          abi="$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
+          fingerprint="$(adb shell getprop ro.build.fingerprint | tr -d '\r')"
+          build_id="$(adb shell getprop ro.build.id | tr -d '\r')"
+          security_patch="$(adb shell getprop ro.build.version.security_patch | tr -d '\r')"
+          android_kernel="$(adb shell uname -r | tr -d '\r')"
+          test "$api" = "36"
+          test "$abi" = "x86_64"
+          adb shell dumpsys battery > "$root/battery.txt"
+          grep -Fq 'AC powered: true' "$root/battery.txt"
+
+          python3 - "$root/android-runtime.json" "$api" "$abi" "$fingerprint" "$build_id" "$security_patch" "$android_kernel" <<'PY'
+          import json, sys
+          path, api, abi, fingerprint, build_id, security_patch, kernel = sys.argv[1:]
+          value = {
+              "deviceClass": "ANDROID_EMULATOR",
+              "androidApi": int(api),
+              "abi": abi,
+              "buildFingerprint": fingerprint,
+              "buildId": build_id,
+              "securityPatch": security_patch,
+              "kernelRelease": kernel,
+              "batteryPolicy": "CI_POWERED",
+              "acPowered": True,
+          }
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(value, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+
+          python3 scripts/measurement/m2_transport_environment.py build \
+            --run-id m2-g2-n2-api36 \
+            --git-commit "$GIT_SHA" \
+            --fault-engine-fingerprint "$root/fault-engine-fingerprint.json" \
+            --link-state "$root/link-state.json" \
+            --android-runtime "$root/android-runtime.json" \
+            --output "$root/transport-experiment-environment-v1.json"
+
+          python3 scripts/measurement/m2_transport_environment.py verify \
+            --environment "$root/transport-experiment-environment-v1.json" \
+            --fault-engine-fingerprint "$root/fault-engine-fingerprint.json" \
+            --link-state "$root/link-state.json" \
+            --android-runtime "$root/android-runtime.json"
+
+          sudo -n ip netns exec "$ns" \
+            env JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:/usr/bin:/bin" \
+            "$LAB_BIN" serve \
+              "--fixture-root=$PWD/test-fixtures/media" \
+              "--trace=$trace" \
+              --session-id=m2-g2-n2 \
+              --profile=N0 \
+              "--data-bind-address=$media_addr" \
+              --data-port=18081 \
+              --control-port=18082 \
+            > "$server_root/media-lab.out" \
+            2> "$server_root/media-lab.err" &
+          lab_pid=$!
+
+          for attempt in {1..60}; do
+            if sudo -n ip netns exec "$ns" \
+              curl --fail --silent http://127.0.0.1:18082/__lab/config \
+              > "$server_root/config.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              cat "$server_root/media-lab.err" >&2 || true
+              exit 1
+            fi
+            sleep 0.1
+          done
+
+          if adb reverse --list | grep -Eq 'tcp:18081([[:space:]]|$)'; then
+            echo "G2-C media path must not use adb reverse" >&2
+            exit 1
+          fi
+
+          jitter_seed="$(python3 - <<'PY'
+          import json
+          print(json.load(open("test-fixtures/network/m2/g2/recovery-sponge-v2.json"))["jitterSeed"])
+          PY
+          )"
+          test "$jitter_seed" = "424243"
+
+          scope_snapshot() {
+            local output="$1"
+            local packets bytes
+            packets="$(sudo -n ip netns exec "$ns" cat "/sys/class/net/$lab_if/statistics/tx_packets")"
+            bytes="$(sudo -n ip netns exec "$ns" cat "/sys/class/net/$lab_if/statistics/tx_bytes")"
+            python3 - "$output" "$packets" "$bytes" <<'PY'
+          import json, sys
+          path, packets, bytes_ = sys.argv[1:]
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(
+                  {"mediaPackets": int(packets), "mediaBytes": int(bytes_)},
+                  handle,
+                  sort_keys=True,
+              )
+              handle.write("\n")
+          PY
+          }
+
+          while IFS= read -r trial_id; do
+            test -n "$trial_id"
+            echo "Executing frozen G2-C N2 trial: $trial_id"
+            one="$trial_root/$trial_id"
+            mkdir -p "$one/harness"
+
+            bash scripts/faults/netem_control.sh remove >/dev/null 2>&1 || true
+            bash scripts/faults/netem_control.sh assert-clean
+            scope_snapshot "$one/scope-before.json"
+
+            common=(
+              --scenario test-fixtures/network/m2/n2-high-rtt-jitter.json
+              --evidence "$one/harness/fault-harness-events.json"
+              --qdisc-state "$one/harness/qdisc-applied.json"
+              --filter-state "$one/harness/filter.json"
+              --final-qdisc-state "$one/harness/qdisc-final.json"
+              --active-state "$one/harness/netem-active-state.json"
+              --clean-state "$one/harness/netem-clean-state.json"
+              --run-id m2-g2-n2-api36
+              --session-id "m2-g2-n2-$trial_id"
+            )
+            python3 scripts/faults/m2_network_harness.py start "${common[@]}"
+            jq -e '
+              .delayUs == 100000 and
+              .jitterUs == 30000 and
+              .delayCorrelationPpm == 250000 and
+              .randomSeed == 424242 and
+              .mediaPortScoped == true
+            ' "$one/harness/netem-active-state.json" >/dev/null
+
+            ./gradlew --dependency-verification=strict \
+              :core:engine:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.route.TransportPairNetworkAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.originBaseUrl="http://$media_addr:18081" \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.trialId="$trial_id" \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.networkScenario=N2 \
+              -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.recoveryJitterSeed="$jitter_seed"
+
+            python3 scripts/faults/m2_network_harness.py stop "${common[@]}"
+            bash scripts/faults/netem_control.sh assert-clean
+            scope_snapshot "$one/scope-after.json"
+
+            source_file="$(find core/engine/build/outputs/connected_android_test_additional_output \
+              -type f -path "*/m2-g2-network/n2/$trial_id.json" -print -quit)"
+            test -n "$source_file"
+            cp "$source_file" "$raw_root/$trial_id.json"
+            adb get-state | grep -Fxq device
+          done < "$root/schedule.txt"
+
+          test "$(find "$raw_root" -maxdepth 1 -type f -name '*.json' | wc -l)" -eq 4
+          test -s "$trace"
+
+          python3 scripts/ci/verify-m2-g2-network.py \
+            --plan "$root/plan.json" \
+            --raw-dir "$raw_root" \
+            --trial-root "$trial_root" \
+            --origin-trace "$trace" \
+            --scenario test-fixtures/network/m2/n2-high-rtt-jitter.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
+            --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
+            --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
+            --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
+            --route-policy test-fixtures/network/m2/g2/route-exact-default.json \
+            --environment "$root/transport-experiment-environment-v1.json" \
+            --fault-engine-fingerprint "$root/fault-engine-fingerprint.json" \
+            --link-state "$root/link-state.json" \
+            --android-runtime "$root/android-runtime.json" \
+            --output-dir "$output_root"
+
+          python3 scripts/measurement/m2_transport_pair_plan.py verify-results \
+            --plan "$root/plan.json" \
+            --trials "$output_root/transport-evaluation-trials-v1.json" \
+            --scenario test-fixtures/network/m2/n2-high-rtt-jitter.json \
+            --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json \
+            --device-state test-fixtures/network/m2/g2/device-api36-emulator.json \
+            --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json \
+            --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json \
+            --route-policy test-fixtures/network/m2/g2/route-exact-default.json
+
+          adb get-state | tee "$root/adb-after.txt" | grep -Fxq device
+          cleanup
+          trap - EXIT
+          bash scripts/faults/m2_e0_netns.sh assert-clean
+          printf 'ok\n' > "$root/cleanup.txt"
+
+      - name: Cleanup G2-C lab
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          bash scripts/faults/netem_control.sh remove >/dev/null 2>&1 || true
+          bash scripts/faults/m2_e0_netns.sh teardown >/dev/null 2>&1 || true
+          adb emu kill >/dev/null 2>&1 || true
+          rm -f core/engine/src/androidTest/assets/m2-g2-n2-plan.json
+
+      - name: Upload G2-C N2 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-g2-n2-api36-paired
+          path: |
+            build/m2-g2-network/n2/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/reports/androidTests/
+          if-no-files-found: error
+          retention-days: 14

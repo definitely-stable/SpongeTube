@@ -281,8 +281,9 @@ class TransportPairNetworkAndroidTest {
             assertTrue(terminalAttempts.last().eventElapsedRealtimeNs <= chainTerminated.elapsedRealtimeNs)
 
             val firstProgress = orderedFetchEvents.first { it.event == FetchEventKind.ATTEMPT_PROGRESS }
+            val firstProgressElapsedRealtimeNs = firstProgress.eventElapsedRealtimeNs
             val firstByteUs = nanosToMicros(
-                firstProgress.eventElapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
+                firstProgressElapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
             )
             val completionUs = nanosToMicros(
                 chainTerminated.elapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
@@ -401,6 +402,7 @@ class TransportPairNetworkAndroidTest {
                     put("bindingRevision", "binding-1")
                     put("bindingTargetResolutionCount", bindingHits.get())
                     put("chainStartedElapsedRealtimeNs", chainStarted.elapsedRealtimeNs)
+                    put("firstBrokerProgressElapsedRealtimeNs", firstProgressElapsedRealtimeNs)
                     put("chainTerminatedElapsedRealtimeNs", chainTerminated.elapsedRealtimeNs)
                     put("physicalAttempts", JSONArray().apply {
                         attemptProofs.forEach { attempt ->
