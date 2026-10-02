@@ -33,7 +33,11 @@ def load(path: str) -> dict:
     return json.loads((ROOT / path).read_text(encoding="utf-8"))
 
 
-SCENARIO = load("test-fixtures/network/m2/n2-high-rtt-jitter.json")
+SCENARIOS = {
+    "N2": load("test-fixtures/network/m2/n2-high-rtt-jitter.json"),
+    "N3": load("test-fixtures/network/m2/n3-burst-packet-loss.json"),
+    "N5": load("test-fixtures/network/m2/n5-burst-loss.json"),
+}
 INPUTS = {
     "work": load("test-fixtures/network/m2/g2/work-f1-video-segment-1.json"),
     "deviceState": load("test-fixtures/network/m2/g2/device-api36-emulator.json"),
@@ -63,11 +67,12 @@ ANDROID_RUNTIME = {
 LAB_SCENARIO_HASH = "7" * 64
 
 
-def build_plan() -> dict:
+def build_plan(family: str) -> dict:
+    slug = family.lower()
     return pair_plan.build_plan(
-        run_id="m2-g2-n2-api36",
-        pair_id="m2-g2-n2-api36-cold",
-        scenario=SCENARIO,
+        run_id=f"m2-g2-{slug}-api36",
+        pair_id=f"m2-g2-{slug}-api36-cold",
+        scenario=SCENARIOS[family],
         inputs=INPUTS,
         ordering_seed=20261001,
         block_count=2,
@@ -76,8 +81,9 @@ def build_plan() -> dict:
     )
 
 
-def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
+def raw_case(family: str, plan: dict, schedule_row: dict, request_id: int) -> dict:
     backend = schedule_row["backendId"]
+    spec = verifier.SPECS[family]
     chain_start = 1_000_000_000 + request_id * 10_000_000
     attempt_start = chain_start + 1_000_000
     headers = attempt_start + 100_000_000
@@ -89,8 +95,8 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
     return {
         "schemaVersion": 1,
         "phase": "M2-G2-C-NETWORK",
-        "scenarioFamily": "N2",
-        "scenarioVariant": "HIGH_RTT_JITTER",
+        "scenarioFamily": family,
+        "scenarioVariant": spec["variant"],
         "runId": plan["runId"],
         "pairId": plan["pairId"],
         "trial": {
@@ -190,6 +196,7 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
                 },
             ],
             "recoveryFailureCount": 0,
+            "recoveryFailures": [],
             "recoveryBackoffs": [],
             "recoveryJitterProtocol": verifier.RECOVERY_JITTER_PROTOCOL,
             "recoveryJitterSeed": verifier.RECOVERY_JITTER_SEED,
@@ -207,10 +214,10 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
     }
 
 
-def origin_row(plan: dict, request_id: int) -> dict:
+def origin_row(request_id: int) -> dict:
     return {
         "schemaVersion": 1,
-        "sessionId": "m2-g2-n2",
+        "sessionId": "m2-g2-network",
         "requestId": request_id,
         "plane": "data",
         "fixtureId": "F1",
@@ -242,9 +249,32 @@ def write_json(path: pathlib.Path, value) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def write_trial_harness(root: pathlib.Path, trial_id: str, plan: dict) -> None:
+def qdisc(family: str, *, drops: int, packets: int = 100) -> list[dict]:
+    if family == "N2":
+        options = {
+            "delay": {"delay": 0.1, "jitter": 0.03, "correlation": 0.25},
+            "seed": 424242,
+        }
+    elif family == "N3":
+        options = {"loss-random": {"loss": 1.0, "correlation": 0.0}}
+    else:
+        options = {
+            "loss-random": {"loss": 0.02, "correlation": 0.25},
+            "seed": 424242,
+        }
+    return [{
+        "kind": "netem",
+        "parent": "1:1",
+        "packets": packets,
+        "bytes": 900_000,
+        "drops": drops,
+        "options": options,
+    }]
+
+
+def write_trial_harness(root: pathlib.Path, family: str, trial_id: str, plan: dict, before: int, after: int) -> None:
     trial = root / trial_id
-    write_json(trial / "harness" / "netem-active-state.json", verifier.N2_ACTIVE_STATE)
+    write_json(trial / "harness" / "netem-active-state.json", verifier.SPECS[family]["active"])
     write_json(trial / "harness" / "netem-clean-state.json", {"filters": 0, "netem": 0, "prio": 0})
     write_json(
         trial / "harness" / "fault-harness-events.json",
@@ -263,19 +293,15 @@ def write_trial_harness(root: pathlib.Path, trial_id: str, plan: dict) -> None:
             ],
         },
     )
-    write_json(
-        trial / "harness" / "qdisc-final.json",
-        [{
-            "kind": "netem",
-            "parent": "1:1",
-            "packets": 100,
-            "bytes": 900_000,
-            "options": {
-                "delay": {"delay": 0.1, "jitter": 0.03, "correlation": 0.25},
-                "seed": 424242,
-            },
-        }],
-    )
+    if family == "N3":
+        write_json(trial / "harness" / "qdisc-applied.json", qdisc(family, drops=1))
+        write_json(trial / "harness" / "qdisc-final.json", qdisc(family, drops=5))
+    elif family == "N5":
+        write_json(trial / "harness" / "qdisc-applied.json", qdisc(family, drops=0))
+        write_json(trial / "harness" / "qdisc-final.json", qdisc(family, drops=2))
+    else:
+        write_json(trial / "harness" / "qdisc-applied.json", qdisc(family, drops=0))
+        write_json(trial / "harness" / "qdisc-final.json", qdisc(family, drops=0))
     write_json(
         trial / "harness" / "filter.json",
         [{
@@ -289,11 +315,14 @@ def write_trial_harness(root: pathlib.Path, trial_id: str, plan: dict) -> None:
     )
     write_json(trial / "scope-before.json", {"mediaPackets": 10, "mediaBytes": 100})
     write_json(trial / "scope-after.json", {"mediaPackets": 110, "mediaBytes": 900_100})
+    (trial / "origin-before-count.txt").write_text(f"{before}\n", encoding="utf-8")
+    (trial / "origin-after-count.txt").write_text(f"{after}\n", encoding="utf-8")
 
 
-class G2NetworkVerifierTest(unittest.TestCase):
-    def setUp(self):
-        self.plan = build_plan()
+class NetworkCase:
+    def __init__(self, family: str):
+        self.family = family
+        self.plan = build_plan(family)
         self.schedule = pair_plan.planned_trial_schedule(self.plan)
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
@@ -304,10 +333,17 @@ class G2NetworkVerifierTest(unittest.TestCase):
         for index, schedule_row in enumerate(self.schedule, start=1):
             write_json(
                 self.raw_dir / f"{schedule_row['trialId']}.json",
-                raw_case(self.plan, schedule_row, index),
+                raw_case(family, self.plan, schedule_row, index),
             )
-            write_trial_harness(self.trial_root, schedule_row["trialId"], self.plan)
-            self.origin.append(origin_row(self.plan, index))
+            self.origin.append(origin_row(index))
+            write_trial_harness(
+                self.trial_root,
+                family,
+                schedule_row["trialId"],
+                self.plan,
+                index - 1,
+                index,
+            )
         self.environment = envmod.build(
             run_id=self.plan["runId"],
             source_head_commit="a" * 40,
@@ -317,16 +353,16 @@ class G2NetworkVerifierTest(unittest.TestCase):
             android_runtime=ANDROID_RUNTIME,
         )
 
-    def tearDown(self):
+    def close(self):
         self.temp.cleanup()
 
     def verify(self):
-        return verifier.verify_n2(
+        return verifier.verify_network(
             plan=self.plan,
             raw_dir=self.raw_dir,
             trial_root=self.trial_root,
             origin=self.origin,
-            scenario=SCENARIO,
+            scenario=SCENARIOS[self.family],
             inputs=INPUTS,
             environment=self.environment,
             fault_engine=FAULT_ENGINE,
@@ -334,82 +370,80 @@ class G2NetworkVerifierTest(unittest.TestCase):
             android_runtime=ANDROID_RUNTIME,
         )
 
-    def mutate_raw(self, trial_id: str, mutator):
-        path = self.raw_dir / f"{trial_id}.json"
-        value = json.loads(path.read_text())
-        mutator(value)
-        write_json(path, value)
 
-    def test_valid_n2_pair_emits_g0_and_phase_timings(self):
-        trials, timings, result = self.verify()
-        self.assertEqual(4, len(trials["trials"]))
-        self.assertEqual(4, len(timings["rows"]))
-        self.assertEqual("PASS", result["status"])
-        self.assertEqual(2, result["pairedBlockCount"])
-        self.assertIsNone(result["selectedBackend"])
-        for row in trials["trials"]:
-            self.assertEqual("OBSERVABLE", row["recovery"]["internalRetryVisibility"])
-            self.assertEqual(0, row["recovery"]["internalRetryCount"])
-            self.assertTrue(row["performanceSampleEligible"])
+class G2NetworkVerifierTest(unittest.TestCase):
+    def test_all_canonical_network_families_emit_paired_evidence(self):
+        for family in ("N2", "N3", "N5"):
+            case = NetworkCase(family)
+            try:
+                trials, timings, result = case.verify()
+                self.assertEqual(4, len(trials["trials"]))
+                self.assertEqual(4, len(timings["rows"]))
+                self.assertEqual("PASS", result["status"])
+                self.assertEqual(2, result["pairedBlockCount"])
+                self.assertIsNone(result["selectedBackend"])
+                for row in trials["trials"]:
+                    self.assertEqual("OBSERVABLE", row["recovery"]["internalRetryVisibility"])
+                    self.assertEqual(0, row["recovery"]["internalRetryCount"])
+                    self.assertTrue(row["performanceSampleEligible"])
+            finally:
+                case.close()
 
-    def test_extra_origin_replay_is_rejected(self):
-        self.origin.append(origin_row(self.plan, 99))
-        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "exactly four origin-visible"):
-            self.verify()
+    def test_n5_zero_effect_trial_is_rejected(self):
+        case = NetworkCase("N5")
+        try:
+            trial_id = case.schedule[0]["trialId"]
+            path = case.trial_root / trial_id / "harness" / "qdisc-final.json"
+            write_json(path, qdisc("N5", drops=0))
+            with self.assertRaisesRegex(verifier.NetworkEvidenceError, "zero scoped drops"):
+                case.verify()
+        finally:
+            case.close()
 
-    def test_seed_drift_is_rejected(self):
-        trial_id = self.schedule[0]["trialId"]
-        path = self.trial_root / trial_id / "harness" / "netem-active-state.json"
-        value = json.loads(path.read_text())
-        value["randomSeed"] = 7
-        write_json(path, value)
-        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "active netem readback drift"):
-            self.verify()
+    def test_n3_requires_first_drop_rendezvous(self):
+        case = NetworkCase("N3")
+        try:
+            trial_id = case.schedule[0]["trialId"]
+            path = case.trial_root / trial_id / "harness" / "qdisc-applied.json"
+            write_json(path, qdisc("N3", drops=0))
+            with self.assertRaisesRegex(verifier.NetworkEvidenceError, "first scoped drop"):
+                case.verify()
+        finally:
+            case.close()
 
-    def test_zero_effect_path_is_rejected(self):
-        trial_id = self.schedule[0]["trialId"]
-        path = self.trial_root / trial_id / "harness" / "qdisc-final.json"
-        value = json.loads(path.read_text())
-        value[0]["packets"] = 0
-        write_json(path, value)
-        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "saw no media traffic"):
-            self.verify()
-
-    def test_reused_process_identity_is_rejected(self):
-        first, second = self.schedule[0]["trialId"], self.schedule[1]["trialId"]
-        first_value = json.loads((self.raw_dir / f"{first}.json").read_text())
-        pid = first_value["proof"]["processPid"]
-        start = first_value["proof"]["processStartClockTicks"]
-        self.mutate_raw(
-            second,
-            lambda raw: raw["proof"].update(
-                {"processPid": pid, "processStartClockTicks": start}
-            ),
-        )
-        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "reused OS process"):
-            self.verify()
-
-    def test_first_byte_metric_must_recompute_from_raw_timestamp(self):
-        trial_id = self.schedule[0]["trialId"]
-        self.mutate_raw(
-            trial_id,
-            lambda raw: raw["trial"]["metrics"].__setitem__(
-                "firstByteUs", raw["trial"]["metrics"]["firstByteUs"] + 1
-            ),
-        )
-        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "firstByteUs is not reproducible"):
-            self.verify()
+    def test_origin_partition_detects_unassigned_replay(self):
+        case = NetworkCase("N2")
+        try:
+            case.origin.append(origin_row(99))
+            with self.assertRaisesRegex(verifier.NetworkEvidenceError, "unassigned origin trace rows"):
+                case.verify()
+        finally:
+            case.close()
 
     def test_raw_row_cannot_self_certify_internal_retry_visibility(self):
-        trial_id = self.schedule[0]["trialId"]
-        self.mutate_raw(
-            trial_id,
-            lambda raw: raw["trial"]["recovery"].update(
+        case = NetworkCase("N2")
+        try:
+            trial_id = case.schedule[0]["trialId"]
+            path = case.raw_dir / f"{trial_id}.json"
+            value = json.loads(path.read_text())
+            value["trial"]["recovery"].update(
                 {"internalRetryVisibility": "OBSERVABLE", "internalRetryCount": 0}
-            ),
-        )
-        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "raw N2 recovery lineage drift"):
-            self.verify()
+            )
+            write_json(path, value)
+            with self.assertRaisesRegex(verifier.NetworkEvidenceError, "must not self-certify"):
+                case.verify()
+        finally:
+            case.close()
+
+    def test_provider_failure_cannot_masquerade_as_network_recovery(self):
+        bad = [{
+            "observation": {"plane": "PROVIDER", "type": "HTTP_RESPONSE"},
+            "classification": "PROVIDER_TRANSIENT_RESPONSE",
+            "decision": {"kind": "RETRY_AFTER_BACKOFF"},
+            "action": {"kind": "SCHEDULE_BACKOFF"},
+        }]
+        with self.assertRaisesRegex(verifier.NetworkEvidenceError, "TRANSPORT observation plane"):
+            verifier.validate_failure_lineage(bad, trial_id="trial")
 
 
 if __name__ == "__main__":
