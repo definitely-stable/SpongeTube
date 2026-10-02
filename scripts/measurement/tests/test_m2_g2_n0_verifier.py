@@ -150,6 +150,8 @@ def raw_case(plan: dict, schedule_row: dict, request_id: int) -> dict:
             "recoveryJitterSeed": verifier.RECOVERY_JITTER_SEED,
             "recoveryJitterSampleCount": 0,
             "recoveryJitterSamples": [],
+            "firstResponseTimeoutMs": verifier.FIRST_RESPONSE_TIMEOUT_MS,
+            "readTimeoutMs": verifier.READ_TIMEOUT_MS,
         },
     }
 
@@ -289,6 +291,15 @@ class G2N0VerifierTest(unittest.TestCase):
             ),
         )
         with self.assertRaisesRegex(ValueError, "distinct OS process"):
+            self.verify()
+
+    def test_transport_timeout_policy_drift_is_rejected(self):
+        trial_id = self.schedule[0]["trialId"]
+        self.mutate_raw(
+            trial_id,
+            lambda raw: raw["proof"].__setitem__("firstResponseTimeoutMs", 20_000),
+        )
+        with self.assertRaisesRegex(ValueError, "timeout policy drift"):
             self.verify()
 
     def test_first_byte_boundary_must_be_disclosed(self):

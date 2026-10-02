@@ -25,6 +25,8 @@ RESOURCE_LENGTH = 81_811
 RESOURCE_SHA256 = "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
 RECOVERY_JITTER_PROTOCOL = "SHA256_COUNTER_REJECTION_V1"
 RECOVERY_JITTER_SEED = 424_243
+FIRST_RESPONSE_TIMEOUT_MS = 12_000
+READ_TIMEOUT_MS = 12_000
 
 
 def require(condition: bool, message: str) -> None:
@@ -160,6 +162,14 @@ def check_raw(
             f"{expected['trialId']}: recovery jitter seed drift")
     require(proof.get("recoveryJitterSampleCount") == 0 and proof.get("recoveryJitterSamples") == [],
             f"{expected['trialId']}: N0 unexpectedly consumed recovery jitter")
+    require(
+        proof.get("firstResponseTimeoutMs") == FIRST_RESPONSE_TIMEOUT_MS,
+        f"{expected['trialId']}: first-response/connect timeout policy drift",
+    )
+    require(
+        proof.get("readTimeoutMs") == READ_TIMEOUT_MS,
+        f"{expected['trialId']}: read timeout policy drift",
+    )
     process_id = proof.get("processInstanceId")
     require(isinstance(process_id, str) and process_id, f"{expected['trialId']}: process reset proof missing")
     process_pid = proof.get("processPid")

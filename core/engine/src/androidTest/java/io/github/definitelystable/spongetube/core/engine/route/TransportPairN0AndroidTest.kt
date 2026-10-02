@@ -130,8 +130,8 @@ class TransportPairN0AndroidTest {
                     bindingHits.incrementAndGet()
                     target
                 },
-                connectTimeoutMs = 12_000,
-                readTimeoutMs = 12_000,
+                connectTimeoutMs = FIRST_RESPONSE_TIMEOUT_MS,
+                readTimeoutMs = READ_TIMEOUT_MS,
             )
 
             val candidate = if (backend == TransportEvaluationBackend.PLATFORM_HTTP_ENGINE) {
@@ -146,8 +146,8 @@ class TransportPairN0AndroidTest {
                         bindingHits.incrementAndGet()
                         target
                     },
-                    firstResponseTimeoutMs = 20_000,
-                    readTimeoutMs = 12_000,
+                    firstResponseTimeoutMs = FIRST_RESPONSE_TIMEOUT_MS.toLong(),
+                    readTimeoutMs = READ_TIMEOUT_MS.toLong(),
                     onProtocolObserved = protocol::set,
                 )
             } else {
@@ -367,6 +367,8 @@ class TransportPairN0AndroidTest {
                     put("recoveryJitterSeed", jitterSeed)
                     put("recoveryJitterSampleCount", jitter.samples.size)
                     put("recoveryJitterSamples", JSONArray(jitter.samples))
+                    put("firstResponseTimeoutMs", FIRST_RESPONSE_TIMEOUT_MS)
+                    put("readTimeoutMs", READ_TIMEOUT_MS)
                 })
             }
             PlatformTestStorageRegistry.getInstance().openOutputFile(
@@ -485,6 +487,8 @@ class TransportPairN0AndroidTest {
             "08ac93538dcb3f5eece5996b0abab1e4e7677afbc7b21cc3292a63c776ef4943"
         const val RECOVERY_JITTER_PROTOCOL = "SHA256_COUNTER_REJECTION_V1"
         const val RECOVERY_JITTER_DOMAIN = "spongetube-g2-recovery-jitter-v1"
+        const val FIRST_RESPONSE_TIMEOUT_MS = 12_000
+        const val READ_TIMEOUT_MS = 12_000
         val PROCESS_INSTANCE_ID: String = UUID.randomUUID().toString()
     }
 }
