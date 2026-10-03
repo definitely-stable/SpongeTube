@@ -92,7 +92,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             "performanceSampleEligible": False,
             "limitations": ["RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"],
         }
-        proof = {
+        raw_proof = {
             "physicalAttempts": [
                 {
                     "terminal": "ATTEMPT_FAILED",
@@ -103,6 +103,8 @@ class G2RouteVerifierTest(unittest.TestCase):
                     "transportCorrelationId": "8",
                 },
             ],
+        }
+        summary_proof = {
             "successfulRequestId": 8,
             "correlatedRequestIds": [7, 8],
         }
@@ -127,7 +129,8 @@ class G2RouteVerifierTest(unittest.TestCase):
                     "bodyBytesWritten": verifier.RESOURCE_LENGTH,
                     "outcome": "SUCCESS",
                 }],
-                proof=proof,
+                raw_proof=raw_proof,
+                summary_proof=summary_proof,
             )
 
     def test_finalize_marks_zero_internal_replay_after_proven_boundary(self):
@@ -141,7 +144,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             "performanceSampleEligible": False,
             "limitations": ["RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"],
         }
-        proof = {
+        raw_proof = {
             "physicalAttempts": [
                 {
                     "terminal": "ATTEMPT_FAILED",
@@ -152,6 +155,8 @@ class G2RouteVerifierTest(unittest.TestCase):
                     "transportCorrelationId": "9",
                 },
             ],
+        }
+        summary_proof = {
             "successfulRequestId": 9,
             "correlatedRequestIds": [9],
         }
@@ -173,7 +178,8 @@ class G2RouteVerifierTest(unittest.TestCase):
         finalized = verifier.finalize_row(
             row,
             trial_origin=[origin],
-            proof=proof,
+            raw_proof=raw_proof,
+            summary_proof=summary_proof,
         )
         self.assertEqual("OBSERVABLE", finalized["recovery"]["internalRetryVisibility"])
         self.assertEqual(0, finalized["recovery"]["internalRetryCount"])
