@@ -652,7 +652,13 @@ class G2NetworkVerifierTest(unittest.TestCase):
                 proof["bindingTargetResolutionCount"] = 2
                 proof["recoveryFailureCount"] = 1
                 proof["recoveryFailures"] = [{
-                    "observation": {"plane": "TRANSPORT", "type": "TRANSPORT_IO"},
+                    "fetchId": f"fetch-pre-origin-timeout-{trial_id}",
+                    "attemptCorrelationId": None,
+                    "observation": {
+                        "plane": "TRANSPORT",
+                        "type": "TRANSPORT_IO",
+                        "kind": "CONNECT_TIMEOUT",
+                    },
                     "classification": "TRANSIENT_TRANSPORT",
                     "decision": {"kind": "RETRY_AFTER_BACKOFF"},
                     "action": {"kind": "SCHEDULE_BACKOFF"},
@@ -702,6 +708,70 @@ class G2NetworkVerifierTest(unittest.TestCase):
         )
         self.assertEqual("OBSERVABLE", visibility)
         self.assertEqual(1, count)
+
+    def test_recovery_failure_must_bind_the_failed_physical_owner(self):
+        case = NetworkCase("N2")
+        try:
+            for schedule_row in case.schedule:
+                trial_id = schedule_row["trialId"]
+                path = case.raw_dir / f"{trial_id}.json"
+                raw = json.loads(path.read_text())
+                proof = raw["proof"]
+                trial = raw["trial"]
+                original = proof["physicalAttempts"][0]
+                chain_start = proof["chainStartedElapsedRealtimeNs"]
+                failed = {
+                    "fetchId": f"fetch-failed-{trial_id}",
+                    "startElapsedRealtimeNs": chain_start + 100_000,
+                    "endElapsedRealtimeNs": chain_start + 500_000,
+                    "terminal": "ATTEMPT_FAILED",
+                    "transportCorrelationId": None,
+                    "networkBytes": 0,
+                }
+                success = copy.deepcopy(original)
+                success["startElapsedRealtimeNs"] += 1_000_000
+                success["endElapsedRealtimeNs"] += 1_000_000
+                proof["physicalAttempts"] = [failed, success]
+                for phase in proof["transportPhases"]:
+                    phase["elapsedRealtimeNs"] += 1_000_000
+                proof["firstBrokerProgressElapsedRealtimeNs"] += 1_000_000
+                proof["chainTerminatedElapsedRealtimeNs"] += 1_000_000
+                trial["metrics"]["firstByteUs"] = (
+                    proof["firstBrokerProgressElapsedRealtimeNs"] - chain_start
+                ) // 1_000
+                trial["metrics"]["completionUs"] = (
+                    proof["chainTerminatedElapsedRealtimeNs"] - chain_start
+                ) // 1_000
+                trial["recovery"]["ownerCount"] = 2
+                proof["bindingTargetResolutionCount"] = 2
+                proof["recoveryFailureCount"] = 1
+                proof["recoveryFailures"] = [{
+                    "fetchId": "wrong-fetch-id",
+                    "attemptCorrelationId": None,
+                    "observation": {
+                        "plane": "TRANSPORT",
+                        "type": "TRANSPORT_IO",
+                        "kind": "CONNECT_TIMEOUT",
+                    },
+                    "classification": "TRANSIENT_TRANSPORT",
+                    "decision": {"kind": "RETRY_AFTER_BACKOFF"},
+                    "action": {"kind": "SCHEDULE_BACKOFF"},
+                }]
+                proof["recoveryBackoffs"] = [{
+                    "retryOrdinal": 1,
+                    "windowMs": 500,
+                    "delayMs": 367,
+                }]
+                proof["recoveryJitterSampleCount"] = 1
+                proof["recoveryJitterSamples"] = [367]
+                write_json(path, raw)
+            with self.assertRaisesRegex(
+                verifier.NetworkEvidenceError,
+                "recovery failure fetchId drift",
+            ):
+                case.verify()
+        finally:
+            case.close()
 
     def test_provider_failure_cannot_masquerade_as_network_recovery(self):
         bad = [{

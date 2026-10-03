@@ -622,6 +622,15 @@ def check_raw(
     validate_failure_lineage(failures, trial_id=trial_id)
     require(proof.get("recoveryFailureCount") == len(failures), f"{trial_id}: recovery failure count drift")
     require(len(failures) == len(attempts) - 1, f"{trial_id}: failure/attempt lineage drift")
+    for ordinal, (failure, attempt) in enumerate(zip(failures, attempts[:-1]), start=1):
+        require(
+            failure.get("fetchId") == attempt.get("fetchId"),
+            f"{trial_id}: recovery failure fetchId drift for owner {ordinal}",
+        )
+        require(
+            failure.get("attemptCorrelationId") == attempt.get("transportCorrelationId"),
+            f"{trial_id}: recovery failure correlation drift for owner {ordinal}",
+        )
 
     backoffs = proof.get("recoveryBackoffs")
     require(isinstance(backoffs, list) and len(backoffs) == len(failures), f"{trial_id}: recovery backoff lineage drift")
