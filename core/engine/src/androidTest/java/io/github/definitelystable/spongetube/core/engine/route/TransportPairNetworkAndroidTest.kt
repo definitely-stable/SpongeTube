@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Process
 import android.os.SystemClock
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
@@ -178,12 +179,24 @@ class TransportPairNetworkAndroidTest {
             val executor = checkNotNull(selected.executor)
 
             val fetchEvents = CopyOnWriteArrayList<FetchEvent>()
-            val sessionId = "m2-g2-" + scenario.family.lowercase() + "-" + planned.getString("trialId")
+            val frozenTrialId = planned.getString("trialId")
+            val sessionId = "m2-g2-" + scenario.family.lowercase() + "-" + frozenTrialId
             val broker = FetchBroker(
                 extentStore = store,
                 executor = executor,
                 sessionId = sessionId,
-                eventListener = FetchEventListener { fetchEvents += it },
+                eventListener = FetchEventListener { event ->
+                    fetchEvents += event
+                    if (
+                        scenario.family == "N6" &&
+                        event.event == FetchEventKind.ATTEMPT_FAILED
+                    ) {
+                        Log.i(
+                            G2D_SIGNAL_TAG,
+                            "trial=$frozenTrialId fetchId=${event.fetchId.value}",
+                        )
+                    }
+                },
             )
             val recoveryEvidence = RecoveryEvidenceRecorder(
                 runId = plan.getString("runId"),
@@ -667,6 +680,7 @@ class TransportPairNetworkAndroidTest {
         const val RECOVERY_JITTER_DOMAIN = "spongetube-g2-recovery-jitter-v1"
         const val FIRST_RESPONSE_TIMEOUT_MS = 12_000
         const val READ_TIMEOUT_MS = 12_000
+        const val G2D_SIGNAL_TAG = "SpongeG2D"
         val PROCESS_INSTANCE_ID: String = UUID.randomUUID().toString()
     }
 }
