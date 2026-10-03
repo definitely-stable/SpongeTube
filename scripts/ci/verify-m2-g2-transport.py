@@ -7,7 +7,6 @@ import copy
 import importlib.util
 import json
 import pathlib
-import re
 import sys
 from typing import Any, Mapping
 
@@ -145,7 +144,7 @@ def validate_harness(
     *,
     plan: Mapping[str, Any],
     trial_id: str,
-) -> int:
+) -> tuple[str, str, int, int, list[int]]:
     harness = trial_dir / "harness"
     active = load_json(harness / "toxiproxy-active-state.json")
     disarmed = load_json(harness / "toxiproxy-disarmed-state.json")
