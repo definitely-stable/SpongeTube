@@ -187,7 +187,10 @@ raise SystemExit("G2-E Media Lab trace did not settle to one replacement-route r
 PY
 }
 
-while IFS= read -r trial_id; do
+mapfile -t TRIAL_IDS < "$ROOT/schedule.txt"
+test "${#TRIAL_IDS[@]}" -eq 4
+
+for trial_id in "${TRIAL_IDS[@]}"; do
   test -n "$trial_id"
   echo "Executing frozen G2-E route replacement trial: $trial_id"
   one="$TRIAL_ROOT/$trial_id"
@@ -222,7 +225,7 @@ while IFS= read -r trial_id; do
   adb shell svc data enable >/dev/null 2>&1 || true
   adb shell svc wifi enable >/dev/null 2>&1 || true
   await_adb_device
-done < "$ROOT/schedule.txt"
+done
 
 test "$(find "$RAW_ROOT" -maxdepth 1 -type f -name '*.json' | wc -l)" -eq 4
 test -s "$TRACE"
