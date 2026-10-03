@@ -7,6 +7,7 @@ on:
       - ".github/workflows/m2-g2-transport.yml"
       - ".work/milestones/M2.md"
       - ".work/schemas/transport-phase-timings-v1.schema.json"
+      - ".work/schemas/transport-reset-environment-v1.schema.json"
       - ".work/schemas/transport-pair-plan-v1.schema.json"
       - ".work/schemas/transport-evaluation-trials-v1.schema.json"
       - "core/engine/**"
@@ -74,10 +75,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/ci/verify-m2-g2-transport.py
+          python3 -m py_compile scripts/measurement/m2_transport_reset_environment.py
           bash -n scripts/ci/run-m2-g2-transport.sh
           python3 scripts/measurement/tests/test_m2_transport_harness.py -v
           python3 scripts/measurement/tests/test_m2_transport_pair_plan.py -v
           python3 scripts/measurement/tests/test_m2_g2_transport_verifier.py -v
+          python3 scripts/measurement/tests/test_m2_transport_reset_environment.py -v
 
       - name: Execute frozen N6 paired schedule
         shell: bash
