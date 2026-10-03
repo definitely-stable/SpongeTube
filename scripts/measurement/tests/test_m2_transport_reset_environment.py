@@ -38,7 +38,11 @@ class TransportResetEnvironmentTest(unittest.TestCase):
         env.verify(doc, android_runtime=RUNTIME)
         self.assertEqual("2.12.0", doc["harness"]["toolVersion"])
         self.assertEqual(len(env.CODE_PATHS), len(doc["codeFingerprint"]["files"]))
-        self.assertFalse(doc["transportPath"]["adbReverseUsed"])
+        self.assertFalse(doc["transportPath"]["mediaAdbReverseUsed"])
+        self.assertEqual(
+            "ADB_REVERSE_LOOPBACK_HTTP",
+            doc["transportPath"]["labControlPath"],
+        )
         self.assertFalse(doc["transportPath"]["processWideNetworkBinding"])
 
     def test_verify_rejects_code_fingerprint_tampering(self):
