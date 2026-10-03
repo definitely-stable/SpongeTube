@@ -54,7 +54,8 @@
       "required": [
         "mediaPath",
         "proxyLifecycle",
-        "adbReverseUsed",
+        "mediaAdbReverseUsed",
+        "labControlPath",
         "processWideNetworkBinding"
       ],
       "properties": {
@@ -66,7 +67,11 @@
           "type": "string",
           "const": "FRESH_PER_TRIAL"
         },
-        "adbReverseUsed": { "type": "boolean", "const": false },
+        "mediaAdbReverseUsed": { "type": "boolean", "const": false },
+        "labControlPath": {
+          "type": "string",
+          "const": "ADB_REVERSE_LOOPBACK_HTTP"
+        },
         "processWideNetworkBinding": { "type": "boolean", "const": false }
       },
       "additionalProperties": false
