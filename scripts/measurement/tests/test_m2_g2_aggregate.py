@@ -360,6 +360,27 @@ class G2AggregateTest(unittest.TestCase):
                     git_commit=GIT_COMMIT,
                 )
 
+    def test_verify_index_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence, generated = create_bundle(pathlib.Path(tmp))
+            index = collect(
+                evidence_root=evidence,
+                generated_root=generated,
+                run_id="g2-test",
+                git_commit=GIT_COMMIT,
+            )
+            index["artifacts"][0]["path"] = "evidence/../escape.json"
+            with self.assertRaisesRegex(
+                G2AggregateError,
+                "unsafe indexed path",
+            ):
+                verify_index(
+                    index,
+                    evidence_root=evidence,
+                    generated_root=generated,
+                    expected_git_commit=GIT_COMMIT,
+                )
+
     def test_rejects_missing_required_experiment(self):
         with tempfile.TemporaryDirectory() as tmp:
             evidence, generated = create_bundle(pathlib.Path(tmp))
