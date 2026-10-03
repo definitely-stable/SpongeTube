@@ -129,13 +129,11 @@ class G2RouteVerifierTest(unittest.TestCase):
 
     def test_route_evidence_rejects_missing_pause(self):
         proof = route_proof()
-        proof["routeEvidence"]["policyEvaluations"] = [
-            {"decision": "ALLOW", "reason": "ALLOWED", "routeEpoch": 3},
-            {"decision": "ALLOW", "reason": "ALLOWED", "routeEpoch": 5},
-        ]
+        evaluations = proof["routeEvidence"]["policyEvaluations"]
+        proof["routeEvidence"]["policyEvaluations"] = [evaluations[0], evaluations[2]]
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
-            "did not pause",
+            "pause is not causally downstream",
         ):
             verifier.validate_route_evidence(proof, trial_id="trial-1")
 
