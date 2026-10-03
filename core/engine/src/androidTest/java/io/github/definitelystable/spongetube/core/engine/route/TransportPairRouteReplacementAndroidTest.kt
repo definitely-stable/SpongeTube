@@ -68,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -266,9 +267,7 @@ class TransportPairRouteReplacementAndroidTest {
             assertEquals(1, fetchEvents.count { it.event == FetchEventKind.ATTEMPT_STARTED })
 
             setConnectivityEnabled(instrumentation, enabled = false)
-            withTimeout(ROUTE_TIMEOUT_MS) {
-                monitor.observations.first { it.state == DefaultRouteState.Unavailable }
-            }
+            awaitStableUnavailable(monitor, routeRecorder)
             releaseFirstConnect.countDown()
 
             withTimeout(ROUTE_TIMEOUT_MS) { secondGateEntered.await() }
@@ -560,6 +559,24 @@ class TransportPairRouteReplacementAndroidTest {
         }
     }
 
+    private suspend fun awaitStableUnavailable(
+        monitor: DefaultRouteMonitor,
+        evidence: RouteEvidenceRecorder,
+    ) = withTimeout(ROUTE_TIMEOUT_MS) {
+        while (true) {
+            monitor.observations.first { it.state == DefaultRouteState.Unavailable }
+            val eventWatermark = evidence.events().lastOrNull()?.sequence ?: 0L
+            delay(ROUTE_UNAVAILABLE_STABILITY_MS)
+            val reboundObserved = evidence.events().any { event ->
+                event.sequence > eventWatermark &&
+                    event.stateAfter is DefaultRouteState.Available
+            }
+            if (!reboundObserved && monitor.observations.value.state == DefaultRouteState.Unavailable) {
+                return@withTimeout
+            }
+        }
+    }
+
     private suspend fun setConnectivityEnabled(
         instrumentation: Instrumentation,
         enabled: Boolean,
@@ -753,6 +770,7 @@ class TransportPairRouteReplacementAndroidTest {
         const val HTTP_TIMEOUT_MS = 12_000
         const val BARRIER_TIMEOUT_MS = 15_000L
         const val ROUTE_TIMEOUT_MS = 30_000L
+        const val ROUTE_UNAVAILABLE_STABILITY_MS = 750L
         const val OUTCOME_TIMEOUT_MS = 60_000L
         const val TEST_TIMEOUT_MS = 180_000L
         val PROCESS_INSTANCE_ID: String = UUID.randomUUID().toString()
