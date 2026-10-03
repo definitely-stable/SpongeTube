@@ -657,9 +657,10 @@ def check_raw(
             failure.get("fetchId") == attempt.get("fetchId"),
             f"{trial_id}: recovery failure fetchId drift for owner {ordinal}",
         )
+        expected_attempt_correlation = f"{attempt.get('fetchId')}:attempt-1"
         require(
-            failure.get("attemptCorrelationId") == attempt.get("transportCorrelationId"),
-            f"{trial_id}: recovery failure correlation drift for owner {ordinal}",
+            failure.get("attemptCorrelationId") == expected_attempt_correlation,
+            f"{trial_id}: recovery application-attempt correlation drift for owner {ordinal}",
         )
 
     backoffs = proof.get("recoveryBackoffs")
