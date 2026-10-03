@@ -15,6 +15,7 @@ MEASUREMENT = ROOT / "scripts" / "measurement"
 sys.path.insert(0, str(MEASUREMENT))
 
 from m2_contracts import scan_evidence_privacy  # noqa: E402
+from m2_route_oracle import RouteOracleError, verify_route_events  # noqa: E402
 from m2_transport_evaluation_oracle import analyze_trials  # noqa: E402
 from m2_transport_pair_plan import (  # noqa: E402
     planned_trial_schedule,
@@ -133,6 +134,12 @@ def validate_route_evidence(
     )
     require(route.get("androidApi") == 36, f"{trial_id}: route evidence API drift")
     require(route.get("clockDomain") == "ANDROID_MONOTONIC", f"{trial_id}: route clock drift")
+    try:
+        verify_route_events(route, expected_api=36)
+    except RouteOracleError as error:
+        raise RouteReplacementEvidenceError(
+            f"{trial_id}: route-events-v1 oracle failed: {error}"
+        ) from error
     events = route.get("events")
     evaluations = route.get("policyEvaluations")
     require(
