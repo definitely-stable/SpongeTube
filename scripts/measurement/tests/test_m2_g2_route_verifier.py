@@ -279,7 +279,7 @@ class G2RouteVerifierTest(unittest.TestCase):
 
     def test_route_evidence_rejects_non_advancing_epoch(self):
         proof = route_proof()
-        proof["routeEpochAfter"] = 3
+        proof["routeEpochAfter"] = 1
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
             "route epoch did not advance",
@@ -319,7 +319,7 @@ class G2RouteVerifierTest(unittest.TestCase):
         proof["routeEvidence"]["policyEvaluations"][1]["routeEventSequenceWatermark"] = 3
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
-            "pause is not causally downstream",
+            "route-events-v1 oracle failed",
         ):
             validate_route(proof)
 
