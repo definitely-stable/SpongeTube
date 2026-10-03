@@ -125,6 +125,18 @@ trace_count() {
   if [[ -f "$TRACE" ]]; then wc -l < "$TRACE"; else printf '0\n'; fi
 }
 
+await_adb_device() {
+  for attempt in {1..50}; do
+    if [[ "$(adb get-state 2>/dev/null || true)" == "device" ]]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  adb devices -l >&2 || true
+  echo "API36 emulator did not return to adb device state" >&2
+  return 1
+}
+
 await_trace_settle() {
   local raw_file="$1"
   local before_count="$2"
@@ -188,7 +200,7 @@ while IFS= read -r trial_id; do
   adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
   adb shell svc data enable >/dev/null 2>&1 || true
   adb shell svc wifi enable >/dev/null 2>&1 || true
-  adb get-state | grep -Fxq device
+  await_adb_device
 
   origin_before="$(trace_count)"
   printf '%s\n' "$origin_before" > "$one/origin-before-count.txt"
@@ -209,7 +221,7 @@ while IFS= read -r trial_id; do
   adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
   adb shell svc data enable >/dev/null 2>&1 || true
   adb shell svc wifi enable >/dev/null 2>&1 || true
-  adb get-state | grep -Fxq device
+  await_adb_device
 done < "$ROOT/schedule.txt"
 
 test "$(find "$RAW_ROOT" -maxdepth 1 -type f -name '*.json' | wc -l)" -eq 4
@@ -222,5 +234,5 @@ python3 scripts/measurement/m2_transport_pair_plan.py verify-results   --plan "$
 cleanup
 trap - EXIT
 bash scripts/faults/m2_e0_netns.sh assert-clean
-adb get-state | grep -Fxq device
+await_adb_device
 printf 'ok\n' > "$ROOT/cleanup.txt"
