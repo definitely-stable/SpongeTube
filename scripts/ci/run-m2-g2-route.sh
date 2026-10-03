@@ -181,9 +181,13 @@ while IFS= read -r trial_id; do
   one="$TRIAL_ROOT/$trial_id"
   mkdir -p "$one"
 
-  adb shell cmd connectivity airplane-mode disable >/dev/null
-  adb shell svc data enable >/dev/null
-  adb shell svc wifi enable >/dev/null
+  # These are hygiene/idempotence commands, not the route-readiness oracle.
+  # Some emulator service commands return non-zero when the requested state is
+  # already established. The Android producer independently waits for a usable
+  # non-VPN default route before admitting owner #1.
+  adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
+  adb shell svc data enable >/dev/null 2>&1 || true
+  adb shell svc wifi enable >/dev/null 2>&1 || true
   adb get-state | grep -Fxq device
 
   origin_before="$(trace_count)"
@@ -198,9 +202,13 @@ while IFS= read -r trial_id; do
   origin_after="$(await_trace_settle "$RAW_ROOT/$trial_id.json" "$origin_before")"
   printf '%s\n' "$origin_after" > "$one/origin-after-count.txt"
 
-  adb shell cmd connectivity airplane-mode disable >/dev/null
-  adb shell svc data enable >/dev/null
-  adb shell svc wifi enable >/dev/null
+  # These are hygiene/idempotence commands, not the route-readiness oracle.
+  # Some emulator service commands return non-zero when the requested state is
+  # already established. The Android producer independently waits for a usable
+  # non-VPN default route before admitting owner #1.
+  adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
+  adb shell svc data enable >/dev/null 2>&1 || true
+  adb shell svc wifi enable >/dev/null 2>&1 || true
   adb get-state | grep -Fxq device
 done < "$ROOT/schedule.txt"
 
