@@ -399,6 +399,7 @@ def evaluate_experiment(
     source_head = read_commit(root / "source-head-commit.txt", "source-head commit")
     checkout = read_commit(root / "checkout-commit.txt", "checkout commit")
     require(source_head == git_commit, f"{eid}: source-head commit mismatch")
+    require(checkout == git_commit, f"{eid}: checkout commit mismatch")
     require(
         (root / "cleanup.txt").is_file()
         and (root / "cleanup.txt").read_text(encoding="utf-8").strip() == "ok",
@@ -747,14 +748,21 @@ def verify_index(
             == expected_git_commit,
             f"{eid}: retained source commit drift",
         )
-        checkout_commits.add(
-            read_commit(root / "checkout-commit.txt", "checkout commit")
+        checkout_commit = read_commit(
+            root / "checkout-commit.txt",
+            "checkout commit",
         )
+        require(
+            checkout_commit == expected_git_commit,
+            f"{eid}: retained checkout commit drift",
+        )
+        checkout_commits.add(checkout_commit)
 
     require(
         len(checkout_commits) == 1
-        and next(iter(checkout_commits)) == index.get("checkoutCommit"),
-        "G2-F mixed checkout revisions",
+        and next(iter(checkout_commits)) == index.get("checkoutCommit")
+        and index.get("checkoutCommit") == expected_git_commit,
+        "G2-F checkout/source revision binding drift",
     )
     require(common == index.get("commonComparison"), "G2-F common comparison index drift")
     require(identities is not None, "G2-F backend identity missing")
