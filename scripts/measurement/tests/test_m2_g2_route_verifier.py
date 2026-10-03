@@ -18,6 +18,18 @@ def load_module():
 
 verifier = load_module()
 
+RUN_ID = "m2-g2-route-api36"
+TRIAL_ID = "trial-1"
+SESSION_ID = f"m2-g2-route-{TRIAL_ID}"
+
+
+def validate_route(proof):
+    verifier.validate_route_evidence(
+        proof,
+        trial_id=TRIAL_ID,
+        run_id=RUN_ID,
+    )
+
 
 def route_proof():
     return {
@@ -39,6 +51,8 @@ def route_proof():
         ],
         "routeEvidence": {
             "schemaVersion": 1,
+            "runId": RUN_ID,
+            "sessionId": SESSION_ID,
             "androidApi": 36,
             "clockDomain": "ANDROID_MONOTONIC",
             "events": [
@@ -117,7 +131,48 @@ def route_proof():
 
 class G2RouteVerifierTest(unittest.TestCase):
     def test_route_evidence_accepts_old_unavailable_replacement_sequence(self):
-        verifier.validate_route_evidence(route_proof(), trial_id="trial-1")
+        validate_route(route_proof())
+
+    def test_route_evidence_accepts_bootstrap_established_old_route(self):
+        proof = route_proof()
+        proof["routeEvidence"]["events"][1]["signal"] = "BOOTSTRAP_SNAPSHOT"
+        validate_route(proof)
+
+    def test_route_evidence_rejects_cross_run_route_artifact(self):
+        proof = route_proof()
+        proof["routeEvidence"]["runId"] = "other-run"
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "route evidence runId drift",
+        ):
+            validate_route(proof)
+
+    def test_route_evidence_rejects_cross_session_route_artifact(self):
+        proof = route_proof()
+        proof["routeEvidence"]["sessionId"] = "m2-g2-route-other-trial"
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "route evidence sessionId drift",
+        ):
+            validate_route(proof)
+
+    def test_route_evidence_rejects_initial_allow_before_route_established(self):
+        proof = route_proof()
+        proof["routeEvidence"]["policyEvaluations"][0]["routeEventSequenceWatermark"] = 1
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "initial route ALLOW is not causally bounded",
+        ):
+            validate_route(proof)
+
+    def test_route_evidence_rejects_missing_old_route_establishment(self):
+        proof = route_proof()
+        proof["routeEvidence"]["events"][1]["signal"] = "CAPABILITIES_CHANGED"
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "old route was never established",
+        ):
+            validate_route(proof)
 
     def test_route_evidence_rejects_non_advancing_epoch(self):
         proof = route_proof()
@@ -126,7 +181,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "route epoch did not advance",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_route_evidence_rejects_second_owner_before_restore(self):
         proof = route_proof()
@@ -135,7 +190,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "second owner started",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_route_evidence_rejects_missing_pause(self):
         proof = route_proof()
@@ -145,7 +200,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "pause is not causally downstream",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_route_evidence_rejects_second_owner_before_replacement_available(self):
         proof = route_proof()
@@ -154,7 +209,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "physical owners are not causally separated",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_route_evidence_rejects_pause_not_downstream_of_loss(self):
         proof = route_proof()
@@ -163,7 +218,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "pause is not causally downstream",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_route_evidence_rejects_allow_before_replacement_available(self):
         proof = route_proof()
@@ -172,7 +227,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "replacement route ALLOW is not causally downstream",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_route_evidence_rejects_non_monotonic_event_time(self):
         proof = route_proof()
@@ -181,7 +236,7 @@ class G2RouteVerifierTest(unittest.TestCase):
             verifier.RouteReplacementEvidenceError,
             "timestamps are not monotonic",
         ):
-            verifier.validate_route_evidence(proof, trial_id="trial-1")
+            validate_route(proof)
 
     def test_finalize_rejects_old_route_origin_reach(self):
         row = {
