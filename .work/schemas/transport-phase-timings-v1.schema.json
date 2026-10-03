@@ -16,7 +16,7 @@
     "schemaVersion": { "type": "integer", "const": 1 },
     "runId": { "type": "string", "minLength": 1 },
     "pairId": { "type": "string", "minLength": 1 },
-    "scenarioFamily": { "type": "string", "enum": ["N2", "N3", "N5"] },
+    "scenarioFamily": { "type": "string", "enum": ["N2", "N3", "N5", "N6"] },
     "clockDomain": { "type": "string", "const": "ANDROID_MONOTONIC" },
     "rows": {
       "type": "array",

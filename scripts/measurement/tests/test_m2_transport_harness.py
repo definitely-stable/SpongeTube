@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 FAULTS = ROOT / "scripts" / "faults"
@@ -141,6 +144,167 @@ class M2TransportHarnessContractTest(unittest.TestCase):
         }
         with self.assertRaises(toxi.ToxiproxyError):
             toxi.normalized_proxy_state(raw)
+
+
+    def test_disarm_removes_toxic_but_preserves_proxy_and_records_event(self):
+        fixture = scenario("n6-transport-reset.json")
+        active = {
+            "name": harness.PROXY_NAME,
+            "enabled": True,
+            "toxics": [{
+                "name": harness.TOXIC_NAME,
+                "type": "reset_peer",
+                "stream": "downstream",
+                "toxicityPpm": 1_000_000,
+                "attributes": {"timeout": 0},
+            }],
+        }
+        clean = {
+            "name": harness.PROXY_NAME,
+            "enabled": True,
+            "toxics": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            scenario_path = root / "scenario.json"
+            evidence_path = root / "events.json"
+            state_path = root / "state.json"
+            scenario_path.write_text(json.dumps(fixture), encoding="utf-8")
+            doc = {
+                "schemaVersion": 1,
+                "runId": "run",
+                "sessionId": "session",
+                "scenarioHash": harness.scenario_sha256(fixture),
+                "harness": {
+                    "harnessId": harness.HARNESS_ID,
+                    "harnessVersion": harness.HARNESS_VERSION,
+                    "toolId": harness.TOOL_ID,
+                    "toolVersion": harness.TOOL_VERSION,
+                },
+                "clockDomain": "HOST_FAULT_MONOTONIC",
+                "events": [],
+            }
+            evidence_path.write_text(json.dumps(doc), encoding="utf-8")
+            args = argparse.Namespace(
+                scenario=str(scenario_path),
+                api="http://control.invalid",
+                evidence=str(evidence_path),
+                state=str(state_path),
+                run_id="run",
+                session_id="session",
+            )
+            with mock.patch.object(
+                harness.toxi,
+                "get_proxy",
+                side_effect=[active, clean],
+            ), mock.patch.object(
+                harness.toxi,
+                "normalized_proxy_state",
+                side_effect=lambda value: value,
+            ), mock.patch.object(
+                harness.toxi,
+                "remove_toxic",
+            ) as remove:
+                harness.disarm(args)
+
+            remove.assert_called_once_with(
+                "http://control.invalid",
+                harness.PROXY_NAME,
+                harness.TOXIC_NAME,
+            )
+            retained = json.loads(evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual("FAULT_REMOVED", retained["events"][-1]["operation"])
+            self.assertEqual("REMOVED", retained["events"][-1]["result"])
+            self.assertEqual(clean, json.loads(state_path.read_text(encoding="utf-8")))
+
+    def test_disarm_rejects_drifted_toxic_readback(self):
+        fixture = scenario("n6-transport-reset.json")
+        drifted = {
+            "name": harness.PROXY_NAME,
+            "enabled": True,
+            "toxics": [{
+                "name": harness.TOXIC_NAME,
+                "type": "timeout",
+                "stream": "downstream",
+                "toxicityPpm": 1_000_000,
+                "attributes": {"timeout": 0},
+            }],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            scenario_path = root / "scenario.json"
+            evidence_path = root / "events.json"
+            state_path = root / "state.json"
+            scenario_path.write_text(json.dumps(fixture), encoding="utf-8")
+            evidence_path.write_text(json.dumps({
+                "schemaVersion": 1,
+                "runId": "run",
+                "sessionId": "session",
+                "scenarioHash": harness.scenario_sha256(fixture),
+                "harness": {
+                    "harnessId": harness.HARNESS_ID,
+                    "harnessVersion": harness.HARNESS_VERSION,
+                    "toolId": harness.TOOL_ID,
+                    "toolVersion": harness.TOOL_VERSION,
+                },
+                "clockDomain": "HOST_FAULT_MONOTONIC",
+                "events": [],
+            }), encoding="utf-8")
+            args = argparse.Namespace(
+                scenario=str(scenario_path),
+                api="http://control.invalid",
+                evidence=str(evidence_path),
+                state=str(state_path),
+                run_id="run",
+                session_id="session",
+            )
+            with mock.patch.object(
+                harness.toxi,
+                "get_proxy",
+                return_value=drifted,
+            ), mock.patch.object(
+                harness.toxi,
+                "normalized_proxy_state",
+                side_effect=lambda value: value,
+            ):
+                with self.assertRaisesRegex(Exception, "readback drifted"):
+                    harness.disarm(args)
+
+    def test_disarm_fails_closed_when_fault_was_already_removed(self):
+        fixture = scenario("n6-transport-reset.json")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            scenario_path = root / "scenario.json"
+            evidence_path = root / "events.json"
+            state_path = root / "state.json"
+            scenario_path.write_text(json.dumps(fixture), encoding="utf-8")
+            evidence_path.write_text(json.dumps({
+                "schemaVersion": 1,
+                "runId": "run",
+                "sessionId": "session",
+                "scenarioHash": harness.scenario_sha256(fixture),
+                "harness": {
+                    "harnessId": harness.HARNESS_ID,
+                    "harnessVersion": harness.HARNESS_VERSION,
+                    "toolId": harness.TOOL_ID,
+                    "toolVersion": harness.TOOL_VERSION,
+                },
+                "clockDomain": "HOST_FAULT_MONOTONIC",
+                "events": [{
+                    "operation": "FAULT_REMOVED",
+                }],
+            }), encoding="utf-8")
+            args = argparse.Namespace(
+                scenario=str(scenario_path),
+                api="http://control.invalid",
+                evidence=str(evidence_path),
+                state=str(state_path),
+                run_id="run",
+                session_id="session",
+            )
+            with self.assertRaisesRegex(Exception, "already removed"):
+                harness.disarm(args)
+
 
 
 if __name__ == "__main__":

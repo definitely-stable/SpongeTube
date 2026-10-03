@@ -44,6 +44,7 @@ import io.github.definitelystable.spongetube.core.storage.MediaAssetId
 import io.github.definitelystable.spongetube.core.storage.Sha256Digest
 import java.io.File
 import java.math.BigInteger
+import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -68,8 +69,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * G2-C executes one frozen NETWORK trial. CI owns netem lifecycle and launches
- * every planned row in a fresh instrumentation process.
+ * G2-C/G2-D executes one frozen NETWORK or TRANSPORT trial. CI owns the
+ * external fault lifecycle and launches every planned row in a fresh
+ * instrumentation process.
  *
  * This test never configures the fault: it only observes the same
  * RecoveryCoordinator -> FetchBroker -> ExtentStore path used by both exact
@@ -85,12 +87,20 @@ class TransportPairNetworkAndroidTest {
         val origin = arguments.getString(ARG_ORIGIN)?.trimEnd('/')
         val trialId = arguments.getString(ARG_TRIAL_ID)
         val scenarioRaw = arguments.getString(ARG_SCENARIO)
+            ?: arguments.getString(ARG_NETWORK_SCENARIO)
         val jitterSeed = arguments.getString(ARG_RECOVERY_JITTER_SEED)?.toLongOrNull()
+        val transportControlUrl = arguments.getString(ARG_TRANSPORT_CONTROL_URL)?.trimEnd('/')
         assumeTrue("G2-C requires an explicit origin", !origin.isNullOrBlank())
         assumeTrue("G2-C requires an explicit frozen trial id", !trialId.isNullOrBlank())
-        assumeTrue("G2-C requires an explicit NETWORK scenario", !scenarioRaw.isNullOrBlank())
+        assumeTrue("G2 paired execution requires an explicit scenario", !scenarioRaw.isNullOrBlank())
         assumeTrue("G2-C requires the frozen recovery-jitter seed", jitterSeed != null)
         val scenario = Scenario.parse(checkNotNull(scenarioRaw))
+        if (scenario.family == "N6") {
+            assumeTrue(
+                "G2-D requires an explicit lab-only transport control endpoint",
+                !transportControlUrl.isNullOrBlank(),
+            )
+        }
 
         val plan = instrumentation.context.assets.open(scenario.planAsset)
             .bufferedReader()
@@ -176,12 +186,25 @@ class TransportPairNetworkAndroidTest {
             val executor = checkNotNull(selected.executor)
 
             val fetchEvents = CopyOnWriteArrayList<FetchEvent>()
-            val sessionId = "m2-g2-" + scenario.family.lowercase() + "-" + planned.getString("trialId")
+            val frozenTrialId = planned.getString("trialId")
+            val sessionId = "m2-g2-" + scenario.family.lowercase() + "-" + frozenTrialId
             val broker = FetchBroker(
                 extentStore = store,
                 executor = executor,
                 sessionId = sessionId,
-                eventListener = FetchEventListener { fetchEvents += it },
+                eventListener = FetchEventListener { event ->
+                    fetchEvents += event
+                    if (
+                        scenario.family == "N6" &&
+                        event.event == FetchEventKind.ATTEMPT_FAILED
+                    ) {
+                        acknowledgeTransportResetBarrier(
+                            controlBaseUrl = checkNotNull(transportControlUrl),
+                            trialId = frozenTrialId,
+                            event = event,
+                        )
+                    }
+                },
             )
             val recoveryEvidence = RecoveryEvidenceRecorder(
                 runId = plan.getString("runId"),
@@ -195,7 +218,7 @@ class TransportPairNetworkAndroidTest {
             val bindings = DeliveryBindingCoordinator(
                 initialMaterial = deliveryMaterial,
                 refresher = DeliveryBindingRefresher { _, _ ->
-                    error("NETWORK fault must not refresh delivery binding")
+                    error("G2 network/transport fault must not refresh delivery binding")
                 },
             )
             val routeGate = RouteAwareRecoveryAttemptGate(
@@ -380,7 +403,7 @@ class TransportPairNetworkAndroidTest {
 
             val raw = JSONObject().apply {
                 put("schemaVersion", 1)
-                put("phase", "M2-G2-C-NETWORK")
+                put("phase", scenario.phase)
                 put("scenarioFamily", scenario.family)
                 put("scenarioVariant", scenario.variant)
                 put("runId", plan.getString("runId"))
@@ -479,7 +502,7 @@ class TransportPairNetworkAndroidTest {
                 })
             }
             PlatformTestStorageRegistry.getInstance().openOutputFile(
-                "m2-g2-network/" + scenario.artifactSlug + "/" +
+                scenario.artifactRoot + "/" + scenario.artifactSlug + "/" +
                     planned.getString("trialId") + ".json",
             ).bufferedWriter().use { writer ->
                 writer.write(raw.toString())
@@ -509,6 +532,41 @@ class TransportPairNetworkAndroidTest {
             }
         }
         error("trial $trialId not found in frozen plan")
+    }
+
+    private fun acknowledgeTransportResetBarrier(
+        controlBaseUrl: String,
+        trialId: String,
+        event: FetchEvent,
+    ) {
+        val attemptCorrelationId = checkNotNull(event.attemptCorrelationId) {
+            "G2-D ATTEMPT_FAILED must retain application attempt correlation"
+        }
+        val body = JSONObject().apply {
+            put("signal", "ATTEMPT_FAILED")
+            put("trialId", trialId)
+            put("fetchId", event.fetchId.value)
+            put("attemptCorrelationId", attemptCorrelationId)
+        }.toString().toByteArray(StandardCharsets.UTF_8)
+
+        val connection = URL("$controlBaseUrl/disarm").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = G2D_CONTROL_CONNECT_TIMEOUT_MS
+            connection.readTimeout = G2D_CONTROL_READ_TIMEOUT_MS
+            connection.doOutput = true
+            connection.useCaches = false
+            connection.instanceFollowRedirects = false
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "G2-D reset barrier rejected ATTEMPT_FAILED: HTTP ${connection.responseCode}"
+            }
+            connection.inputStream.use { it.readBytes() }
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun request(id: String): FetchRequest = FetchRequest(
@@ -601,19 +659,52 @@ class TransportPairNetworkAndroidTest {
         val variant: String,
         val planAsset: String,
         val artifactSlug: String,
+        val artifactRoot: String,
+        val phase: String,
     ) {
         companion object {
             fun parse(raw: String?): Scenario = when (raw) {
-                "N2" -> Scenario("N2", "HIGH_RTT_JITTER", "m2-g2-n2-plan.json", "n2")
-                "N3" -> Scenario("N3", "BURST_PACKET_LOSS", "m2-g2-n3-plan.json", "n3")
-                "N5" -> Scenario("N5", "BURST_LOSS", "m2-g2-n5-plan.json", "n5")
+                "N2" -> Scenario(
+                    "N2",
+                    "HIGH_RTT_JITTER",
+                    "m2-g2-n2-plan.json",
+                    "n2",
+                    "m2-g2-network",
+                    "M2-G2-C-NETWORK",
+                )
+                "N3" -> Scenario(
+                    "N3",
+                    "BURST_PACKET_LOSS",
+                    "m2-g2-n3-plan.json",
+                    "n3",
+                    "m2-g2-network",
+                    "M2-G2-C-NETWORK",
+                )
+                "N5" -> Scenario(
+                    "N5",
+                    "BURST_LOSS",
+                    "m2-g2-n5-plan.json",
+                    "n5",
+                    "m2-g2-network",
+                    "M2-G2-C-NETWORK",
+                )
                 "N5GE" -> Scenario(
                     "N5",
                     "BURST_LOSS_GE_MOMENT_MATCH",
                     "m2-g2-n5-ge-plan.json",
                     "n5-ge",
+                    "m2-g2-network",
+                    "M2-G2-C-NETWORK",
                 )
-                else -> error("unsupported G2-C NETWORK scenario: $raw")
+                "N6" -> Scenario(
+                    "N6",
+                    "TRANSPORT_RESET",
+                    "m2-g2-n6-plan.json",
+                    "n6",
+                    "m2-g2-transport",
+                    "M2-G2-D-TRANSPORT_RESET",
+                )
+                else -> error("unsupported G2 paired scenario: $raw")
             }
         }
     }
@@ -621,8 +712,10 @@ class TransportPairNetworkAndroidTest {
     private companion object {
         const val ARG_ORIGIN = "spongetube.m2g2.originBaseUrl"
         const val ARG_TRIAL_ID = "spongetube.m2g2.trialId"
-        const val ARG_SCENARIO = "spongetube.m2g2.networkScenario"
+        const val ARG_SCENARIO = "spongetube.m2g2.scenario"
+        const val ARG_NETWORK_SCENARIO = "spongetube.m2g2.networkScenario"
         const val ARG_RECOVERY_JITTER_SEED = "spongetube.m2g2.recoveryJitterSeed"
+        const val ARG_TRANSPORT_CONTROL_URL = "spongetube.m2g2.transportControlUrl"
         const val RESOURCE_PATH = "/fixtures/F1/segment-0-00001.m4s"
         const val RESOURCE_LENGTH = 711_501L
         const val RESOURCE_SHA256 =
@@ -631,6 +724,8 @@ class TransportPairNetworkAndroidTest {
         const val RECOVERY_JITTER_DOMAIN = "spongetube-g2-recovery-jitter-v1"
         const val FIRST_RESPONSE_TIMEOUT_MS = 12_000
         const val READ_TIMEOUT_MS = 12_000
+        const val G2D_CONTROL_CONNECT_TIMEOUT_MS = 2_000
+        const val G2D_CONTROL_READ_TIMEOUT_MS = 10_000
         val PROCESS_INSTANCE_ID: String = UUID.randomUUID().toString()
     }
 }

@@ -1192,6 +1192,9 @@ M2_SLICE_SCHEMAS = frozenset({
     # G2-C raw timing sidecar is recovery-chain relative and preserves failed
     # physical attempts without changing the frozen G0 trial schema.
     "transport-phase-timings-v1.schema.json",
+    # G2-D binds pinned Toxiproxy/runtime/control-path provenance without
+    # mutating already-frozen G0/G2-C evidence contracts.
+    "transport-reset-environment-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and

@@ -427,12 +427,13 @@ def check_raw(
     plan: Mapping[str, Any],
     device_state: Mapping[str, Any],
     recovery_policy: Mapping[str, Any],
+    expected_phase: str = "M2-G2-C-NETWORK",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     trial_id = expected["trialId"]
     spec = SPECS[profile]
     family = spec["family"]
     require(raw.get("schemaVersion") == 1, f"{trial_id}: wrong raw schema")
-    require(raw.get("phase") == "M2-G2-C-NETWORK", f"{trial_id}: wrong phase")
+    require(raw.get("phase") == expected_phase, f"{trial_id}: wrong phase")
     require(raw.get("scenarioFamily") == family, f"{trial_id}: wrong scenario family")
     require(raw.get("scenarioVariant") == spec["variant"], f"{trial_id}: wrong scenario variant")
     require(raw.get("runId") == plan["runId"] and raw.get("pairId") == plan["pairId"], f"{trial_id}: run identity drift")
@@ -656,9 +657,10 @@ def check_raw(
             failure.get("fetchId") == attempt.get("fetchId"),
             f"{trial_id}: recovery failure fetchId drift for owner {ordinal}",
         )
+        expected_attempt_correlation = f"{attempt.get('fetchId')}:attempt-1"
         require(
-            failure.get("attemptCorrelationId") == attempt.get("transportCorrelationId"),
-            f"{trial_id}: recovery failure correlation drift for owner {ordinal}",
+            failure.get("attemptCorrelationId") == expected_attempt_correlation,
+            f"{trial_id}: recovery application-attempt correlation drift for owner {ordinal}",
         )
 
     backoffs = proof.get("recoveryBackoffs")
