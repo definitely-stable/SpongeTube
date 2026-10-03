@@ -110,6 +110,7 @@ def validate_route_evidence(
     proof: Mapping[str, Any],
     *,
     trial_id: str,
+    run_id: str,
 ) -> None:
     before = proof.get("routeEpochBefore")
     after = proof.get("routeEpochAfter")
@@ -125,6 +126,11 @@ def validate_route_evidence(
     route = proof.get("routeEvidence")
     require(isinstance(route, Mapping), f"{trial_id}: route evidence missing")
     require(route.get("schemaVersion") == 1, f"{trial_id}: route evidence schema drift")
+    require(route.get("runId") == run_id, f"{trial_id}: route evidence runId drift")
+    require(
+        route.get("sessionId") == f"m2-g2-route-{trial_id}",
+        f"{trial_id}: route evidence sessionId drift",
+    )
     require(route.get("androidApi") == 36, f"{trial_id}: route evidence API drift")
     require(route.get("clockDomain") == "ANDROID_MONOTONIC", f"{trial_id}: route clock drift")
     events = route.get("events")
@@ -158,6 +164,22 @@ def validate_route_evidence(
     require(signals[0] == "MONITOR_STARTED", f"{trial_id}: route monitor start missing")
     require(signals[-1] == "MONITOR_STOPPED", f"{trial_id}: route monitor stop not terminal")
 
+    initial_route_establishments = [
+        row for row in events
+        if row.get("signal") in {"AVAILABLE", "BOOTSTRAP_SNAPSHOT"}
+        and row.get("disposition") == "APPLIED"
+        and row.get("routeEpochAfter") == before
+        and isinstance(row.get("runtimeStateAfter"), Mapping)
+        and row["runtimeStateAfter"].get("state") == "AVAILABLE"
+    ]
+    require(
+        initial_route_establishments,
+        f"{trial_id}: admitted old route was never established by route evidence",
+    )
+    initial_route_sequence = min(
+        row["sequence"] for row in initial_route_establishments
+    )
+
     old_route_losses = [
         row for row in events
         if row.get("signal") == "LOST"
@@ -168,6 +190,10 @@ def validate_route_evidence(
     ]
     require(old_route_losses, f"{trial_id}: applied loss of the admitted old route not observed")
     old_loss_sequence = min(row["sequence"] for row in old_route_losses)
+    require(
+        initial_route_sequence < old_loss_sequence,
+        f"{trial_id}: admitted old route was not established before its loss",
+    )
 
     replacement_availability = [
         row for row in events
@@ -228,6 +254,12 @@ def validate_route_evidence(
         and first.get("reason") == "ROUTE_READY"
         and first.get("routeEpoch") == before,
         f"{trial_id}: initial route permit is not the admitted old route",
+    )
+    require(
+        initial_route_sequence
+        <= first["routeEventSequenceWatermark"]
+        < old_loss_sequence,
+        f"{trial_id}: initial route ALLOW is not causally bounded by old-route availability/loss",
     )
     pause_indices = [
         index for index, row in enumerate(evaluations)
@@ -326,7 +358,8 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         and prelude[0].get("plane") == "control"
         and prelude[0].get("method") == "GET"
         and prelude[0].get("path") == "/__lab/config"
-        and prelude[0].get("status") == 200,
+        and prelude[0].get("status") == 200
+        and prelude[0].get("outcome") == "SUCCESS",
         "G2-E unexpected Media Lab prelude",
     )
 
@@ -355,7 +388,11 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
             expected_phase="M2-G2-E-ROUTE_REPLACEMENT",
             allow_route_replacement=True,
         )
-        validate_route_evidence(raw["proof"], trial_id=trial_id)
+        validate_route_evidence(
+            raw["proof"],
+            trial_id=trial_id,
+            run_id=plan["runId"],
+        )
         require(proof["physicalAttemptCount"] == 2, f"{trial_id}: owner count drift")
         require(
             raw["proof"]["recoveryFailureCount"] == 1
