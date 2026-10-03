@@ -61,6 +61,7 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -78,7 +79,6 @@ import kotlinx.coroutines.yield
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -155,6 +155,7 @@ class TransportPairRouteReplacementAndroidTest {
         var restoredEpoch = 0L
         var chargesBeforeRestore = 0
         var attemptsBeforeRestore = 0
+        val replacementValidationRendezvousObserved = AtomicBoolean(false)
 
         try {
             val initial = awaitDirectObservation(monitor, backend)
@@ -233,7 +234,16 @@ class TransportPairRouteReplacementAndroidTest {
             val gate = RecoveryAttemptGate { chainId ->
                 val ordinal = gateCalls.incrementAndGet()
                 if (ordinal == 2) secondGateEntered.complete(Unit)
-                exactGate.awaitPermit(chainId)
+                val permit = exactGate.awaitPermit(chainId)
+                if (ordinal == 2) {
+                    awaitValidatedReplacementRoute(
+                        monitor = monitor,
+                        routeEpoch = checkNotNull(permit.routeEpoch),
+                        routeBinding = checkNotNull(permit.routeBinding),
+                    )
+                    replacementValidationRendezvousObserved.set(true)
+                }
+                permit
             }
             val jitter = G2RecoveryJitter(checkNotNull(jitterSeed))
             assertEquals(367L, G2RecoveryJitter(checkNotNull(jitterSeed)).uniformInclusive(500L))
@@ -291,11 +301,27 @@ class TransportPairRouteReplacementAndroidTest {
             val restored = awaitDirectObservation(monitor, backend, initialEpoch)
             restoredEpoch = (restored.state as DefaultRouteState.Available).routeEpoch
             assertTrue(restoredEpoch > initialEpoch)
-            assertNotEquals(initial.executionBinding, restored.executionBinding)
+            // routeEpoch, not Android Network/binding object identity, is the
+            // contract boundary. Android may reuse the same Network object
+            // after an UNAVAILABLE gap; the reducer must still start a new epoch.
+            // Conversely, a genuinely different platform route must never
+            // retain the old route's executable binding.
+            val initialRouteRef = routeRefForEpoch(routeRecorder, initialEpoch)
+            val restoredRouteRef = routeRefForEpoch(routeRecorder, restoredEpoch)
+            if (initialRouteRef != restoredRouteRef) {
+                assertTrue(
+                    "G2-E replacement route reused the old route execution binding",
+                    initial.executionBinding !== restored.executionBinding,
+                )
+            }
 
             val outcome = withTimeout(OUTCOME_TIMEOUT_MS) { outcomeDeferred.await() }
             handle.close()
             assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
+            assertTrue(
+                "G2-E replacement validation rendezvous was not observed",
+                replacementValidationRendezvousObserved.get(),
+            )
 
             coordinator.shutdown()
             broker.shutdown()
@@ -375,8 +401,6 @@ class TransportPairRouteReplacementAndroidTest {
 
             monitor.shutdown()
             monitorStopped = true
-            val finalState = monitor.observations.value.state
-            val finalEpoch = (finalState as? DefaultRouteState.Available)?.routeEpoch ?: restoredEpoch
             val correlatedOriginIds = attemptProofs.mapNotNull {
                 it.transportCorrelationId?.toLongOrNull()
             }
@@ -427,6 +451,7 @@ class TransportPairRouteReplacementAndroidTest {
                     put("RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION")
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("ROUTE_REPLACEMENT_RESILIENCE_ONLY")
+                    put("LAB_ONLY_REPLACEMENT_VALIDATION_RENDEZVOUS")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
                     put("FIRST_BYTE_IS_FIRST_ACCEPTED_FETCHBROKER_CHUNK_IN_RECOVERY_CHAIN")
                     put("COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION")
@@ -454,11 +479,15 @@ class TransportPairRouteReplacementAndroidTest {
                     put("extentStoreInitiallyEmpty", true)
                     put("transportSessionFresh", true)
                     put("routeEpochBefore", initialEpoch)
-                    put("routeEpochAfter", finalEpoch)
+                    put("routeEpochAfter", restoredEpoch)
                     put("routeUnavailableObserved", true)
                     put("chargesBeforeRestore", chargesBeforeRestore)
                     put("attemptsBeforeRestore", attemptsBeforeRestore)
                     put("gateCalls", gateCalls.get())
+                    put(
+                        "replacementValidationRendezvousObserved",
+                        replacementValidationRendezvousObserved.get(),
+                    )
                     put("routeEvidence", JSONObject(routeRecorder.toArtifactMap()))
                     put("bindingRevision", "binding-1")
                     put("bindingTargetResolutionCount", bindingHits.get())
@@ -558,6 +587,38 @@ class TransportPairRouteReplacementAndroidTest {
                 )
         }
     }
+
+    private suspend fun awaitValidatedReplacementRoute(
+        monitor: DefaultRouteMonitor,
+        routeEpoch: Long,
+        routeBinding: RouteExecutionBinding,
+    ) = withTimeout(ROUTE_TIMEOUT_MS) {
+        monitor.observations.first { observation ->
+            val state = observation.state as? DefaultRouteState.Available
+            state != null &&
+                state.routeEpoch == routeEpoch &&
+                state.capabilitiesReceived &&
+                state.capabilities.validated == ObservedBoolean.TRUE &&
+                state.capabilities.vpn == ObservedBoolean.FALSE &&
+                state.capabilities.internet != ObservedBoolean.FALSE &&
+                observation.executionBinding === routeBinding
+        }
+    }
+
+    private fun routeRefForEpoch(
+        evidence: RouteEvidenceRecorder,
+        routeEpoch: Long,
+    ): PlatformRouteRef =
+        checkNotNull(
+            evidence.events().firstOrNull { event ->
+                event.disposition == RouteEventDisposition.APPLIED &&
+                    event.routeEpochAfter == routeEpoch &&
+                    (
+                        event.signal == RouteSignalKind.AVAILABLE ||
+                            event.signal == RouteSignalKind.BOOTSTRAP_SNAPSHOT
+                    )
+            }?.platformRouteRef,
+        ) { "G2-E route epoch $routeEpoch lacks an establishment route ref" }
 
     private suspend fun awaitStableUnavailable(
         monitor: DefaultRouteMonitor,
