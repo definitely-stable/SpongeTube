@@ -428,6 +428,7 @@ def check_raw(
     device_state: Mapping[str, Any],
     recovery_policy: Mapping[str, Any],
     expected_phase: str = "M2-G2-C-NETWORK",
+    allow_route_replacement: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     trial_id = expected["trialId"]
     spec = SPECS[profile]
@@ -504,10 +505,21 @@ def check_raw(
     require(proof.get("committedBytes") == RESOURCE_LENGTH, f"{trial_id}: committed bytes drift")
     require(proof.get("extentStoreInitiallyEmpty") is True, f"{trial_id}: COLD store proof failed")
     require(proof.get("transportSessionFresh") is True, f"{trial_id}: transport session reset not asserted")
-    require(
-        proof.get("routeEpochBefore") == route["permitRouteEpoch"] == proof.get("routeEpochAfter"),
-        f"{trial_id}: route epoch changed during NETWORK trial",
-    )
+    route_before = proof.get("routeEpochBefore")
+    route_after = proof.get("routeEpochAfter")
+    if allow_route_replacement:
+        require(
+            type(route_before) is int
+            and type(route_after) is int
+            and route_before == route["permitRouteEpoch"]
+            and route_after > route_before,
+            f"{trial_id}: canonical route replacement epochs invalid",
+        )
+    else:
+        require(
+            route_before == route["permitRouteEpoch"] == route_after,
+            f"{trial_id}: route epoch changed during stable-route trial",
+        )
     require(proof.get("bindingRevision") == "binding-1", f"{trial_id}: binding revision drift")
     require(proof.get("androidApi") == device_state["androidApi"], f"{trial_id}: Android API drift")
     require(proof.get("primaryAbi") == device_state["abi"], f"{trial_id}: ABI drift")
@@ -531,15 +543,24 @@ def check_raw(
     require(len(attempts) == owner_count, f"{trial_id}: owner/physical-attempt count drift")
     require(proof.get("bindingTargetResolutionCount") == owner_count, f"{trial_id}: binding target count drift")
     permit_epochs = proof.get("permitRouteEpochs")
-    require(
-        isinstance(permit_epochs, list)
-        and len(permit_epochs) == owner_count
-        and all(
-            type(epoch) is int and epoch == route["permitRouteEpoch"]
-            for epoch in permit_epochs
-        ),
-        f"{trial_id}: per-owner exact-route permit epoch drift",
-    )
+    if allow_route_replacement:
+        require(
+            isinstance(permit_epochs, list)
+            and len(permit_epochs) == owner_count
+            and owner_count == 2
+            and permit_epochs == [route_before, route_after],
+            f"{trial_id}: route-replacement permit epochs drift",
+        )
+    else:
+        require(
+            isinstance(permit_epochs, list)
+            and len(permit_epochs) == owner_count
+            and all(
+                type(epoch) is int and epoch == route["permitRouteEpoch"]
+                for epoch in permit_epochs
+            ),
+            f"{trial_id}: per-owner exact-route permit epoch drift",
+        )
     require(
         sum(1 for attempt in attempts if attempt.get("terminal") == "ATTEMPT_COMPLETED") == 1
         and attempts[-1].get("terminal") == "ATTEMPT_COMPLETED"
