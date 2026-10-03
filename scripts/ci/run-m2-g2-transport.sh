@@ -23,6 +23,10 @@ cleanup() {
     kill "$TEST_PID" >/dev/null 2>&1 || true
     wait "$TEST_PID" >/dev/null 2>&1 || true
   fi
+  if [[ -n "${SIGNAL_PID:-}" ]] && kill -0 "$SIGNAL_PID" 2>/dev/null; then
+    kill "$SIGNAL_PID" >/dev/null 2>&1 || true
+    wait "$SIGNAL_PID" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${LAB_PID:-}" ]] && kill -0 "$LAB_PID" 2>/dev/null; then
     kill "$LAB_PID" >/dev/null 2>&1 || true
     wait "$LAB_PID" >/dev/null 2>&1 || true
@@ -163,57 +167,54 @@ trace_count() {
   if [[ -f "$TRACE" ]]; then wc -l < "$TRACE"; else printf '0\n'; fi
 }
 
-await_reset_trigger() {
-  local before="$1"
-  local trial_id="$2"
+await_android_fault_signal() {
+  local trial_id="$1"
+  local log_file="$2"
   local output="$3"
-  python3 - "$TRACE" "$before" "$trial_id" "$output" <<'PY'
+  local marker="trial=$trial_id fetchId="
+  local line=""
+  local matching=0
+
+  for attempt in {1..1000}; do
+    matching="$(grep -F -c "$marker" "$log_file" 2>/dev/null || true)"
+    if [[ "$matching" -gt 0 ]]; then
+      [[ "$matching" -eq 1 ]] || {
+        echo "multiple N6 owner failures observed before disarm: $matching" >&2
+        cat "$log_file" >&2 || true
+        return 1
+      }
+      line="$(grep -F "$marker" "$log_file" | head -1)"
+      break
+    fi
+    if ! kill -0 "$TEST_PID" 2>/dev/null; then
+      echo "N6 Android test exited before emitting ATTEMPT_FAILED rendezvous" >&2
+      cat "$log_file" >&2 || true
+      return 1
+    fi
+    sleep 0.01
+  done
+
+  test -n "$line"
+  local fetch_id
+  fetch_id="$(printf '%s\n' "$line" | sed -n "s/.*trial=$trial_id fetchId=\([^[:space:]]\+\).*/\1/p")"
+  test -n "$fetch_id"
+
+  python3 - "$output" "$trial_id" "$fetch_id" "$matching" <<'PY'
 import json, pathlib, sys, time
-trace = pathlib.Path(sys.argv[1])
-before = int(sys.argv[2])
-trial_id = sys.argv[3]
-output = pathlib.Path(sys.argv[4])
-deadline = time.monotonic() + 10.0
-resource = "/fixtures/F1/segment-0-00001.m4s"
-
-def rows():
-    if not trace.exists():
-        return []
-    raw = trace.read_text(encoding="utf-8")
-    end = raw.rfind("\n")
-    if end < 0:
-        return []
-    return [json.loads(line) for line in raw[:end].splitlines() if line.strip()]
-
-while time.monotonic() < deadline:
-    current = rows()
-    for row in current[before:]:
-        if (
-            row.get("plane") == "data"
-            and row.get("method") == "GET"
-            and row.get("path") == resource
-            and isinstance(row.get("requestId"), int)
-        ):
-            observed_rows = current[before:]
-            data_rows = [
-                value for value in observed_rows
-                if value.get("plane") == "data"
-                and value.get("method") == "GET"
-                and value.get("path") == resource
-            ]
-            doc = {
-                "schemaVersion": 1,
-                "trialId": trial_id,
-                "clockDomain": "HOST_FAULT_MONOTONIC",
-                "originRequestId": row["requestId"],
-                "observedAtElapsedRealtimeNs": time.monotonic_ns(),
-                "originRowsObservedAtTrigger": len(observed_rows),
-                "mediaGetsObservedAtTrigger": len(data_rows),
-            }
-            output.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            raise SystemExit(0)
-    time.sleep(0.01)
-raise SystemExit("N6 first origin-reaching request was not observed before timeout")
+output, trial_id, fetch_id, matching = sys.argv[1:]
+doc = {
+    "schemaVersion": 1,
+    "trialId": trial_id,
+    "signal": "ATTEMPT_FAILED",
+    "fetchId": fetch_id,
+    "hostObservationClockDomain": "HOST_FAULT_MONOTONIC",
+    "hostObservedAtElapsedRealtimeNs": time.monotonic_ns(),
+    "failureSignalsObservedAtTrigger": int(matching),
+}
+pathlib.Path(output).write_text(
+    json.dumps(doc, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
 PY
 }
 
@@ -295,15 +296,22 @@ while IFS= read -r trial_id; do
     .toxics[0].attributes.timeout == 0
   ' "$one/harness/toxiproxy-active-state.json" >/dev/null
 
+  adb logcat -c
+  adb logcat -v raw -s SpongeG2D:I '*:S' > "$one/android-fault-signal.log" 2>&1 &
+  SIGNAL_PID=$!
+
   ./gradlew --dependency-verification=strict     :core:engine:connectedDebugAndroidTest     -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.route.TransportPairNetworkAndroidTest     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.originBaseUrl="http://$MEDIA_ADDR:18080"     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.trialId="$trial_id"     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.scenario=N6     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.recoveryJitterSeed="$jitter_seed" &
   TEST_PID=$!
 
-  await_reset_trigger "$origin_before" "$trial_id" "$one/reset-trigger.json"
+  await_android_fault_signal "$trial_id" "$one/android-fault-signal.log" "$one/reset-trigger.json"
 
   python3 scripts/faults/m2_transport_harness.py disarm "${common[@]}"     --state "$one/harness/toxiproxy-disarmed-state.json"
 
   wait "$TEST_PID"
   TEST_PID=""
+  kill "$SIGNAL_PID" >/dev/null 2>&1 || true
+  wait "$SIGNAL_PID" >/dev/null 2>&1 || true
+  SIGNAL_PID=""
 
   source_file="$(find core/engine/build/outputs/connected_android_test_additional_output     -type f -path "*/m2-g2-transport/n6/$trial_id.json" -print -quit)"
   test -n "$source_file"
