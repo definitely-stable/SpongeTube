@@ -1,0 +1,102 @@
+name: M2-G2 Paired API36 Transport Reset
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-transport.yml"
+      - ".work/milestones/M2.md"
+      - ".work/schemas/transport-phase-timings-v1.schema.json"
+      - ".work/schemas/transport-pair-plan-v1.schema.json"
+      - ".work/schemas/transport-evaluation-trials-v1.schema.json"
+      - "core/engine/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/run-m2-g2-transport.sh"
+      - "scripts/ci/verify-m2-g2-transport.py"
+      - "scripts/ci/verify-m2-g2-network.py"
+      - "scripts/ci/prepare-emulator.sh"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/n6-transport-reset.json"
+      - "test-fixtures/network/m2/g2/**"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-transport.yml"
+      - ".work/milestones/M2.md"
+      - "core/engine/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/run-m2-g2-transport.sh"
+      - "scripts/ci/verify-m2-g2-transport.py"
+      - "scripts/ci/verify-m2-g2-network.py"
+      - "test-fixtures/network/m2/n6-transport-reset.json"
+      - "test-fixtures/network/m2/g2/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-g2-transport-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api36-n6-paired:
+    name: m2-g2-n6-api36-paired
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    env:
+      SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Run host transport contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/tests/test_m2_transport_harness.py -v
+          python3 scripts/measurement/tests/test_m2_transport_pair_plan.py -v
+
+      - name: Execute frozen N6 paired schedule
+        shell: bash
+        run: bash scripts/ci/run-m2-g2-transport.sh
+
+      - name: Cleanup G2-D lab
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          bash scripts/faults/m2_e0_netns.sh teardown >/dev/null 2>&1 || true
+          adb emu kill >/dev/null 2>&1 || true
+          rm -f core/engine/src/androidTest/assets/m2-g2-n6-plan.json
+
+      - name: Upload G2-D N6 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-g2-n6-api36-paired
+          path: |
+            build/m2-g2-transport/n6/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/reports/androidTests/
+          if-no-files-found: error
+          retention-days: 14
