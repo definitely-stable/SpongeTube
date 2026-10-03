@@ -1,6 +1,7 @@
 name: M2-G2 Paired API36 Route Replacement
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - ".work/milestones/M2.md"
