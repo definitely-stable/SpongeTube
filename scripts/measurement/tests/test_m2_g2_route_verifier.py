@@ -32,16 +32,74 @@ def route_proof():
             "androidApi": 36,
             "clockDomain": "ANDROID_MONOTONIC",
             "events": [
-                {"signal": "MONITOR_STARTED"},
-                {"signal": "AVAILABLE"},
-                {"signal": "LOST"},
-                {"signal": "AVAILABLE"},
-                {"signal": "MONITOR_STOPPED"},
+                {
+                    "sequence": 1,
+                    "elapsedRealtimeNs": 100,
+                    "signal": "MONITOR_STARTED",
+                    "disposition": "APPLIED",
+                    "routeEpochBefore": None,
+                    "routeEpochAfter": None,
+                    "runtimeStateAfter": {"state": "INITIALIZING"},
+                },
+                {
+                    "sequence": 2,
+                    "elapsedRealtimeNs": 200,
+                    "signal": "AVAILABLE",
+                    "disposition": "APPLIED",
+                    "routeEpochBefore": None,
+                    "routeEpochAfter": 3,
+                    "runtimeStateAfter": {"state": "AVAILABLE"},
+                },
+                {
+                    "sequence": 3,
+                    "elapsedRealtimeNs": 300,
+                    "signal": "LOST",
+                    "disposition": "APPLIED",
+                    "routeEpochBefore": 3,
+                    "routeEpochAfter": None,
+                    "runtimeStateAfter": {"state": "UNAVAILABLE"},
+                },
+                {
+                    "sequence": 4,
+                    "elapsedRealtimeNs": 400,
+                    "signal": "AVAILABLE",
+                    "disposition": "APPLIED",
+                    "routeEpochBefore": None,
+                    "routeEpochAfter": 5,
+                    "runtimeStateAfter": {"state": "AVAILABLE"},
+                },
+                {
+                    "sequence": 5,
+                    "elapsedRealtimeNs": 500,
+                    "signal": "MONITOR_STOPPED",
+                    "disposition": "APPLIED",
+                    "routeEpochBefore": 5,
+                    "routeEpochAfter": 5,
+                    "runtimeStateAfter": {"state": "AVAILABLE"},
+                },
             ],
             "policyEvaluations": [
-                {"decision": "ALLOW", "reason": "ALLOWED", "routeEpoch": 3},
-                {"decision": "PAUSE", "reason": "NO_USABLE_DEFAULT", "routeEpoch": None},
-                {"decision": "ALLOW", "reason": "ALLOWED", "routeEpoch": 5},
+                {
+                    "sequence": 1,
+                    "routeEventSequenceWatermark": 2,
+                    "decision": "ALLOW",
+                    "reason": "ROUTE_READY",
+                    "routeEpoch": 3,
+                },
+                {
+                    "sequence": 2,
+                    "routeEventSequenceWatermark": 3,
+                    "decision": "PAUSE",
+                    "reason": "NO_USABLE_DEFAULT",
+                    "routeEpoch": None,
+                },
+                {
+                    "sequence": 3,
+                    "routeEventSequenceWatermark": 4,
+                    "decision": "ALLOW",
+                    "reason": "ROUTE_READY",
+                    "routeEpoch": 5,
+                },
             ],
         },
     }
@@ -78,6 +136,33 @@ class G2RouteVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
             "did not pause",
+        ):
+            verifier.validate_route_evidence(proof, trial_id="trial-1")
+
+    def test_route_evidence_rejects_pause_not_downstream_of_loss(self):
+        proof = route_proof()
+        proof["routeEvidence"]["policyEvaluations"][1]["routeEventSequenceWatermark"] = 2
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "pause is not causally downstream",
+        ):
+            verifier.validate_route_evidence(proof, trial_id="trial-1")
+
+    def test_route_evidence_rejects_allow_before_replacement_available(self):
+        proof = route_proof()
+        proof["routeEvidence"]["policyEvaluations"][2]["routeEventSequenceWatermark"] = 3
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "replacement route ALLOW is not causally downstream",
+        ):
+            verifier.validate_route_evidence(proof, trial_id="trial-1")
+
+    def test_route_evidence_rejects_non_monotonic_event_time(self):
+        proof = route_proof()
+        proof["routeEvidence"]["events"][3]["elapsedRealtimeNs"] = 250
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "timestamps are not monotonic",
         ):
             verifier.validate_route_evidence(proof, trial_id="trial-1")
 
