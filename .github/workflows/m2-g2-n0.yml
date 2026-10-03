@@ -44,6 +44,8 @@ jobs:
     name: m2-g2-n0-api36-paired
     runs-on: ubuntu-24.04
     timeout-minutes: 55
+    env:
+      SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout
@@ -131,6 +133,12 @@ jobs:
           raw_root="$root/raw"
           output_root="$root/output"
           mkdir -p "$server_root" "$raw_root" "$output_root"
+
+          checkout_sha="$(git rev-parse HEAD)"
+          [[ "$SOURCE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$checkout_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf '%s\n' "$SOURCE_HEAD_SHA" > "$root/source-head-commit.txt"
+          printf '%s\n' "$checkout_sha" > "$root/checkout-commit.txt"
 
           LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
           test -n "$LAB_BIN"
