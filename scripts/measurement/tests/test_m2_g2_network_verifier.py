@@ -653,9 +653,10 @@ class G2NetworkVerifierTest(unittest.TestCase):
                 proof["bindingTargetResolutionCount"] = 2
                 proof["permitRouteEpochs"] = [1, 1]
                 proof["recoveryFailureCount"] = 1
+                failed_fetch_id = f"fetch-pre-origin-timeout-{trial_id}"
                 proof["recoveryFailures"] = [{
-                    "fetchId": f"fetch-pre-origin-timeout-{trial_id}",
-                    "attemptCorrelationId": None,
+                    "fetchId": failed_fetch_id,
+                    "attemptCorrelationId": f"{failed_fetch_id}:attempt-1",
                     "observation": {
                         "plane": "TRANSPORT",
                         "type": "TRANSPORT_IO",
