@@ -27,6 +27,16 @@ def route_proof():
         "chargesBeforeRestore": 1,
         "attemptsBeforeRestore": 1,
         "gateCalls": 2,
+        "physicalAttempts": [
+            {
+                "startElapsedRealtimeNs": 250,
+                "endElapsedRealtimeNs": 350,
+            },
+            {
+                "startElapsedRealtimeNs": 450,
+                "endElapsedRealtimeNs": 550,
+            },
+        ],
         "routeEvidence": {
             "schemaVersion": 1,
             "androidApi": 36,
@@ -134,6 +144,15 @@ class G2RouteVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
             "pause is not causally downstream",
+        ):
+            verifier.validate_route_evidence(proof, trial_id="trial-1")
+
+    def test_route_evidence_rejects_second_owner_before_replacement_available(self):
+        proof = route_proof()
+        proof["physicalAttempts"][1]["startElapsedRealtimeNs"] = 350
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "physical owners are not causally separated",
         ):
             verifier.validate_route_evidence(proof, trial_id="trial-1")
 
