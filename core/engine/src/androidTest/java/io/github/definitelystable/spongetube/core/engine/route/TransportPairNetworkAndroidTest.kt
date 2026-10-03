@@ -229,6 +229,12 @@ class TransportPairNetworkAndroidTest {
 
             val cpuStartMs = Process.getElapsedCpuTime()
             val extentId = "m2g2" + scenario.family.lowercase() + ":" + planned.getString("trialId")
+            if (scenario.family == "N6") {
+                Log.i(
+                    G2D_SIGNAL_TAG,
+                    "ready trial=$frozenTrialId",
+                )
+            }
             try {
                 val handle = coordinator.acquire(
                     request(extentId),
