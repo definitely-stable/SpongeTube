@@ -360,6 +360,28 @@ class G2AggregateTest(unittest.TestCase):
                     git_commit=GIT_COMMIT,
                 )
 
+    def test_verify_index_rejects_unindexed_evidence_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence, generated = create_bundle(pathlib.Path(tmp))
+            index = collect(
+                evidence_root=evidence,
+                generated_root=generated,
+                run_id="g2-test",
+                git_commit=GIT_COMMIT,
+            )
+            removed = index["artifacts"].pop()
+            self.assertTrue(removed["path"])
+            with self.assertRaisesRegex(
+                G2AggregateError,
+                "does not cover the exact canonical file set",
+            ):
+                verify_index(
+                    index,
+                    evidence_root=evidence,
+                    generated_root=generated,
+                    expected_git_commit=GIT_COMMIT,
+                )
+
     def test_verify_index_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as tmp:
             evidence, generated = create_bundle(pathlib.Path(tmp))
