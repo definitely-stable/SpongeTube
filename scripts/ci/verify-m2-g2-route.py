@@ -129,25 +129,105 @@ def validate_route_evidence(
     require(route.get("clockDomain") == "ANDROID_MONOTONIC", f"{trial_id}: route clock drift")
     events = route.get("events")
     evaluations = route.get("policyEvaluations")
-    require(isinstance(events, list) and events, f"{trial_id}: route events empty")
-    require(isinstance(evaluations, list) and evaluations, f"{trial_id}: route policy evidence empty")
-    signals = [row.get("signal") for row in events if isinstance(row, Mapping)]
-    require("LOST" in signals, f"{trial_id}: actual default route LOST not observed")
+    require(
+        isinstance(events, list) and events and all(isinstance(row, Mapping) for row in events),
+        f"{trial_id}: route events empty/malformed",
+    )
+    require(
+        isinstance(evaluations, list)
+        and evaluations
+        and all(isinstance(row, Mapping) for row in evaluations),
+        f"{trial_id}: route policy evidence empty/malformed",
+    )
+
+    event_sequences = [row.get("sequence") for row in events]
+    event_times = [row.get("elapsedRealtimeNs") for row in events]
+    require(
+        all(type(value) is int and value > 0 for value in event_sequences)
+        and event_sequences == sorted(event_sequences)
+        and len(event_sequences) == len(set(event_sequences)),
+        f"{trial_id}: route event sequence is not strictly monotonic",
+    )
+    require(
+        all(type(value) is int and value >= 0 for value in event_times)
+        and event_times == sorted(event_times),
+        f"{trial_id}: route event timestamps are not monotonic",
+    )
+
+    signals = [row.get("signal") for row in events]
+    require(signals[0] == "MONITOR_STARTED", f"{trial_id}: route monitor start missing")
     require(signals[-1] == "MONITOR_STOPPED", f"{trial_id}: route monitor stop not terminal")
-    decisions = [
-        (row.get("decision"), row.get("reason"), row.get("routeEpoch"))
-        for row in evaluations if isinstance(row, Mapping)
+
+    old_route_losses = [
+        row for row in events
+        if row.get("signal") == "LOST"
+        and row.get("disposition") == "APPLIED"
+        and row.get("routeEpochBefore") == before
+        and isinstance(row.get("runtimeStateAfter"), Mapping)
+        and row["runtimeStateAfter"].get("state") == "UNAVAILABLE"
+    ]
+    require(old_route_losses, f"{trial_id}: applied loss of the admitted old route not observed")
+    old_loss_sequence = min(row["sequence"] for row in old_route_losses)
+
+    replacement_availability = [
+        row for row in events
+        if row.get("signal") == "AVAILABLE"
+        and row.get("disposition") == "APPLIED"
+        and row.get("routeEpochAfter") == after
+        and isinstance(row.get("runtimeStateAfter"), Mapping)
+        and row["runtimeStateAfter"].get("state") == "AVAILABLE"
+    ]
+    require(replacement_availability, f"{trial_id}: replacement route availability not observed")
+    replacement_sequence = min(row["sequence"] for row in replacement_availability)
+    require(
+        old_loss_sequence < replacement_sequence,
+        f"{trial_id}: replacement route became available before old-route loss",
+    )
+
+    evaluation_sequences = [row.get("sequence") for row in evaluations]
+    watermarks = [row.get("routeEventSequenceWatermark") for row in evaluations]
+    require(
+        all(type(value) is int and value > 0 for value in evaluation_sequences)
+        and evaluation_sequences == sorted(evaluation_sequences)
+        and len(evaluation_sequences) == len(set(evaluation_sequences)),
+        f"{trial_id}: route policy sequence is not strictly monotonic",
+    )
+    require(
+        all(type(value) is int and 0 <= value <= event_sequences[-1] for value in watermarks)
+        and watermarks == sorted(watermarks),
+        f"{trial_id}: route policy event watermarks are invalid",
+    )
+
+    first = evaluations[0]
+    require(
+        first.get("decision") == "ALLOW"
+        and first.get("reason") == "ROUTE_READY"
+        and first.get("routeEpoch") == before,
+        f"{trial_id}: initial route permit is not the admitted old route",
+    )
+    pause_indices = [
+        index for index, row in enumerate(evaluations)
+        if row.get("decision") == "PAUSE"
+        and row.get("reason") == "NO_USABLE_DEFAULT"
+        and row.get("routeEpoch") is None
+        and old_loss_sequence <= row["routeEventSequenceWatermark"] < replacement_sequence
     ]
     require(
-        ("PAUSE", "NO_USABLE_DEFAULT", None) in decisions,
-        f"{trial_id}: route policy did not pause while default route absent",
+        pause_indices,
+        f"{trial_id}: route pause is not causally downstream of old-route loss",
     )
-    allowed = [
-        row.get("routeEpoch")
-        for row in evaluations
-        if isinstance(row, Mapping) and row.get("decision") == "ALLOW"
+    replacement_allow_indices = [
+        index for index, row in enumerate(evaluations)
+        if row.get("decision") == "ALLOW"
+        and row.get("reason") == "ROUTE_READY"
+        and row.get("routeEpoch") == after
+        and row["routeEventSequenceWatermark"] >= replacement_sequence
     ]
-    require(before in allowed and after in allowed, f"{trial_id}: old/replacement route permits missing")
+    require(
+        replacement_allow_indices
+        and min(pause_indices) < max(replacement_allow_indices),
+        f"{trial_id}: replacement route ALLOW is not causally downstream of restore",
+    )
 
 
 def finalize_row(
@@ -240,6 +320,7 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         previous_end = end
 
         raw = load_json(args.raw_dir / f"{trial_id}.json")
+        scan_evidence_privacy(raw)
         row, proof, _timing = shared.check_raw(
             profile="N6R",
             raw=raw,
