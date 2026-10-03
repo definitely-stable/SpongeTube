@@ -154,7 +154,8 @@ def finalize_row(
     row: dict[str, Any],
     *,
     trial_origin: list[dict[str, Any]],
-    proof: Mapping[str, Any],
+    raw_proof: Mapping[str, Any],
+    summary_proof: Mapping[str, Any],
 ) -> dict[str, Any]:
     trial_id = row["trialId"]
     require(len(trial_origin) == 1, f"{trial_id}: expected exactly one post-restore origin GET")
@@ -162,7 +163,7 @@ def finalize_row(
     shared.validate_origin_row(origin, trial_id=trial_id)
     shared.validate_successful_origin_row(origin, trial_id=trial_id)
 
-    attempts = proof["physicalAttempts"]
+    attempts = raw_proof["physicalAttempts"]
     require(len(attempts) == 2, f"{trial_id}: expected two application owners")
     require(
         attempts[0].get("terminal") == "ATTEMPT_FAILED"
@@ -174,10 +175,10 @@ def finalize_row(
         and attempts[1].get("transportCorrelationId") is not None,
         f"{trial_id}: replacement-route owner lacks successful correlation",
     )
-    successful_id = proof["successfulRequestId"]
+    successful_id = summary_proof["successfulRequestId"]
     require(origin.get("requestId") == successful_id, f"{trial_id}: origin row not owned by successful replacement request")
     require(
-        proof["correlatedRequestIds"] == [successful_id],
+        summary_proof["correlatedRequestIds"] == [successful_id],
         f"{trial_id}: origin correlation escaped route-replacement boundary",
     )
 
@@ -262,7 +263,14 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
             f"{trial_id}: frozen first backoff drift",
         )
 
-        rows.append(finalize_row(row, trial_origin=trial_origin, proof=proof))
+        rows.append(
+            finalize_row(
+                row,
+                trial_origin=trial_origin,
+                raw_proof=raw["proof"],
+                summary_proof=proof,
+            )
+        )
         proofs.append(proof)
         process_instances.append(proof["processInstanceId"])
         process_keys.append((proof["processPid"], proof["processStartClockTicks"]))
