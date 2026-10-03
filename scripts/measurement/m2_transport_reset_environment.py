@@ -36,6 +36,7 @@ CODE_PATHS = (
     "scripts/faults/install_toxiproxy.sh",
     "scripts/faults/m2_e0_netns.sh",
     "scripts/faults/m2_transport_harness.py",
+    "scripts/faults/m2_transport_reset_controller.py",
     "scripts/faults/toxiproxy_control.py",
     "scripts/measurement/m2_contracts.py",
     "scripts/measurement/m2_transport_evaluation_oracle.py",
@@ -163,7 +164,8 @@ def build(
         "transportPath": {
             "mediaPath": "SCOPED_NAMESPACE_VETH",
             "proxyLifecycle": "FRESH_PER_TRIAL",
-            "adbReverseUsed": False,
+            "mediaAdbReverseUsed": False,
+            "labControlPath": "ADB_REVERSE_LOOPBACK_HTTP",
             "processWideNetworkBinding": False,
         },
         "androidRuntime": dict(android_runtime),
@@ -204,7 +206,8 @@ def verify(
         document["transportPath"] == {
             "mediaPath": "SCOPED_NAMESPACE_VETH",
             "proxyLifecycle": "FRESH_PER_TRIAL",
-            "adbReverseUsed": False,
+            "mediaAdbReverseUsed": False,
+            "labControlPath": "ADB_REVERSE_LOOPBACK_HTTP",
             "processWideNetworkBinding": False,
         },
         "transport path provenance drift",
