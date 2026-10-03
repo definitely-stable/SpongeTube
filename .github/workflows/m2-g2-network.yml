@@ -64,8 +64,6 @@ jobs:
             slug: n3
           - family: N5
             slug: n5
-          - family: N5GE
-            slug: n5-ge
     env:
       SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 

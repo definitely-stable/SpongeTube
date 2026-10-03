@@ -613,59 +613,64 @@ class G2NetworkVerifierTest(unittest.TestCase):
     def test_pre_origin_failed_owner_is_not_counted_as_internal_http_replay(self):
         case = NetworkCase("N2")
         try:
-            first = case.schedule[0]
-            trial_id = first["trialId"]
-            raw_path = case.raw_dir / f"{trial_id}.json"
-            raw = json.loads(raw_path.read_text())
-            proof = raw["proof"]
-            trial = raw["trial"]
-            original = proof["physicalAttempts"][0]
-            chain_start = proof["chainStartedElapsedRealtimeNs"]
-            failed_start = chain_start + 100_000
-            failed_end = chain_start + 500_000
-            success = copy.deepcopy(original)
-            success["startElapsedRealtimeNs"] += 1_000_000
-            success["endElapsedRealtimeNs"] += 1_000_000
-            proof["physicalAttempts"] = [{
-                "fetchId": "fetch-pre-origin-timeout",
-                "startElapsedRealtimeNs": failed_start,
-                "endElapsedRealtimeNs": failed_end,
-                "terminal": "ATTEMPT_FAILED",
-                "transportCorrelationId": None,
-                "networkBytes": 0,
-            }, success]
-            for phase in proof["transportPhases"]:
-                phase["elapsedRealtimeNs"] += 1_000_000
-            proof["firstBrokerProgressElapsedRealtimeNs"] += 1_000_000
-            proof["chainTerminatedElapsedRealtimeNs"] += 1_000_000
-            trial["metrics"]["firstByteUs"] = (
-                proof["firstBrokerProgressElapsedRealtimeNs"] - chain_start
-            ) // 1_000
-            trial["metrics"]["completionUs"] = (
-                proof["chainTerminatedElapsedRealtimeNs"] - chain_start
-            ) // 1_000
-            trial["recovery"]["ownerCount"] = 2
-            proof["bindingTargetResolutionCount"] = 2
-            proof["recoveryFailureCount"] = 1
-            proof["recoveryFailures"] = [{
-                "observation": {"plane": "TRANSPORT", "type": "TRANSPORT_IO"},
-                "classification": "TRANSIENT_TRANSPORT",
-                "decision": {"kind": "RETRY_AFTER_BACKOFF"},
-                "action": {"kind": "SCHEDULE_BACKOFF"},
-            }]
-            proof["recoveryBackoffs"] = [{
-                "retryOrdinal": 1,
-                "windowMs": 500,
-                "delayMs": 367,
-            }]
-            proof["recoveryJitterSampleCount"] = 1
-            proof["recoveryJitterSamples"] = [367]
-            write_json(raw_path, raw)
+            # Keep the paired recovery tuple equivalent while exercising a
+            # physical owner that fails before HTTP response correlation. The
+            # origin still sees exactly one GET per trial, so this must derive
+            # zero transport-internal replay rather than subtracting all owners.
+            for schedule_row in case.schedule:
+                trial_id = schedule_row["trialId"]
+                raw_path = case.raw_dir / f"{trial_id}.json"
+                raw = json.loads(raw_path.read_text())
+                proof = raw["proof"]
+                trial = raw["trial"]
+                original = proof["physicalAttempts"][0]
+                chain_start = proof["chainStartedElapsedRealtimeNs"]
+                failed_start = chain_start + 100_000
+                failed_end = chain_start + 500_000
+                success = copy.deepcopy(original)
+                success["startElapsedRealtimeNs"] += 1_000_000
+                success["endElapsedRealtimeNs"] += 1_000_000
+                proof["physicalAttempts"] = [{
+                    "fetchId": f"fetch-pre-origin-timeout-{trial_id}",
+                    "startElapsedRealtimeNs": failed_start,
+                    "endElapsedRealtimeNs": failed_end,
+                    "terminal": "ATTEMPT_FAILED",
+                    "transportCorrelationId": None,
+                    "networkBytes": 0,
+                }, success]
+                for phase in proof["transportPhases"]:
+                    phase["elapsedRealtimeNs"] += 1_000_000
+                proof["firstBrokerProgressElapsedRealtimeNs"] += 1_000_000
+                proof["chainTerminatedElapsedRealtimeNs"] += 1_000_000
+                trial["metrics"]["firstByteUs"] = (
+                    proof["firstBrokerProgressElapsedRealtimeNs"] - chain_start
+                ) // 1_000
+                trial["metrics"]["completionUs"] = (
+                    proof["chainTerminatedElapsedRealtimeNs"] - chain_start
+                ) // 1_000
+                trial["recovery"]["ownerCount"] = 2
+                proof["bindingTargetResolutionCount"] = 2
+                proof["recoveryFailureCount"] = 1
+                proof["recoveryFailures"] = [{
+                    "observation": {"plane": "TRANSPORT", "type": "TRANSPORT_IO"},
+                    "classification": "TRANSIENT_TRANSPORT",
+                    "decision": {"kind": "RETRY_AFTER_BACKOFF"},
+                    "action": {"kind": "SCHEDULE_BACKOFF"},
+                }]
+                proof["recoveryBackoffs"] = [{
+                    "retryOrdinal": 1,
+                    "windowMs": 500,
+                    "delayMs": 367,
+                }]
+                proof["recoveryJitterSampleCount"] = 1
+                proof["recoveryJitterSamples"] = [367]
+                write_json(raw_path, raw)
 
-            trials, _, _ = case.verify()
-            finalized = next(row for row in trials["trials"] if row["trialId"] == trial_id)
-            self.assertEqual(1, finalized["recovery"]["originRequestCount"])
-            self.assertEqual(0, finalized["recovery"]["internalRetryCount"])
+            trials, _, result = case.verify()
+            self.assertTrue(result["recoveryEquivalent"])
+            for finalized in trials["trials"]:
+                self.assertEqual(1, finalized["recovery"]["originRequestCount"])
+                self.assertEqual(0, finalized["recovery"]["internalRetryCount"])
         finally:
             case.close()
 
