@@ -154,6 +154,43 @@ class G2TransportVerifierTest(unittest.TestCase):
         self.assertEqual(3, finalized["recovery"]["originRequestCount"])
         self.assertTrue(finalized["performanceSampleEligible"])
 
+    def test_phase_timing_schema_accepts_canonical_n6_family(self):
+        schema = verifier.shared.load_json(verifier.PHASE_SCHEMA)
+        document = {
+            "schemaVersion": 1,
+            "runId": "m2-g2-n6-api36",
+            "pairId": "m2-g2-n6-api36-cold",
+            "scenarioFamily": "N6",
+            "clockDomain": "ANDROID_MONOTONIC",
+            "rows": [{
+                "trialId": "trial-1",
+                "orderingBlock": 1,
+                "positionInBlock": 1,
+                "backendId": "HTTP_URL_CONNECTION_ROUTE_BOUND",
+                "firstBrokerChunkUs": 10,
+                "chainCompletionUs": 20,
+                "physicalAttempts": [{
+                    "ownerOrdinal": 1,
+                    "attemptStartUs": 0,
+                    "responseHeadersUs": None,
+                    "firstTransportBodyUs": None,
+                    "responseBodyCompleteUs": None,
+                    "attemptTerminalUs": 5,
+                    "terminal": "ATTEMPT_FAILED",
+                }, {
+                    "ownerOrdinal": 2,
+                    "attemptStartUs": 6,
+                    "responseHeadersUs": 7,
+                    "firstTransportBodyUs": 8,
+                    "responseBodyCompleteUs": 9,
+                    "attemptTerminalUs": 10,
+                    "terminal": "ATTEMPT_COMPLETED",
+                }],
+            }],
+            "limitations": ["EMULATOR_DIRECTIONAL_TIMINGS_ONLY"],
+        }
+        verifier.validate_instance(schema, document)
+
     def test_scenario_rejects_noncanonical_reset_parameters(self):
         scenario = {
             "scenarioFamily": "N6",
