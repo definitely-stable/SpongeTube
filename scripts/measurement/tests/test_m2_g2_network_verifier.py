@@ -166,6 +166,7 @@ def raw_case(profile: str, plan: dict, schedule_row: dict, request_id: int) -> d
             "routeEpochAfter": 1,
             "bindingRevision": "binding-1",
             "bindingTargetResolutionCount": 1,
+            "permitRouteEpochs": [1],
             "chainStartedElapsedRealtimeNs": chain_start,
             "firstBrokerProgressElapsedRealtimeNs": first_broker,
             "chainTerminatedElapsedRealtimeNs": chain_end,
@@ -650,6 +651,7 @@ class G2NetworkVerifierTest(unittest.TestCase):
                 ) // 1_000
                 trial["recovery"]["ownerCount"] = 2
                 proof["bindingTargetResolutionCount"] = 2
+                proof["permitRouteEpochs"] = [1, 1]
                 proof["recoveryFailureCount"] = 1
                 proof["recoveryFailures"] = [{
                     "fetchId": f"fetch-pre-origin-timeout-{trial_id}",
@@ -677,6 +679,22 @@ class G2NetworkVerifierTest(unittest.TestCase):
             for finalized in trials["trials"]:
                 self.assertEqual(1, finalized["recovery"]["originRequestCount"])
                 self.assertEqual(0, finalized["recovery"]["internalRetryCount"])
+        finally:
+            case.close()
+
+    def test_every_physical_owner_must_retain_the_exact_route_epoch(self):
+        case = NetworkCase("N2")
+        try:
+            trial_id = case.schedule[0]["trialId"]
+            path = case.raw_dir / f"{trial_id}.json"
+            raw = json.loads(path.read_text())
+            raw["proof"]["permitRouteEpochs"] = [2]
+            write_json(path, raw)
+            with self.assertRaisesRegex(
+                verifier.NetworkEvidenceError,
+                "per-owner exact-route permit epoch drift",
+            ):
+                case.verify()
         finally:
             case.close()
 
@@ -754,6 +772,7 @@ class G2NetworkVerifierTest(unittest.TestCase):
                 ) // 1_000
                 trial["recovery"]["ownerCount"] = 2
                 proof["bindingTargetResolutionCount"] = 2
+                proof["permitRouteEpochs"] = [1, 1]
                 proof["recoveryFailureCount"] = 1
                 proof["recoveryFailures"] = [{
                     "fetchId": "wrong-fetch-id",

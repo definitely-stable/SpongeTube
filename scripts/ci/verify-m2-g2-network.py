@@ -529,6 +529,16 @@ def check_raw(
     require(isinstance(attempts, list) and attempts, f"{trial_id}: physical attempts missing")
     require(len(attempts) == owner_count, f"{trial_id}: owner/physical-attempt count drift")
     require(proof.get("bindingTargetResolutionCount") == owner_count, f"{trial_id}: binding target count drift")
+    permit_epochs = proof.get("permitRouteEpochs")
+    require(
+        isinstance(permit_epochs, list)
+        and len(permit_epochs) == owner_count
+        and all(
+            type(epoch) is int and epoch == route["permitRouteEpoch"]
+            for epoch in permit_epochs
+        ),
+        f"{trial_id}: per-owner exact-route permit epoch drift",
+    )
     require(
         sum(1 for attempt in attempts if attempt.get("terminal") == "ATTEMPT_COMPLETED") == 1
         and attempts[-1].get("terminal") == "ATTEMPT_COMPLETED"

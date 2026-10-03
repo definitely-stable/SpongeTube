@@ -401,6 +401,11 @@ class TransportPairNetworkAndroidTest {
                     put("routeEpochAfter", checkNotNull(finalEpoch))
                     put("bindingRevision", "binding-1")
                     put("bindingTargetResolutionCount", bindingHits.get())
+                    put("permitRouteEpochs", JSONArray().apply {
+                        permits.forEach { event ->
+                            put(checkNotNull(event.permit).routeEpoch)
+                        }
+                    })
                     put("chainStartedElapsedRealtimeNs", chainStarted.elapsedRealtimeNs)
                     put("firstBrokerProgressElapsedRealtimeNs", firstProgressElapsedRealtimeNs)
                     put("chainTerminatedElapsedRealtimeNs", chainTerminated.elapsedRealtimeNs)
