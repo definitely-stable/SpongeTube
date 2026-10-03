@@ -992,6 +992,29 @@ block/position facts. Emulator evidence can support correctness/resilience and
 directional measurements only. A performance-based SELECTED decision requires
 retained physical-device evidence and dependency/distribution clearance.
 
+M2-G2-F closes the runtime **M2-ACC-10** proof with
+`m2-g2-evidence-index-v1`. The canonical aggregate consumes exactly six
+fresh same-source owning experiments: N0 CONTROL, N2 HIGH_RTT_JITTER, N3
+BURST_PACKET_LOSS, canonical N5 BURST_LOSS, N6 TRANSPORT_RESET and N6
+DEFAULT_ROUTE_LOSS_RESTORE. Each experiment remains a separate
+`transport-evaluation-trials-v1` document because `scenarioHash` is part of
+the comparison identity. The aggregate independently reruns the pair-plan
+binding and transport-evaluation oracle, generates one
+`transport-evaluation-summary-v1` per scenario and then verifies
+cross-scenario invariants: exact source checkout, common non-scenario
+comparison fingerprints, backend implementation/version identity, API36
+emulator identity, ordering protocol/seed and the frozen recovery-jitter
+protocol. Every indexed proof is bound by path, SHA-256 and byte size.
+
+M2-G2-F fails if an owning artifact selects a backend, if source/checkout
+revisions differ, if any canonical experiment is missing, if a backend
+identity changes across scenarios, or if N5's retained
+`INCONCLUSIVE_STOCHASTIC_EFFECT` is upgraded into a positive effect claim.
+Aggregate PASS may report `TECHNICALLY_ELIGIBLE` and directional paired
+metrics, but requires `selectedBackend=null`,
+`physicalDeviceEvidence=false` and `performanceSelectionAllowed=false`.
+Transport selection remains a G3 action.
+
 ### 23.3 Additional M2 evidence rules
 
 - a stochastic NETWORK fault without a persisted seed invalidates the run;
