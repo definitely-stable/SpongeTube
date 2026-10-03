@@ -251,8 +251,18 @@ def validate_harness(
     )
     observed = trigger.get("observedAtElapsedRealtimeNs")
     request_id = trigger.get("originRequestId")
+    observed_rows = trigger.get("originRowsObservedAtTrigger")
+    media_gets = trigger.get("mediaGetsObservedAtTrigger")
     require(type(observed) is int and observed >= 0, f"{trial_id}: trigger timestamp missing")
     require(type(request_id) is int and request_id > 0, f"{trial_id}: trigger origin request id missing")
+    require(
+        type(observed_rows) is int and observed_rows == 1,
+        f"{trial_id}: more than one trial-origin row was durable before disarm",
+    )
+    require(
+        type(media_gets) is int and media_gets == 1,
+        f"{trial_id}: more than one media GET was durable before disarm",
+    )
     require(
         applied["elapsedRealtimeNs"] <= observed <= events[3]["elapsedRealtimeNs"],
         f"{trial_id}: fault was not removed after the causal trigger observation",
@@ -349,6 +359,10 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
             shared.validate_origin_row(origin_row, trial_id=trial_id)
         request_ids = {row.get("requestId") for row in trial_origin}
         require(trigger_request_id in request_ids, f"{trial_id}: trigger request escaped trial origin partition")
+        require(
+            trial_origin[0].get("requestId") == trigger_request_id,
+            f"{trial_id}: causal trigger was not the first media request in the trial partition",
+        )
         previous_end = end
 
         raw = load_json(args.raw_dir / f"{trial_id}.json")
