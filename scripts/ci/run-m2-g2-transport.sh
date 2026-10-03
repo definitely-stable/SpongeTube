@@ -194,12 +194,21 @@ while time.monotonic() < deadline:
             and row.get("path") == resource
             and isinstance(row.get("requestId"), int)
         ):
+            observed_rows = current[before:]
+            data_rows = [
+                value for value in observed_rows
+                if value.get("plane") == "data"
+                and value.get("method") == "GET"
+                and value.get("path") == resource
+            ]
             doc = {
                 "schemaVersion": 1,
                 "trialId": trial_id,
                 "clockDomain": "HOST_FAULT_MONOTONIC",
                 "originRequestId": row["requestId"],
                 "observedAtElapsedRealtimeNs": time.monotonic_ns(),
+                "originRowsObservedAtTrigger": len(observed_rows),
+                "mediaGetsObservedAtTrigger": len(data_rows),
             }
             output.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             raise SystemExit(0)
