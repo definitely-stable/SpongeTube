@@ -77,6 +77,7 @@ jobs:
           bash -n scripts/ci/run-m2-g2-transport.sh
           python3 scripts/measurement/tests/test_m2_transport_harness.py -v
           python3 scripts/measurement/tests/test_m2_transport_pair_plan.py -v
+          python3 scripts/measurement/tests/test_m2_g2_transport_verifier.py -v
 
       - name: Execute frozen N6 paired schedule
         shell: bash
