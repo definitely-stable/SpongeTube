@@ -61,6 +61,7 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -154,7 +155,7 @@ class TransportPairRouteReplacementAndroidTest {
         var restoredEpoch = 0L
         var chargesBeforeRestore = 0
         var attemptsBeforeRestore = 0
-        var replacementValidationRendezvousObserved = false
+        val replacementValidationRendezvousObserved = AtomicBoolean(false)
 
         try {
             val initial = awaitDirectObservation(monitor, backend)
@@ -240,7 +241,7 @@ class TransportPairRouteReplacementAndroidTest {
                         routeEpoch = checkNotNull(permit.routeEpoch),
                         routeBinding = checkNotNull(permit.routeBinding),
                     )
-                    replacementValidationRendezvousObserved = true
+                    replacementValidationRendezvousObserved.set(true)
                 }
                 permit
             }
@@ -319,7 +320,7 @@ class TransportPairRouteReplacementAndroidTest {
             assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
             assertTrue(
                 "G2-E replacement validation rendezvous was not observed",
-                replacementValidationRendezvousObserved,
+                replacementValidationRendezvousObserved.get(),
             )
 
             coordinator.shutdown()
@@ -485,7 +486,7 @@ class TransportPairRouteReplacementAndroidTest {
                     put("gateCalls", gateCalls.get())
                     put(
                         "replacementValidationRendezvousObserved",
-                        replacementValidationRendezvousObserved,
+                        replacementValidationRendezvousObserved.get(),
                     )
                     put("routeEvidence", JSONObject(routeRecorder.toArtifactMap()))
                     put("bindingRevision", "binding-1")
