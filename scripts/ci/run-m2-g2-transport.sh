@@ -14,19 +14,18 @@ SCENARIO="$PWD/test-fixtures/network/m2/n6-transport-reset.json"
 PLAN_ASSET="m2-g2-n6-plan.json"
 PLAN_ASSET_PATH="core/engine/src/androidTest/assets/$PLAN_ASSET"
 TRACE="$SERVER_ROOT/requests.jsonl"
+CONTROL_PORT=18475
+CONTROL_URL="http://127.0.0.1:$CONTROL_PORT"
 
 mkdir -p "$ROOT" "$TOOLS" "$RAW_ROOT" "$TRIAL_ROOT" "$SERVER_ROOT" "$OUTPUT_ROOT"   core/engine/src/androidTest/assets
 
 cleanup() {
   set +e
-  if [[ -n "${TEST_PID:-}" ]] && kill -0 "$TEST_PID" 2>/dev/null; then
-    kill "$TEST_PID" >/dev/null 2>&1 || true
-    wait "$TEST_PID" >/dev/null 2>&1 || true
+  if [[ -n "${CONTROLLER_PID:-}" ]] && kill -0 "$CONTROLLER_PID" 2>/dev/null; then
+    kill "$CONTROLLER_PID" >/dev/null 2>&1 || true
+    wait "$CONTROLLER_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${SIGNAL_PID:-}" ]] && kill -0 "$SIGNAL_PID" 2>/dev/null; then
-    kill "$SIGNAL_PID" >/dev/null 2>&1 || true
-    wait "$SIGNAL_PID" >/dev/null 2>&1 || true
-  fi
+  adb reverse --remove "tcp:$CONTROL_PORT" >/dev/null 2>&1 || true
   if [[ -n "${LAB_PID:-}" ]] && kill -0 "$LAB_PID" 2>/dev/null; then
     kill "$LAB_PID" >/dev/null 2>&1 || true
     wait "$LAB_PID" >/dev/null 2>&1 || true
@@ -167,85 +166,6 @@ trace_count() {
   if [[ -f "$TRACE" ]]; then wc -l < "$TRACE"; else printf '0\n'; fi
 }
 
-await_android_ready() {
-  local trial_id="$1"
-  local log_file="$2"
-  local marker="ready trial=$trial_id"
-
-  for attempt in {1..6000}; do
-    if grep -Fq "$marker" "$log_file" 2>/dev/null; then
-      [[ "$(grep -F -c "$marker" "$log_file")" -eq 1 ]] || {
-        echo "multiple N6 Android readiness signals observed" >&2
-        cat "$log_file" >&2 || true
-        return 1
-      }
-      return 0
-    fi
-    if ! kill -0 "$TEST_PID" 2>/dev/null; then
-      echo "N6 Android test exited before readiness" >&2
-      cat "$log_file" >&2 || true
-      wait "$TEST_PID" || true
-      return 1
-    fi
-    sleep 0.01
-  done
-
-  echo "N6 Android readiness was not observed within launch window" >&2
-  cat "$log_file" >&2 || true
-  return 1
-}
-
-await_android_fault_signal() {
-  local trial_id="$1"
-  local log_file="$2"
-  local output="$3"
-  local marker="trial=$trial_id fetchId="
-  local line=""
-  local matching=0
-
-  for attempt in {1..3000}; do
-    matching="$(grep -F -c "$marker" "$log_file" 2>/dev/null || true)"
-    if [[ "$matching" -gt 0 ]]; then
-      [[ "$matching" -eq 1 ]] || {
-        echo "multiple N6 owner failures observed before disarm: $matching" >&2
-        cat "$log_file" >&2 || true
-        return 1
-      }
-      line="$(grep -F "$marker" "$log_file" | head -1)"
-      break
-    fi
-    if ! kill -0 "$TEST_PID" 2>/dev/null; then
-      echo "N6 Android test exited before emitting ATTEMPT_FAILED rendezvous" >&2
-      cat "$log_file" >&2 || true
-      return 1
-    fi
-    sleep 0.01
-  done
-
-  test -n "$line"
-  local fetch_id
-  fetch_id="$(printf '%s\n' "$line" | sed -n "s/.*trial=$trial_id fetchId=\([^[:space:]]\+\).*/\1/p")"
-  test -n "$fetch_id"
-
-  python3 - "$output" "$trial_id" "$fetch_id" "$matching" <<'PY'
-import json, pathlib, sys, time
-output, trial_id, fetch_id, matching = sys.argv[1:]
-doc = {
-    "schemaVersion": 1,
-    "trialId": trial_id,
-    "signal": "ATTEMPT_FAILED",
-    "fetchId": fetch_id,
-    "hostObservationClockDomain": "HOST_FAULT_MONOTONIC",
-    "hostObservedAtElapsedRealtimeNs": time.monotonic_ns(),
-    "failureSignalsObservedAtTrigger": int(matching),
-}
-pathlib.Path(output).write_text(
-    json.dumps(doc, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-PY
-}
-
 await_trace_settle() {
   local raw_file="$1"
   local before_count="$2"
@@ -324,23 +244,66 @@ while IFS= read -r trial_id; do
     .toxics[0].attributes.timeout == 0
   ' "$one/harness/toxiproxy-active-state.json" >/dev/null
 
-  adb logcat -c
-  adb logcat -v raw -s SpongeG2D:I '*:S' > "$one/android-fault-signal.log" 2>&1 &
-  SIGNAL_PID=$!
+  rm -f "$one/controller-ready.json" "$one/reset-trigger.json"
+  adb reverse --remove "tcp:$CONTROL_PORT" >/dev/null 2>&1 || true
 
-  ./gradlew --dependency-verification=strict     :core:engine:connectedDebugAndroidTest     -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.route.TransportPairNetworkAndroidTest     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.originBaseUrl="http://$MEDIA_ADDR:18080"     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.trialId="$trial_id"     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.scenario=N6     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.recoveryJitterSeed="$jitter_seed" &
-  TEST_PID=$!
+  python3 scripts/faults/m2_transport_reset_controller.py \
+    --port "$CONTROL_PORT" \
+    --trial-id "$trial_id" \
+    --trace "$TRACE" \
+    --origin-before-count "$origin_before" \
+    --trigger "$one/reset-trigger.json" \
+    --ready "$one/controller-ready.json" \
+    --scenario "$SCENARIO" \
+    --api "$API" \
+    --evidence "$one/harness/fault-harness-events.json" \
+    --disarmed-state "$one/harness/toxiproxy-disarmed-state.json" \
+    --run-id "$RUN_ID" \
+    --session-id "m2-g2-n6-$trial_id" \
+    > "$one/controller.out" 2> "$one/controller.err" &
+  CONTROLLER_PID=$!
 
-  await_android_ready "$trial_id" "$one/android-fault-signal.log"
-  await_android_fault_signal "$trial_id" "$one/android-fault-signal.log" "$one/reset-trigger.json"
+  for attempt in {1..200}; do
+    if [[ -s "$one/controller-ready.json" ]] &&
+       jq -e --arg trial "$trial_id" '
+         .state == "LISTENING" and
+         .controlProtocol == "ADB_REVERSE_LOOPBACK_HTTP_V1" and
+         .trialId == $trial
+       ' "$one/controller-ready.json" >/dev/null 2>&1; then
+      break
+    fi
+    if ! kill -0 "$CONTROLLER_PID" 2>/dev/null; then
+      cat "$one/controller.err" >&2 || true
+      wait "$CONTROLLER_PID" || true
+      exit 1
+    fi
+    [[ "$attempt" -lt 200 ]] || {
+      echo "G2-D reset controller did not become ready" >&2
+      exit 1
+    }
+    sleep 0.025
+  done
 
-  python3 scripts/faults/m2_transport_harness.py disarm "${common[@]}"     --state "$one/harness/toxiproxy-disarmed-state.json"
+  adb reverse "tcp:$CONTROL_PORT" "tcp:$CONTROL_PORT"
+  adb reverse --list | grep -Fq "tcp:$CONTROL_PORT tcp:$CONTROL_PORT"
+  if adb reverse --list | grep -Eq 'tcp:18080([[:space:]]|$)'; then
+    echo "G2-D media path unexpectedly entered adb reverse" >&2
+    exit 1
+  fi
 
-  wait "$TEST_PID"
-  TEST_PID=""
-  kill "$SIGNAL_PID" >/dev/null 2>&1 || true
-  wait "$SIGNAL_PID" >/dev/null 2>&1 || true
-  SIGNAL_PID=""
+  ./gradlew --dependency-verification=strict \
+    :core:engine:connectedDebugAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.route.TransportPairNetworkAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.originBaseUrl="http://$MEDIA_ADDR:18080" \
+    -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.trialId="$trial_id" \
+    -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.scenario=N6 \
+    -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.recoveryJitterSeed="$jitter_seed" \
+    -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.transportControlUrl="$CONTROL_URL"
+
+  wait "$CONTROLLER_PID"
+  CONTROLLER_PID=""
+  adb reverse --remove "tcp:$CONTROL_PORT"
+  test -s "$one/reset-trigger.json"
 
   source_file="$(find core/engine/build/outputs/connected_android_test_additional_output     -type f -path "*/m2-g2-transport/n6/$trial_id.json" -print -quit)"
   test -n "$source_file"
