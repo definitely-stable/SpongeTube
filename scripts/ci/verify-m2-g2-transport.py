@@ -245,29 +245,36 @@ def validate_harness(
     trigger = load_json(trial_dir / "reset-trigger.json")
     require(trigger.get("schemaVersion") == 1, f"{trial_id}: trigger schema drift")
     require(trigger.get("trialId") == trial_id, f"{trial_id}: trigger trial binding drift")
+    require(trigger.get("signal") == "ATTEMPT_FAILED", f"{trial_id}: wrong Android trigger")
     require(
-        trigger.get("clockDomain") == "HOST_FAULT_MONOTONIC",
-        f"{trial_id}: trigger clock domain drift",
+        trigger.get("hostObservationClockDomain") == "HOST_FAULT_MONOTONIC",
+        f"{trial_id}: trigger host clock domain drift",
     )
-    observed = trigger.get("observedAtElapsedRealtimeNs")
-    request_id = trigger.get("originRequestId")
-    observed_rows = trigger.get("originRowsObservedAtTrigger")
-    media_gets = trigger.get("mediaGetsObservedAtTrigger")
+    observed = trigger.get("hostObservedAtElapsedRealtimeNs")
+    fetch_id = trigger.get("fetchId")
+    signal_count = trigger.get("failureSignalsObservedAtTrigger")
     require(type(observed) is int and observed >= 0, f"{trial_id}: trigger timestamp missing")
-    require(type(request_id) is int and request_id > 0, f"{trial_id}: trigger origin request id missing")
+    require(isinstance(fetch_id, str) and fetch_id, f"{trial_id}: trigger fetchId missing")
     require(
-        type(observed_rows) is int and observed_rows == 1,
-        f"{trial_id}: more than one trial-origin row was durable before disarm",
-    )
-    require(
-        type(media_gets) is int and media_gets == 1,
-        f"{trial_id}: more than one media GET was durable before disarm",
+        type(signal_count) is int and signal_count == 1,
+        f"{trial_id}: multiple owner failures were visible before disarm",
     )
     require(
         applied["elapsedRealtimeNs"] <= observed <= events[3]["elapsedRealtimeNs"],
-        f"{trial_id}: fault was not removed after the causal trigger observation",
+        f"{trial_id}: fault was not removed after Android observed ATTEMPT_FAILED",
     )
-    return request_id
+
+    signal_log = (trial_dir / "android-fault-signal.log").read_text(encoding="utf-8")
+    marker = f"trial={trial_id} fetchId="
+    signal_lines = [line for line in signal_log.splitlines() if marker in line]
+    require(signal_lines, f"{trial_id}: Android failure signal log is empty")
+    parsed_ids: list[str] = []
+    for line in signal_lines:
+        match = re.search(rf"trial={re.escape(trial_id)} fetchId=([^\\s]+)", line)
+        require(match is not None, f"{trial_id}: malformed Android failure signal")
+        parsed_ids.append(match.group(1))
+    require(parsed_ids[0] == fetch_id, f"{trial_id}: trigger fetchId/log mismatch")
+    return fetch_id, parsed_ids
 
 
 def finalize_retry_visibility(
@@ -348,7 +355,11 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
     for expected in schedule:
         trial_id = expected["trialId"]
         trial_dir = args.trial_root / trial_id
-        trigger_request_id = validate_harness(trial_dir, plan=plan, trial_id=trial_id)
+        trigger_fetch_id, signal_fetch_ids = validate_harness(
+            trial_dir,
+            plan=plan,
+            trial_id=trial_id,
+        )
 
         start = load_count(trial_dir / "origin-before-count.txt")
         end = load_count(trial_dir / "origin-after-count.txt")
@@ -357,12 +368,6 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
         require(len(trial_origin) >= 2, f"{trial_id}: reset did not produce a recovery request")
         for origin_row in trial_origin:
             shared.validate_origin_row(origin_row, trial_id=trial_id)
-        request_ids = {row.get("requestId") for row in trial_origin}
-        require(trigger_request_id in request_ids, f"{trial_id}: trigger request escaped trial origin partition")
-        require(
-            trial_origin[0].get("requestId") == trigger_request_id,
-            f"{trial_id}: causal trigger was not the first media request in the trial partition",
-        )
         previous_end = end
 
         raw = load_json(args.raw_dir / f"{trial_id}.json")
@@ -374,6 +379,28 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
             device_state=inputs["deviceState"],
             recovery_policy=inputs["recoveryPolicy"],
             expected_phase="M2-G2-D-TRANSPORT_RESET",
+        )
+
+        raw_attempts = raw["proof"]["physicalAttempts"]
+        raw_failures = raw["proof"]["recoveryFailures"]
+        require(raw_attempts and raw_failures, f"{trial_id}: N6 emitted no failed owner")
+        require(
+            raw_attempts[0].get("terminal") == "ATTEMPT_FAILED"
+            and raw_attempts[0].get("fetchId") == trigger_fetch_id,
+            f"{trial_id}: disarm trigger is not the first failed physical owner",
+        )
+        require(
+            raw_failures[0].get("fetchId") == trigger_fetch_id,
+            f"{trial_id}: disarm trigger is not bound to first recovery failure",
+        )
+        failed_fetch_ids = {
+            failure.get("fetchId")
+            for failure in raw_failures
+            if isinstance(failure, Mapping)
+        }
+        require(
+            set(signal_fetch_ids).issubset(failed_fetch_ids),
+            f"{trial_id}: Android failure signal escaped retained recovery failures",
         )
 
         origin_by_id = {
