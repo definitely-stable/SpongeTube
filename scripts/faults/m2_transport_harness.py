@@ -107,6 +107,20 @@ def compile_toxic(scenario: dict[str, Any]) -> tuple[str, str, dict[str, int]]:
     return toxic_type, stream, attributes
 
 
+def expected_toxic(
+    toxic_type: str,
+    stream: str,
+    attributes: dict[str, int],
+) -> dict[str, Any]:
+    return {
+        "name": TOXIC_NAME,
+        "type": toxic_type,
+        "stream": stream,
+        "toxicityPpm": 1_000_000,
+        "attributes": attributes,
+    }
+
+
 def canonical_hash(value: Any) -> str:
     encoded = json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -211,13 +225,7 @@ def start(args: argparse.Namespace) -> None:
         args.api, PROXY_NAME, TOXIC_NAME, toxic_type, stream, attributes
     )
     active = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
-    expected = {
-        "name": TOXIC_NAME,
-        "type": toxic_type,
-        "stream": stream,
-        "toxicityPpm": 1_000_000,
-        "attributes": attributes,
-    }
+    expected = expected_toxic(toxic_type, stream, attributes)
     if active["toxics"] != [expected]:
         raise M2ContractError(f"toxic readback mismatch: {active['toxics']!r}")
     append_event(
@@ -261,7 +269,7 @@ def disarm(args: argparse.Namespace) -> None:
     """
     scenario = load(args.scenario)
     fault = transport_fault(scenario)
-    _, stream, _ = compile_toxic(scenario)
+    toxic_type, stream, attributes = compile_toxic(scenario)
     evidence_path = pathlib.Path(args.evidence)
     state_path = pathlib.Path(args.state)
     doc = _validate_started_document(
@@ -274,8 +282,11 @@ def disarm(args: argparse.Namespace) -> None:
         raise M2ContractError("transport fault already removed")
 
     active = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
-    if len(active["toxics"]) != 1 or active["toxics"][0].get("name") != TOXIC_NAME:
-        raise M2ContractError("transport toxic is not uniquely active before disarm")
+    expected = expected_toxic(toxic_type, stream, attributes)
+    if active["toxics"] != [expected]:
+        raise M2ContractError(
+            f"transport toxic readback drifted before disarm: {active['toxics']!r}"
+        )
 
     toxi.remove_toxic(args.api, PROXY_NAME, TOXIC_NAME)
     clean_proxy = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
@@ -297,7 +308,7 @@ def disarm(args: argparse.Namespace) -> None:
 def stop(args: argparse.Namespace) -> None:
     scenario = load(args.scenario)
     fault = transport_fault(scenario)
-    _, stream, _ = compile_toxic(scenario)
+    toxic_type, stream, attributes = compile_toxic(scenario)
     evidence_path = pathlib.Path(args.evidence)
     state_path = pathlib.Path(args.state)
     doc = _validate_started_document(
@@ -312,8 +323,11 @@ def stop(args: argparse.Namespace) -> None:
     if current["toxics"]:
         if removed:
             raise M2ContractError("transport toxic reappeared after recorded removal")
-        if len(current["toxics"]) != 1 or current["toxics"][0].get("name") != TOXIC_NAME:
-            raise M2ContractError("unexpected transport toxic state during stop")
+        expected = expected_toxic(toxic_type, stream, attributes)
+        if current["toxics"] != [expected]:
+            raise M2ContractError(
+                f"transport toxic readback drifted during stop: {current['toxics']!r}"
+            )
         toxi.remove_toxic(args.api, PROXY_NAME, TOXIC_NAME)
         clean_proxy = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
         if clean_proxy["toxics"]:
