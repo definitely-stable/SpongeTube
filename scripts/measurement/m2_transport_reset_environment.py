@@ -174,6 +174,7 @@ def build(
             "GITHUB_HOSTED_RUNNER_AND_API36_EMULATOR_ENVIRONMENT_ONLY",
             "NO_PHYSICAL_DEVICE_PERFORMANCE_CLAIM",
             "TOXIPROXY_RESET_EFFECT_REQUIRES_PER_TRIAL_CAUSAL_EVIDENCE",
+            "ADB_REVERSE_IS_LAB_CONTROL_ONLY_AND_NEVER_MEDIA_UNDER_TEST",
         ],
     }
     validate_instance(load(root / ".work" / "schemas" / "transport-reset-environment-v1.schema.json"), doc)
