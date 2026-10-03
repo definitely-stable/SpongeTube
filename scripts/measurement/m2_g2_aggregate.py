@@ -680,6 +680,11 @@ def verify_index(
         require(path.stat().st_size == row.get("sizeBytes"), f"G2 artifact size mismatch: {key}")
         by_path[key] = row
 
+    require(
+        artifacts == artifact_index(evidence_root, generated_root),
+        "G2-F artifact index does not cover the exact canonical file set",
+    )
+
     experiments = index.get("experiments")
     require(isinstance(experiments, list), "G2-F experiments must be a list")
     expected_ids = [spec["id"] for spec in EXPERIMENTS]
