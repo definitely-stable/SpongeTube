@@ -11,6 +11,7 @@ on:
       - ".github/workflows/m2-g2-route.yml"
       - ".work/milestones/M2.md"
       - ".work/ROADMAP.md"
+      - ".work/VERIFICATION.md"
       - ".work/schemas/m2-g2-evidence-index-v1.schema.json"
       - ".work/schemas/transport-*.schema.json"
       - "core/engine/**"
@@ -32,6 +33,7 @@ on:
       - ".github/workflows/m2-g2-route.yml"
       - ".work/milestones/M2.md"
       - ".work/ROADMAP.md"
+      - ".work/VERIFICATION.md"
       - ".work/schemas/m2-g2-evidence-index-v1.schema.json"
       - ".work/schemas/transport-*.schema.json"
       - "core/engine/**"
@@ -120,6 +122,16 @@ jobs:
         with:
           name: m2-g2-route-api36-paired
           path: build/m2-g2-aggregate/evidence/route
+
+      - name: Verify G2-F host contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/measurement/m2_g2_aggregate.py
+          python3 -m unittest \
+            scripts.measurement.tests.test_m2_g2_aggregate \
+            scripts.measurement.tests.test_m2_transport_evaluation_oracle \
+            scripts.measurement.tests.test_m2_transport_pair_plan
 
       - name: Assemble and independently verify G2 evidence
         shell: bash
