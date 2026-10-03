@@ -67,26 +67,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  contracts:
+    name: g2-f-host-contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact G2 source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify G2-F host contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/measurement/m2_g2_aggregate.py
+          python3 -m unittest \
+            scripts.measurement.tests.test_m2_g2_aggregate \
+            scripts.measurement.tests.test_m2_transport_evaluation_oracle \
+            scripts.measurement.tests.test_m2_transport_pair_plan
+
   n0:
     name: canonical-n0
+    needs: contracts
     uses: ./.github/workflows/m2-g2-n0.yml
     with:
       concurrency_suffix: aggregate-${{ github.run_id }}
 
   network:
     name: canonical-network
+    needs: contracts
     uses: ./.github/workflows/m2-g2-network.yml
     with:
       concurrency_suffix: aggregate-${{ github.run_id }}
 
   transport-reset:
     name: canonical-transport-reset
+    needs: contracts
     uses: ./.github/workflows/m2-g2-transport.yml
     with:
       concurrency_suffix: aggregate-${{ github.run_id }}
 
   route-replacement:
     name: canonical-route-replacement
+    needs: contracts
     uses: ./.github/workflows/m2-g2-route.yml
     with:
       concurrency_suffix: aggregate-${{ github.run_id }}
@@ -142,16 +167,6 @@ jobs:
         with:
           name: m2-g2-route-api36-paired
           path: build/m2-g2-aggregate/evidence/route
-
-      - name: Verify G2-F host contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile scripts/measurement/m2_g2_aggregate.py
-          python3 -m unittest \
-            scripts.measurement.tests.test_m2_g2_aggregate \
-            scripts.measurement.tests.test_m2_transport_evaluation_oracle \
-            scripts.measurement.tests.test_m2_transport_pair_plan
 
       - name: Assemble and independently verify G2 evidence
         shell: bash
