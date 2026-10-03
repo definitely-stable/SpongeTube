@@ -379,6 +379,21 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
             f"{trial_id}: Android failure signal escaped retained recovery failures",
         )
 
+        require(
+            proof["physicalAttemptCount"] == 2,
+            f"{trial_id}: G2-D requires exactly one failed owner followed by one successful owner",
+        )
+        require(
+            raw["proof"]["recoveryFailureCount"] == 1
+            and len(raw["proof"]["recoveryFailures"]) == 1
+            and len(raw["proof"]["recoveryBackoffs"]) == 1,
+            f"{trial_id}: G2-D recovery lineage must contain exactly one failure/backoff",
+        )
+        require(
+            raw["proof"]["recoveryJitterSamples"] == [367],
+            f"{trial_id}: first frozen G2 recovery backoff drifted",
+        )
+
         origin_by_id = {
             origin_row.get("requestId"): origin_row
             for origin_row in trial_origin
@@ -390,10 +405,13 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
 
         finalized = finalize_retry_visibility(row, proof, trial_origin)
         internal = finalized["recovery"]["internalRetryCount"]
-        failure_count = raw["proof"]["recoveryFailureCount"]
         require(
-            failure_count > 0 or (internal is not None and internal > 0),
-            f"{trial_id}: injected reset produced neither coordinator recovery nor observable transport replay",
+            raw["proof"]["recoveryFailureCount"] == 1,
+            f"{trial_id}: injected reset did not remain scoped to the first application owner",
+        )
+        require(
+            internal is not None,
+            f"{trial_id}: transport replay attribution remained opaque",
         )
         reset_effect_rows += 1
 
