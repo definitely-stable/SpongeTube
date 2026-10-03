@@ -167,6 +167,34 @@ trace_count() {
   if [[ -f "$TRACE" ]]; then wc -l < "$TRACE"; else printf '0\n'; fi
 }
 
+await_android_ready() {
+  local trial_id="$1"
+  local log_file="$2"
+  local marker="ready trial=$trial_id"
+
+  for attempt in {1..6000}; do
+    if grep -Fq "$marker" "$log_file" 2>/dev/null; then
+      [[ "$(grep -F -c "$marker" "$log_file")" -eq 1 ]] || {
+        echo "multiple N6 Android readiness signals observed" >&2
+        cat "$log_file" >&2 || true
+        return 1
+      }
+      return 0
+    fi
+    if ! kill -0 "$TEST_PID" 2>/dev/null; then
+      echo "N6 Android test exited before readiness" >&2
+      cat "$log_file" >&2 || true
+      wait "$TEST_PID" || true
+      return 1
+    fi
+    sleep 0.01
+  done
+
+  echo "N6 Android readiness was not observed within launch window" >&2
+  cat "$log_file" >&2 || true
+  return 1
+}
+
 await_android_fault_signal() {
   local trial_id="$1"
   local log_file="$2"
@@ -175,7 +203,7 @@ await_android_fault_signal() {
   local line=""
   local matching=0
 
-  for attempt in {1..1000}; do
+  for attempt in {1..3000}; do
     matching="$(grep -F -c "$marker" "$log_file" 2>/dev/null || true)"
     if [[ "$matching" -gt 0 ]]; then
       [[ "$matching" -eq 1 ]] || {
@@ -303,6 +331,7 @@ while IFS= read -r trial_id; do
   ./gradlew --dependency-verification=strict     :core:engine:connectedDebugAndroidTest     -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.core.engine.route.TransportPairNetworkAndroidTest     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.originBaseUrl="http://$MEDIA_ADDR:18080"     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.trialId="$trial_id"     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.scenario=N6     -Pandroid.testInstrumentationRunnerArguments.spongetube.m2g2.recoveryJitterSeed="$jitter_seed" &
   TEST_PID=$!
 
+  await_android_ready "$trial_id" "$one/android-fault-signal.log"
   await_android_fault_signal "$trial_id" "$one/android-fault-signal.log" "$one/reset-trigger.json"
 
   python3 scripts/faults/m2_transport_harness.py disarm "${common[@]}"     --state "$one/harness/toxiproxy-disarmed-state.json"
