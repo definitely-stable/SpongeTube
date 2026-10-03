@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import importlib.util
 import json
 import pathlib
@@ -18,6 +17,7 @@ sys.path.insert(0, str(MEASUREMENT))
 
 from m2_contracts import scan_evidence_privacy  # noqa: E402
 from m2_transport_evaluation_oracle import analyze_trials  # noqa: E402
+import m2_transport_reset_environment as reset_env  # noqa: E402
 from m2_transport_pair_plan import (  # noqa: E402
     planned_trial_schedule,
     validate_plan,
@@ -53,15 +53,6 @@ EXPECTED_DISARMED = {
     "toxics": [],
 }
 EXPECTED_FINAL = {"proxies": 0, "toxics": 0}
-EXPECTED_CODE_PATHS = (
-    ".github/workflows/m2-g2-transport.yml",
-    "core/engine/src/androidTest/java/io/github/definitelystable/spongetube/core/engine/route/TransportPairNetworkAndroidTest.kt",
-    "scripts/ci/run-m2-g2-transport.sh",
-    "scripts/ci/verify-m2-g2-transport.py",
-    "scripts/faults/m2_transport_harness.py",
-    "scripts/measurement/m2_transport_pair_plan.py",
-)
-
 # Reuse the hardened generic raw-device proof verifier from G2-C.  Only the
 # scenario identity and expected phase differ; fault lifecycle is verified here.
 shared.SPECS["N6"] = {
@@ -112,57 +103,20 @@ def load_inputs(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
     }
 
 
-def file_sha256(path: pathlib.Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def validate_provenance(provenance: Mapping[str, Any]) -> None:
-    require(provenance.get("schemaVersion") == 1, "provenance schema drift")
-    for field in ("sourceHeadCommit", "checkoutCommit"):
-        value = provenance.get(field)
-        require(
-            isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
-            f"provenance {field} invalid",
+def validate_environment(
+    environment: Mapping[str, Any],
+    android_runtime: Mapping[str, Any],
+) -> None:
+    try:
+        reset_env.verify(
+            environment,
+            android_runtime=android_runtime,
+            root=ROOT,
         )
-
-    lock = load_json(ROOT / "tools" / "fault-harness" / "toolchain.lock.json")
-    pinned = lock.get("toxiproxy")
-    require(isinstance(pinned, Mapping), "pinned Toxiproxy lock missing")
-    observed_toxi = provenance.get("toxiproxy")
-    require(
-        isinstance(observed_toxi, Mapping)
-        and observed_toxi.get("version") == pinned.get("version") == "2.12.0"
-        and observed_toxi.get("binarySha256") == pinned.get("sha256"),
-        "Toxiproxy provenance does not match pinned lock",
-    )
-
-    runtime = provenance.get("androidRuntime")
-    require(
-        isinstance(runtime, Mapping)
-        and runtime.get("deviceClass") == "ANDROID_EMULATOR"
-        and runtime.get("androidApi") == 36
-        and runtime.get("abi") == "x86_64"
-        and isinstance(runtime.get("buildFingerprint"), str)
-        and bool(runtime.get("buildFingerprint")),
-        "Android runtime provenance drift",
-    )
-
-    code_files = provenance.get("codeFiles")
-    require(isinstance(code_files, list), "code provenance missing")
-    by_path = {
-        row.get("path"): row.get("sha256")
-        for row in code_files
-        if isinstance(row, Mapping)
-    }
-    require(set(by_path) == set(EXPECTED_CODE_PATHS), "code provenance file set drift")
-    for relative in EXPECTED_CODE_PATHS:
-        actual = file_sha256(ROOT / relative)
-        require(by_path[relative] == actual, f"code provenance hash drift: {relative}")
-    scan_evidence_privacy(provenance)
+    except (ValueError, OSError, KeyError) as error:
+        raise TransportResetEvidenceError(
+            f"G2-D environment provenance invalid: {error}"
+        ) from error
 
 
 def validate_scenario(scenario: Mapping[str, Any]) -> None:
@@ -317,7 +271,10 @@ def finalize_retry_visibility(
 def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     plan = load_json(args.plan)
     scenario = load_json(args.scenario)
-    validate_provenance(load_json(args.provenance))
+    validate_environment(
+        load_json(args.environment),
+        load_json(args.android_runtime),
+    )
     inputs = load_inputs(args)
     validate_scenario(scenario)
     shared.validate_frozen_work(inputs["work"])
@@ -496,7 +453,8 @@ def main() -> None:
     parser.add_argument("--trial-root", required=True, type=pathlib.Path)
     parser.add_argument("--origin-trace", required=True, type=pathlib.Path)
     parser.add_argument("--scenario", required=True, type=pathlib.Path)
-    parser.add_argument("--provenance", required=True, type=pathlib.Path)
+    parser.add_argument("--environment", required=True, type=pathlib.Path)
+    parser.add_argument("--android-runtime", required=True, type=pathlib.Path)
     parser.add_argument("--work", required=True, type=pathlib.Path)
     parser.add_argument("--device-state", required=True, type=pathlib.Path)
     parser.add_argument("--cache-state", required=True, type=pathlib.Path)
