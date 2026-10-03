@@ -293,6 +293,16 @@ class TransportPairRouteReplacementAndroidTest {
             // routeEpoch, not Android Network/binding object identity, is the
             // contract boundary. Android may reuse the same Network object
             // after an UNAVAILABLE gap; the reducer must still start a new epoch.
+            // Conversely, a genuinely different platform route must never
+            // retain the old route's executable binding.
+            val initialRouteRef = routeRefForEpoch(routeRecorder, initialEpoch)
+            val restoredRouteRef = routeRefForEpoch(routeRecorder, restoredEpoch)
+            if (initialRouteRef != restoredRouteRef) {
+                assertTrue(
+                    "G2-E replacement route reused the old route execution binding",
+                    initial.executionBinding !== restored.executionBinding,
+                )
+            }
 
             val outcome = withTimeout(OUTCOME_TIMEOUT_MS) { outcomeDeferred.await() }
             handle.close()
@@ -557,6 +567,21 @@ class TransportPairRouteReplacementAndroidTest {
                 )
         }
     }
+
+    private fun routeRefForEpoch(
+        evidence: RouteEvidenceRecorder,
+        routeEpoch: Long,
+    ): PlatformRouteRef =
+        checkNotNull(
+            evidence.events().firstOrNull { event ->
+                event.disposition == RouteEventDisposition.APPLIED &&
+                    event.routeEpochAfter == routeEpoch &&
+                    (
+                        event.signal == RouteSignalKind.AVAILABLE ||
+                            event.signal == RouteSignalKind.BOOTSTRAP_SNAPSHOT
+                    )
+            }?.platformRouteRef,
+        ) { "G2-E route epoch $routeEpoch lacks an establishment route ref" }
 
     private suspend fun awaitStableUnavailable(
         monitor: DefaultRouteMonitor,
