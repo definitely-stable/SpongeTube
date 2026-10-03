@@ -1,6 +1,7 @@
 name: M2-G2 N0 Paired API36 Evidence
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - ".github/workflows/m2-g2-n0.yml"
