@@ -201,88 +201,83 @@ def validate_harness(
     require(trigger.get("trialId") == trial_id, f"{trial_id}: trigger trial binding drift")
     require(trigger.get("signal") == "ATTEMPT_FAILED", f"{trial_id}: wrong Android trigger")
     require(
+        trigger.get("controlProtocol") == "ADB_REVERSE_LOOPBACK_HTTP_V1",
+        f"{trial_id}: reset control protocol drift",
+    )
+    require(
         trigger.get("hostObservationClockDomain") == "HOST_FAULT_MONOTONIC",
         f"{trial_id}: trigger host clock domain drift",
     )
     observed = trigger.get("hostObservedAtElapsedRealtimeNs")
+    disarmed_at = trigger.get("faultDisarmedAtElapsedRealtimeNs")
     fetch_id = trigger.get("fetchId")
+    attempt_correlation = trigger.get("attemptCorrelationId")
     signal_count = trigger.get("failureSignalsObservedAtTrigger")
+    origin_before = trigger.get("originCountBeforeTrial")
+    origin_at_trigger = trigger.get("originCountAtTrigger")
+    first_owner_ids = trigger.get("originRequestIdsBeforeDisarm")
     require(type(observed) is int and observed >= 0, f"{trial_id}: trigger timestamp missing")
+    require(type(disarmed_at) is int and disarmed_at >= observed, f"{trial_id}: disarm timestamp drift")
     require(isinstance(fetch_id, str) and fetch_id, f"{trial_id}: trigger fetchId missing")
+    require(
+        attempt_correlation == f"{fetch_id}:attempt-1",
+        f"{trial_id}: trigger application-attempt correlation drift",
+    )
     require(
         type(signal_count) is int and signal_count == 1,
         f"{trial_id}: multiple owner failures were visible before disarm",
     )
     require(
-        applied["elapsedRealtimeNs"] <= observed <= events[3]["elapsedRealtimeNs"],
-        f"{trial_id}: fault was not removed after Android observed ATTEMPT_FAILED",
+        type(origin_before) is int
+        and type(origin_at_trigger) is int
+        and 0 <= origin_before < origin_at_trigger,
+        f"{trial_id}: first-owner origin barrier is invalid",
     )
-
-    signal_log = (trial_dir / "android-fault-signal.log").read_text(encoding="utf-8")
-    all_signal_lines = signal_log.splitlines()
-    ready_marker = f"ready trial={trial_id}"
-    ready_indexes = [
-        index for index, line in enumerate(all_signal_lines)
-        if ready_marker in line
-    ]
     require(
-        len(ready_indexes) == 1,
-        f"{trial_id}: expected exactly one Android readiness signal",
+        isinstance(first_owner_ids, list)
+        and len(first_owner_ids) == origin_at_trigger - origin_before
+        and all(type(value) is int and value > 0 for value in first_owner_ids)
+        and len(set(first_owner_ids)) == len(first_owner_ids),
+        f"{trial_id}: first-owner origin barrier ids are invalid",
     )
-
-    failure_marker = f"trial={trial_id} fetchId="
-    failure_pairs = [
-        (index, line)
-        for index, line in enumerate(all_signal_lines)
-        if failure_marker in line
-    ]
-    require(failure_pairs, f"{trial_id}: Android failure signal log is empty")
     require(
-        ready_indexes[0] < failure_pairs[0][0],
-        f"{trial_id}: failure signal preceded Android readiness",
+        applied["elapsedRealtimeNs"] <= observed <= events[3]["elapsedRealtimeNs"] <= disarmed_at,
+        f"{trial_id}: fault removal is not causally enclosed by the Android failure barrier",
     )
-    parsed_ids: list[str] = []
-    for _, line in failure_pairs:
-        match = re.search(rf"trial={re.escape(trial_id)} fetchId=(\S+)", line)
-        require(match is not None, f"{trial_id}: malformed Android failure signal")
-        parsed_ids.append(match.group(1))
-    require(parsed_ids[0] == fetch_id, f"{trial_id}: trigger fetchId/log mismatch")
-    return fetch_id, parsed_ids
+    return fetch_id, attempt_correlation, origin_before, origin_at_trigger, first_owner_ids
 
 
 def finalize_retry_visibility(
     row: dict[str, Any],
-    proof: Mapping[str, Any],
-    trial_origin: list[dict[str, Any]],
+    *,
+    first_owner_origin: list[dict[str, Any]],
+    second_owner_origin: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    origin_ids = [origin_row.get("requestId") for origin_row in trial_origin]
-    require(
-        all(type(value) is int and value > 0 for value in origin_ids)
-        and len(origin_ids) == len(set(origin_ids)),
-        f"{row['trialId']}: malformed/reused origin request id",
-    )
-    require(
-        set(proof["correlatedRequestIds"]).issubset(set(origin_ids)),
-        f"{row['trialId']}: device correlation escaped serialized origin partition",
-    )
-    visibility, internal_retries = shared.derive_internal_retry_visibility(
-        physical_owner_count=proof["physicalAttemptCount"],
-        correlated_owner_count=len(proof["correlatedRequestIds"]),
-        origin_request_count=len(trial_origin),
+    require(first_owner_origin, f"{row['trialId']}: reset never reached origin")
+    require(second_owner_origin, f"{row['trialId']}: recovery owner never reached origin")
+
+    # The synchronous Android -> host barrier blocks FetchEventListener before
+    # the failed owner can return to RecoveryCoordinator.  Therefore every
+    # origin row before the barrier belongs to owner #1 and every row after it
+    # belongs to owner #2. Each application owner performs one physical
+    # request; extra GETs within either partition are transport-internal replay.
+    internal_retries = (
+        max(0, len(first_owner_origin) - 1)
+        + max(0, len(second_owner_origin) - 1)
     )
     finalized = copy.deepcopy(row)
-    finalized["recovery"]["originRequestCount"] = len(trial_origin)
-    finalized["recovery"]["internalRetryVisibility"] = visibility
+    finalized["recovery"]["originRequestCount"] = (
+        len(first_owner_origin) + len(second_owner_origin)
+    )
+    finalized["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
     finalized["recovery"]["internalRetryCount"] = internal_retries
-    finalized["performanceSampleEligible"] = visibility == "OBSERVABLE"
+    finalized["performanceSampleEligible"] = True
     finalized["limitations"] = [
         item for item in finalized["limitations"]
         if item != "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"
     ]
     finalized["limitations"].append(
-        "INTERNAL_HTTP_REPLAY_COUNT_DERIVED_FROM_SERIALIZED_ORIGIN_TRACE_PARTITION"
-        if visibility == "OBSERVABLE"
-        else "INTERNAL_HTTP_REPLAY_ATTRIBUTION_AMBIGUOUS_WITH_UNCORRELATED_OWNER"
+        "INTERNAL_HTTP_REPLAY_COUNT_DERIVED_FROM_SYNCHRONOUS_OWNER_BARRIER"
     )
     return finalized
 
@@ -331,7 +326,13 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
     for expected in schedule:
         trial_id = expected["trialId"]
         trial_dir = args.trial_root / trial_id
-        trigger_fetch_id, signal_fetch_ids = validate_harness(
+        (
+            trigger_fetch_id,
+            trigger_attempt_correlation,
+            trigger_origin_before,
+            trigger_origin_at,
+            first_owner_ids,
+        ) = validate_harness(
             trial_dir,
             plan=plan,
             trial_id=trial_id,
@@ -340,8 +341,22 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
         start = load_count(trial_dir / "origin-before-count.txt")
         end = load_count(trial_dir / "origin-after-count.txt")
         require(start == previous_end and start <= end <= len(origin), f"{trial_id}: origin partition drift")
+        require(
+            trigger_origin_before == start
+            and start < trigger_origin_at < end,
+            f"{trial_id}: synchronous origin barrier escaped the retained trial partition",
+        )
         trial_origin = origin[start:end]
-        require(len(trial_origin) >= 2, f"{trial_id}: reset did not produce a recovery request")
+        first_owner_origin = origin[start:trigger_origin_at]
+        second_owner_origin = origin[trigger_origin_at:end]
+        require(
+            [row.get("requestId") for row in first_owner_origin] == first_owner_ids,
+            f"{trial_id}: first-owner origin barrier does not match retained trace",
+        )
+        require(
+            first_owner_origin and second_owner_origin,
+            f"{trial_id}: reset/recovery origin partitions must both be non-empty",
+        )
         for origin_row in trial_origin:
             shared.validate_origin_row(origin_row, trial_id=trial_id)
         previous_end = end
@@ -369,14 +384,9 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
             raw_failures[0].get("fetchId") == trigger_fetch_id,
             f"{trial_id}: disarm trigger is not bound to first recovery failure",
         )
-        failed_fetch_ids = {
-            failure.get("fetchId")
-            for failure in raw_failures
-            if isinstance(failure, Mapping)
-        }
         require(
-            set(signal_fetch_ids).issubset(failed_fetch_ids),
-            f"{trial_id}: Android failure signal escaped retained recovery failures",
+            raw_failures[0].get("attemptCorrelationId") == trigger_attempt_correlation,
+            f"{trial_id}: control barrier is not bound to retained application attempt",
         )
 
         require(
@@ -401,9 +411,17 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
         }
         successful_origin = origin_by_id.get(proof["successfulRequestId"])
         require(isinstance(successful_origin, Mapping), f"{trial_id}: successful owner origin missing")
+        require(
+            successful_origin in second_owner_origin,
+            f"{trial_id}: terminal successful request occurred before reset disarm barrier",
+        )
         shared.validate_successful_origin_row(successful_origin, trial_id=trial_id)
 
-        finalized = finalize_retry_visibility(row, proof, trial_origin)
+        finalized = finalize_retry_visibility(
+            row,
+            first_owner_origin=first_owner_origin,
+            second_owner_origin=second_owner_origin,
+        )
         internal = finalized["recovery"]["internalRetryCount"]
         require(
             raw["proof"]["recoveryFailureCount"] == 1,
