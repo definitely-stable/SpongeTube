@@ -78,7 +78,6 @@ import kotlinx.coroutines.yield
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -291,7 +290,9 @@ class TransportPairRouteReplacementAndroidTest {
             val restored = awaitDirectObservation(monitor, backend, initialEpoch)
             restoredEpoch = (restored.state as DefaultRouteState.Available).routeEpoch
             assertTrue(restoredEpoch > initialEpoch)
-            assertNotEquals(initial.executionBinding, restored.executionBinding)
+            // routeEpoch, not Android Network/binding object identity, is the
+            // contract boundary. Android may reuse the same Network object
+            // after an UNAVAILABLE gap; the reducer must still start a new epoch.
 
             val outcome = withTimeout(OUTCOME_TIMEOUT_MS) { outcomeDeferred.await() }
             handle.close()
@@ -375,8 +376,6 @@ class TransportPairRouteReplacementAndroidTest {
 
             monitor.shutdown()
             monitorStopped = true
-            val finalState = monitor.observations.value.state
-            val finalEpoch = (finalState as? DefaultRouteState.Available)?.routeEpoch ?: restoredEpoch
             val correlatedOriginIds = attemptProofs.mapNotNull {
                 it.transportCorrelationId?.toLongOrNull()
             }
@@ -454,7 +453,7 @@ class TransportPairRouteReplacementAndroidTest {
                     put("extentStoreInitiallyEmpty", true)
                     put("transportSessionFresh", true)
                     put("routeEpochBefore", initialEpoch)
-                    put("routeEpochAfter", finalEpoch)
+                    put("routeEpochAfter", restoredEpoch)
                     put("routeUnavailableObserved", true)
                     put("chargesBeforeRestore", chargesBeforeRestore)
                     put("attemptsBeforeRestore", attemptsBeforeRestore)
