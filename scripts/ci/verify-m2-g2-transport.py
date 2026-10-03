@@ -270,7 +270,7 @@ def validate_harness(
     require(signal_lines, f"{trial_id}: Android failure signal log is empty")
     parsed_ids: list[str] = []
     for line in signal_lines:
-        match = re.search(rf"trial={re.escape(trial_id)} fetchId=(\\S+)", line)
+        match = re.search(rf"trial={re.escape(trial_id)} fetchId=(\S+)", line)
         require(match is not None, f"{trial_id}: malformed Android failure signal")
         parsed_ids.append(match.group(1))
     require(parsed_ids[0] == fetch_id, f"{trial_id}: trigger fetchId/log mismatch")
