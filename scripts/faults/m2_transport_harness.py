@@ -236,25 +236,51 @@ def start(args: argparse.Namespace) -> None:
     write_document(state_path, active)
 
 
-def stop(args: argparse.Namespace) -> None:
+def _validate_started_document(
+    doc: dict[str, Any],
+    *,
+    scenario: dict[str, Any],
+    run_id: str,
+    session_id: str,
+) -> dict[str, Any]:
+    if doc.get("runId") != run_id:
+        raise M2ContractError("runId does not match started harness")
+    if doc.get("sessionId") != session_id:
+        raise M2ContractError("sessionId does not match started harness")
+    if doc.get("scenarioHash") != scenario_sha256(scenario):
+        raise M2ContractError("scenario does not match started harness")
+    return doc
+
+
+def disarm(args: argparse.Namespace) -> None:
+    """Remove the active toxic while keeping the proxy path alive.
+
+    G2-D uses this after the first causally observed reset so RecoveryCoordinator
+    can own the subsequent retry over the same proxy route.  The operation is
+    explicit evidence; it never performs or schedules an application retry.
+    """
     scenario = load(args.scenario)
     fault = transport_fault(scenario)
     _, stream, _ = compile_toxic(scenario)
     evidence_path = pathlib.Path(args.evidence)
     state_path = pathlib.Path(args.state)
-    doc = read_document(evidence_path)
-    expected_hash = scenario_sha256(scenario)
-    if doc.get("runId") != args.run_id:
-        raise M2ContractError("stop runId does not match started harness")
-    if doc.get("sessionId") != args.session_id:
-        raise M2ContractError("stop sessionId does not match started harness")
-    if doc.get("scenarioHash") != expected_hash:
-        raise M2ContractError("stop scenario does not match started harness")
+    doc = _validate_started_document(
+        read_document(evidence_path),
+        scenario=scenario,
+        run_id=args.run_id,
+        session_id=args.session_id,
+    )
+    if any(event.get("operation") == "FAULT_REMOVED" for event in doc["events"]):
+        raise M2ContractError("transport fault already removed")
+
+    active = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
+    if len(active["toxics"]) != 1 or active["toxics"][0].get("name") != TOXIC_NAME:
+        raise M2ContractError("transport toxic is not uniquely active before disarm")
 
     toxi.remove_toxic(args.api, PROXY_NAME, TOXIC_NAME)
     clean_proxy = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
     if clean_proxy["toxics"]:
-        raise M2ContractError("transport toxic leaked after removal")
+        raise M2ContractError("transport toxic leaked after disarm")
     append_event(
         doc,
         fault=fault,
@@ -264,6 +290,48 @@ def stop(args: argparse.Namespace) -> None:
         state=clean_proxy,
         result="REMOVED",
     )
+    write_document(evidence_path, doc)
+    write_document(state_path, clean_proxy)
+
+
+def stop(args: argparse.Namespace) -> None:
+    scenario = load(args.scenario)
+    fault = transport_fault(scenario)
+    _, stream, _ = compile_toxic(scenario)
+    evidence_path = pathlib.Path(args.evidence)
+    state_path = pathlib.Path(args.state)
+    doc = _validate_started_document(
+        read_document(evidence_path),
+        scenario=scenario,
+        run_id=args.run_id,
+        session_id=args.session_id,
+    )
+
+    current = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
+    removed = any(event.get("operation") == "FAULT_REMOVED" for event in doc["events"])
+    if current["toxics"]:
+        if removed:
+            raise M2ContractError("transport toxic reappeared after recorded removal")
+        if len(current["toxics"]) != 1 or current["toxics"][0].get("name") != TOXIC_NAME:
+            raise M2ContractError("unexpected transport toxic state during stop")
+        toxi.remove_toxic(args.api, PROXY_NAME, TOXIC_NAME)
+        clean_proxy = toxi.normalized_proxy_state(toxi.get_proxy(args.api, PROXY_NAME))
+        if clean_proxy["toxics"]:
+            raise M2ContractError("transport toxic leaked after removal")
+        append_event(
+            doc,
+            fault=fault,
+            operation="FAULT_REMOVED",
+            direction=stream.upper(),
+            parameters={},
+            state=clean_proxy,
+            result="REMOVED",
+        )
+    else:
+        if not removed:
+            raise M2ContractError("transport toxic disappeared without recorded removal")
+        clean_proxy = current
+
     toxi.delete_proxy(args.api, PROXY_NAME)
     proxies = toxi.list_proxies(args.api)
     if proxies not in ({}, []):
@@ -283,7 +351,7 @@ def stop(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["start", "stop"])
+    parser.add_argument("command", choices=["start", "disarm", "stop"])
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--api", required=True)
     parser.add_argument("--evidence", required=True)
@@ -298,6 +366,8 @@ def main() -> int:
             if not args.listen or not args.upstream:
                 parser.error("start requires --listen and --upstream")
             start(args)
+        elif args.command == "disarm":
+            disarm(args)
         else:
             stop(args)
     except (M2ContractError, toxi.ToxiproxyError) as error:
