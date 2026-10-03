@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import pathlib
 import sys
@@ -117,6 +118,24 @@ class NetworkEvidenceError(ValueError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise NetworkEvidenceError(message)
+
+
+def reference_recovery_jitter(window_ms: int, sample_index: int) -> int:
+    require(type(window_ms) is int and window_ms >= 0, "recovery jitter window invalid")
+    require(type(sample_index) is int and sample_index >= 0, "recovery jitter sample index invalid")
+    span = window_ms + 1
+    unsigned64 = 1 << 64
+    limit = unsigned64 - (unsigned64 % span)
+    draw_index = 0
+    while True:
+        material = (
+            f"spongetube-g2-recovery-jitter-v1:{RECOVERY_JITTER_SEED}:"
+            f"{sample_index}:{draw_index}"
+        ).encode("utf-8")
+        value = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        if value < limit:
+            return value % span
+        draw_index += 1
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -644,6 +663,25 @@ def check_raw(
     require(isinstance(samples, list), f"{trial_id}: jitter samples missing")
     require(proof.get("recoveryJitterSampleCount") == len(samples) == len(backoffs), f"{trial_id}: jitter sample count drift")
     require(samples == [backoff.get("delayMs") for backoff in backoffs], f"{trial_id}: jitter/backoff delay drift")
+    expected_windows = [
+        min(
+            recovery_policy["backoffBaseMs"] * (1 << (ordinal - 1)),
+            recovery_policy["backoffCapMs"],
+        )
+        for ordinal in range(1, len(backoffs) + 1)
+    ]
+    require(
+        [backoff.get("windowMs") for backoff in backoffs] == expected_windows,
+        f"{trial_id}: recovery backoff window drift",
+    )
+    expected_samples = [
+        reference_recovery_jitter(window_ms, sample_index)
+        for sample_index, window_ms in enumerate(expected_windows)
+    ]
+    require(
+        samples == expected_samples,
+        f"{trial_id}: recovery jitter sample does not match frozen reference algorithm",
+    )
     require(proof.get("firstResponseTimeoutMs") == FIRST_RESPONSE_TIMEOUT_MS, f"{trial_id}: response timeout drift")
     require(proof.get("readTimeoutMs") == READ_TIMEOUT_MS, f"{trial_id}: read timeout drift")
 

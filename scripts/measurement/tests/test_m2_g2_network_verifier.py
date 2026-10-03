@@ -680,6 +680,16 @@ class G2NetworkVerifierTest(unittest.TestCase):
         finally:
             case.close()
 
+    def test_recovery_jitter_reference_vectors_are_frozen(self):
+        windows = [500, 1000, 2000, 4000, 5000]
+        self.assertEqual(
+            [367, 411, 1655, 2005, 4312],
+            [
+                verifier.reference_recovery_jitter(window, index)
+                for index, window in enumerate(windows)
+            ],
+        )
+
     def test_intermediate_origin_disconnect_is_valid_but_not_terminal_success(self):
         row = origin_row(7)
         row["bodyBytesWritten"] = 16_384
