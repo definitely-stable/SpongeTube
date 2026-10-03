@@ -131,6 +131,26 @@ class G2TransportVerifierTest(unittest.TestCase):
                     trial_id=trial.name,
                 )
 
+    def test_origin_request_ids_reject_duplicate_after_barrier(self):
+        with self.assertRaisesRegex(
+            verifier.TransportResetEvidenceError,
+            "duplicate/missing origin request id",
+        ):
+            verifier.validate_origin_request_ids(
+                [{"requestId": 7}, {"requestId": 7}],
+                trial_id="trial-1",
+            )
+
+    def test_origin_request_ids_reject_missing_id(self):
+        with self.assertRaisesRegex(
+            verifier.TransportResetEvidenceError,
+            "duplicate/missing origin request id",
+        ):
+            verifier.validate_origin_request_ids(
+                [{"requestId": 7}, {"requestId": None}],
+                trial_id="trial-1",
+            )
+
     def test_barrier_retry_visibility_is_observable_per_owner(self):
         row = {
             "trialId": "trial-1",
