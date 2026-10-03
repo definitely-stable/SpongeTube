@@ -66,6 +66,7 @@ def route_proof():
         "chargesBeforeRestore": 1,
         "attemptsBeforeRestore": 1,
         "gateCalls": 2,
+        "replacementValidationRendezvousObserved": True,
         "physicalAttempts": [
             {
                 "startElapsedRealtimeNs": 250,
@@ -309,6 +310,24 @@ class G2RouteVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
             "route-events-v1 oracle failed",
+        ):
+            validate_route(proof)
+
+    def test_route_evidence_rejects_missing_validation_rendezvous(self):
+        proof = route_proof()
+        proof["replacementValidationRendezvousObserved"] = False
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "replacement validation rendezvous missing",
+        ):
+            validate_route(proof)
+
+    def test_route_evidence_rejects_owner_before_validation_rendezvous(self):
+        proof = route_proof()
+        proof["physicalAttempts"][1]["startElapsedRealtimeNs"] = 410
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "replacement owner started before validation rendezvous",
         ):
             validate_route(proof)
 
