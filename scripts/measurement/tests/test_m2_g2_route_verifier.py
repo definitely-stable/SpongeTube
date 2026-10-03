@@ -215,6 +215,13 @@ class G2RouteVerifierTest(unittest.TestCase):
     def test_route_evidence_accepts_old_unavailable_replacement_sequence(self):
         validate_route(route_proof())
 
+    def test_route_evidence_accepts_bootstrap_established_old_route(self):
+        proof = route_proof()
+        initial = proof["routeEvidence"]["events"][1]
+        initial["signal"] = "BOOTSTRAP_SNAPSHOT"
+        initial["source"] = "BOOTSTRAP_ACTIVE_NETWORK"
+        validate_route(proof)
+
     def test_route_evidence_accepts_same_platform_route_ref_after_unavailable_gap(self):
         proof = route_proof()
         self.assertEqual(
