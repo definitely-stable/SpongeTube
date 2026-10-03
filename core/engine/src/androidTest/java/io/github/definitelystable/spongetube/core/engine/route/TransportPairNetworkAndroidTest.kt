@@ -20,7 +20,6 @@ import io.github.definitelystable.spongetube.core.engine.PlatformHttpRangeFetchE
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationBackend
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationEligibility
 import io.github.definitelystable.spongetube.core.engine.TransportEvaluationSelector
-import io.github.definitelystable.spongetube.core.engine.TransportPhaseKind
 import io.github.definitelystable.spongetube.core.engine.TransportPhaseObservation
 import io.github.definitelystable.spongetube.core.engine.TransportPhaseObserver
 import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryBindingCoordinator
@@ -51,7 +50,6 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,28 +68,31 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * G2-B executes exactly ONE frozen N0 trial per instrumentation process.
+ * G2-C executes one frozen NETWORK trial. CI owns netem lifecycle and launches
+ * every planned row in a fresh instrumentation process.
  *
- * CI invokes this test once for every planned row. A fresh Android test process
- * is therefore the transport-session reset barrier for COLD v1: HUC process
- * pools and the candidate HttpEngine cannot leak connection history between
- * backends or ordering blocks.
+ * This test never configures the fault: it only observes the same
+ * RecoveryCoordinator -> FetchBroker -> ExtentStore path used by both exact
+ * route transports.
  */
 @RunWith(AndroidJUnit4::class)
-class TransportPairN0AndroidTest {
-    @Test(timeout = 90_000L)
-    fun executeOneFrozenN0Trial() = runBlocking {
+class TransportPairNetworkAndroidTest {
+    @Test(timeout = 120_000L)
+    fun executeOneFrozenNetworkTrial() = runBlocking {
         assumeTrue(Build.VERSION.SDK_INT == 36)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
         val origin = arguments.getString(ARG_ORIGIN)?.trimEnd('/')
         val trialId = arguments.getString(ARG_TRIAL_ID)
+        val scenarioRaw = arguments.getString(ARG_SCENARIO)
         val jitterSeed = arguments.getString(ARG_RECOVERY_JITTER_SEED)?.toLongOrNull()
-        assumeTrue("G2-B requires an explicit origin", !origin.isNullOrBlank())
-        assumeTrue("G2-B requires an explicit frozen trial id", !trialId.isNullOrBlank())
-        assumeTrue("G2-B requires the frozen recovery-jitter seed", jitterSeed != null)
+        assumeTrue("G2-C requires an explicit origin", !origin.isNullOrBlank())
+        assumeTrue("G2-C requires an explicit frozen trial id", !trialId.isNullOrBlank())
+        assumeTrue("G2-C requires an explicit NETWORK scenario", !scenarioRaw.isNullOrBlank())
+        assumeTrue("G2-C requires the frozen recovery-jitter seed", jitterSeed != null)
+        val scenario = Scenario.parse(checkNotNull(scenarioRaw))
 
-        val plan = instrumentation.context.assets.open(PLAN_ASSET)
+        val plan = instrumentation.context.assets.open(scenario.planAsset)
             .bufferedReader()
             .use { JSONObject(it.readText()) }
         val planned = findTrial(plan, checkNotNull(trialId))
@@ -99,11 +100,10 @@ class TransportPairN0AndroidTest {
         val context: Context = instrumentation.targetContext
         val uri = URL(checkNotNull(origin) + RESOURCE_PATH)
 
-        // Fresh process + empty persistent store are both retained as raw proof.
         File(context.filesDir, "sponge").deleteRecursively()
         val store = ExtentStore.open(context)
         val extentStoreInitiallyEmpty = store.committedExtents().isEmpty()
-        assertTrue("G2-B COLD trial inherited persisted coverage", extentStoreInitiallyEmpty)
+        assertTrue("G2-C COLD trial inherited persisted coverage", extentStoreInitiallyEmpty)
 
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val monitor = AndroidDefaultRouteMonitor.open(instrumentation.context, scope)
@@ -126,7 +126,7 @@ class TransportPairN0AndroidTest {
             val initialEpoch = (route.state as DefaultRouteState.Available).routeEpoch
             val deliveryMaterial = object : DeliveryMaterial {}
             val bindingHits = AtomicInteger()
-            val protocol = AtomicReference("UNKNOWN")
+            val protocols = CopyOnWriteArrayList<String>()
             val transportPhases = CopyOnWriteArrayList<RecordedTransportPhase>()
             val phaseObserver = TransportPhaseObserver { observation ->
                 transportPhases += RecordedTransportPhase(
@@ -146,11 +146,10 @@ class TransportPairN0AndroidTest {
                 readTimeoutMs = READ_TIMEOUT_MS,
                 phaseObserver = phaseObserver,
             )
-
             val candidate = if (backend == TransportEvaluationBackend.PLATFORM_HTTP_ENGINE) {
                 pool = PlatformHttpEnginePool.createIfAvailable(context)
                 val engine = pool
-                assertNotNull("API36 G2-B candidate must remain available after G1", engine)
+                assertNotNull("API36 G2-C candidate must remain available after G1", engine)
                 PlatformHttpRangeFetchExecutor(
                     pool = checkNotNull(engine),
                     targetFor = { target },
@@ -161,53 +160,42 @@ class TransportPairN0AndroidTest {
                     },
                     firstResponseTimeoutMs = FIRST_RESPONSE_TIMEOUT_MS.toLong(),
                     readTimeoutMs = READ_TIMEOUT_MS.toLong(),
-                    onProtocolObserved = protocol::set,
+                    onProtocolObserved = { protocols += it },
                     phaseObserver = phaseObserver,
                 )
             } else {
                 null
             }
 
-            val selector = TransportEvaluationSelector(
+            val selected = TransportEvaluationSelector(
                 control = control,
                 candidate = candidate,
                 candidateVersion = pool?.backendVersion,
-            )
-            val selected = selector.select(backend)
+            ).select(backend)
             assertEquals(TransportEvaluationEligibility.ELIGIBLE, selected.eligibility)
             val executor = checkNotNull(selected.executor)
 
-            val events = CopyOnWriteArrayList<FetchEvent>()
-            val attemptCpuStartMs = AtomicLong(-1)
-            val attemptCpuEndMs = AtomicLong(-1)
-            val sessionId = "m2-g2-n0-" + planned.getString("trialId")
+            val fetchEvents = CopyOnWriteArrayList<FetchEvent>()
+            val sessionId = "m2-g2-" + scenario.family.lowercase() + "-" + planned.getString("trialId")
             val broker = FetchBroker(
                 extentStore = store,
                 executor = executor,
                 sessionId = sessionId,
-                eventListener = FetchEventListener { event ->
-                    events += event
-                    when (event.event) {
-                        FetchEventKind.ATTEMPT_STARTED ->
-                            attemptCpuStartMs.compareAndSet(-1, Process.getElapsedCpuTime())
-                        FetchEventKind.ATTEMPT_COMPLETED ->
-                            attemptCpuEndMs.compareAndSet(-1, Process.getElapsedCpuTime())
-                        else -> Unit
-                    }
-                },
+                eventListener = FetchEventListener { fetchEvents += it },
             )
             val recoveryEvidence = RecoveryEvidenceRecorder(
                 runId = plan.getString("runId"),
                 sessionId = sessionId,
             )
             val jitter = G2RecoveryJitter(checkNotNull(jitterSeed))
-            // Device-side test vector guards the cross-language frozen sampler
-            // without consuming the per-trial sampler passed to RecoveryCoordinator.
-            assertEquals(367L, G2RecoveryJitter(checkNotNull(jitterSeed)).uniformInclusive(500L))
+            assertEquals(
+                367L,
+                G2RecoveryJitter(checkNotNull(jitterSeed)).uniformInclusive(500L),
+            )
             val bindings = DeliveryBindingCoordinator(
                 initialMaterial = deliveryMaterial,
                 refresher = DeliveryBindingRefresher { _, _ ->
-                    error("N0 must not refresh delivery binding")
+                    error("NETWORK fault must not refresh delivery binding")
                 },
             )
             val routeGate = RouteAwareRecoveryAttemptGate(
@@ -224,7 +212,8 @@ class TransportPairN0AndroidTest {
                 evidence = recoveryEvidence,
             )
 
-            val extentId = "m2g2n0:" + planned.getString("trialId")
+            val cpuStartMs = Process.getElapsedCpuTime()
+            val extentId = "m2g2" + scenario.family.lowercase() + ":" + planned.getString("trialId")
             try {
                 val handle = coordinator.acquire(
                     request(extentId),
@@ -233,78 +222,109 @@ class TransportPairN0AndroidTest {
                         kind = RecoveryConsumerKind.PLAYBACK,
                     ),
                 )
-                val outcome = withTimeout(45_000) { handle.await() }
+                val outcome = withTimeout(75_000) { handle.await() }
                 handle.close()
-                assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
+                assertEquals(
+                    "canonical NETWORK trial must eventually publish the immutable extent",
+                    RecoveryTerminalReason.SUCCESS,
+                    outcome.terminalReason,
+                )
             } finally {
                 coordinator.shutdown()
                 broker.shutdown()
             }
+            val cpuTimeUs = (Process.getElapsedCpuTime() - cpuStartMs) * 1_000L
 
             val committed = store.committedExtents().single {
                 it.extentId.value == extentId && it.length == RESOURCE_LENGTH
             }
             assertEquals(RESOURCE_SHA256, committed.sha256.hex)
-            assertEquals(1, bindingHits.get())
 
-            val attemptStarted = events.single { it.event == FetchEventKind.ATTEMPT_STARTED }
-            val firstProgress = events.first { it.event == FetchEventKind.ATTEMPT_PROGRESS }
-            val attemptCompleted = events.single { it.event == FetchEventKind.ATTEMPT_COMPLETED }
-            val correlation = events.single { it.event == FetchEventKind.ATTEMPT_CORRELATED }
-            val originRequestId = checkNotNull(correlation.transportCorrelationId?.toLongOrNull())
-            val phaseSnapshot = transportPhases.toList()
-            assertEquals(
-                listOf(
-                    TransportPhaseKind.RESPONSE_HEADERS,
-                    TransportPhaseKind.FIRST_BODY_BYTES,
-                    TransportPhaseKind.RESPONSE_BODY_COMPLETE,
-                ),
-                phaseSnapshot.map { it.observation.kind },
-            )
-            assertTrue(
-                phaseSnapshot.all {
-                    it.observation.fetchKey == attemptStarted.fetchKey &&
-                        it.observation.attempt == attemptStarted.attempt
-                },
-            )
-            val phaseTimes = phaseSnapshot.map { it.elapsedRealtimeNs }
-            assertTrue(attemptStarted.eventElapsedRealtimeNs <= phaseTimes.first())
-            assertTrue(phaseTimes.zipWithNext().all { (left, right) -> left <= right })
-            assertTrue(phaseTimes.last() <= attemptCompleted.eventElapsedRealtimeNs)
+            val orderedFetchEvents = fetchEvents.sortedBy(FetchEvent::eventSequence)
+            val starts = orderedFetchEvents.filter { it.event == FetchEventKind.ATTEMPT_STARTED }
+            val terminalAttempts = orderedFetchEvents.filter {
+                it.event == FetchEventKind.ATTEMPT_COMPLETED ||
+                    it.event == FetchEventKind.ATTEMPT_FAILED
+            }
+            assertTrue(starts.isNotEmpty())
+            assertEquals(starts.size, terminalAttempts.size)
+            val attemptProofs = starts.map { started ->
+                val terminal = terminalAttempts.single { it.fetchId == started.fetchId }
+                val correlations = orderedFetchEvents.filter {
+                    it.fetchId == started.fetchId &&
+                        it.event == FetchEventKind.ATTEMPT_CORRELATED
+                }
+                assertTrue(correlations.size <= 1)
+                PhysicalAttemptProof(
+                    fetchId = started.fetchId.value,
+                    startNs = started.eventElapsedRealtimeNs,
+                    endNs = terminal.eventElapsedRealtimeNs,
+                    terminal = terminal.event.name,
+                    transportCorrelationId = correlations.singleOrNull()?.transportCorrelationId,
+                    networkBytes = terminal.networkBytes,
+                )
+            }
+            assertTrue(attemptProofs.zipWithNext().all { (a, b) -> a.endNs <= b.startNs })
 
             val budget = recoveryEvidence.budgetEvents()
-            val chainStarts = budget.count { it.kind == RecoveryBudgetEventKind.CHAIN_STARTED }
             val chainStarted = budget.single { it.kind == RecoveryBudgetEventKind.CHAIN_STARTED }
             val chainTerminated = budget.single { it.kind == RecoveryBudgetEventKind.CHAIN_TERMINATED }
-            val owners = budget.count { it.kind == RecoveryBudgetEventKind.OWNER_STARTED }
-            val remoteCharges = budget.count { it.kind == RecoveryBudgetEventKind.CHARGE }
-            val permitEpoch = budget.single {
-                it.kind == RecoveryBudgetEventKind.ATTEMPT_PERMIT_GRANTED
-            }.permit?.routeEpoch
-            assertEquals(1, chainStarts)
-            assertEquals(1, owners)
-            assertEquals(1, remoteCharges)
-            assertEquals(initialEpoch, permitEpoch)
-            assertTrue(chainStarted.elapsedRealtimeNs <= attemptStarted.eventElapsedRealtimeNs)
-            assertTrue(attemptCompleted.eventElapsedRealtimeNs <= chainTerminated.elapsedRealtimeNs)
+            val ownerStarts = budget.filter { it.kind == RecoveryBudgetEventKind.OWNER_STARTED }
+            val charges = budget.filter { it.kind == RecoveryBudgetEventKind.CHARGE }
+            val permits = budget.filter { it.kind == RecoveryBudgetEventKind.ATTEMPT_PERMIT_GRANTED }
+            val backoffs = budget.filter { it.kind == RecoveryBudgetEventKind.BACKOFF_SCHEDULED }
+            assertEquals(starts.size, ownerStarts.size)
+            assertEquals(starts.size, charges.size)
+            assertEquals(starts.size, permits.size)
+            assertTrue(permits.all { it.permit?.routeEpoch == initialEpoch })
+            assertTrue(chainStarted.elapsedRealtimeNs <= starts.first().eventElapsedRealtimeNs)
+            assertTrue(terminalAttempts.last().eventElapsedRealtimeNs <= chainTerminated.elapsedRealtimeNs)
+
+            val firstProgress = orderedFetchEvents.first { it.event == FetchEventKind.ATTEMPT_PROGRESS }
+            val firstProgressElapsedRealtimeNs = firstProgress.eventElapsedRealtimeNs
             val firstByteUs = nanosToMicros(
-                firstProgress.eventElapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
+                firstProgressElapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
             )
             val completionUs = nanosToMicros(
                 chainTerminated.elapsedRealtimeNs - chainStarted.elapsedRealtimeNs,
             )
-            assertTrue(firstByteUs >= 0)
+            assertTrue(firstByteUs >= 0L)
             assertTrue(completionUs >= firstByteUs)
+
+            val phaseSnapshot = transportPhases.sortedBy(RecordedTransportPhase::elapsedRealtimeNs)
+            assertTrue(phaseSnapshot.isNotEmpty())
+            assertTrue(phaseSnapshot.all { phase ->
+                phase.observation.fetchKey == starts.first().fetchKey &&
+                    phase.observation.attempt == 1 &&
+                    attemptProofs.count {
+                        phase.elapsedRealtimeNs in it.startNs..it.endNs
+                    } == 1
+            })
+            val successfulAttempt = attemptProofs.single { it.terminal == FetchEventKind.ATTEMPT_COMPLETED.name }
+            val successfulKinds = phaseSnapshot.filter {
+                it.elapsedRealtimeNs in successfulAttempt.startNs..successfulAttempt.endNs
+            }.map { it.observation.kind }
+            assertEquals(
+                listOf(
+                    io.github.definitelystable.spongetube.core.engine.TransportPhaseKind.RESPONSE_HEADERS,
+                    io.github.definitelystable.spongetube.core.engine.TransportPhaseKind.FIRST_BODY_BYTES,
+                    io.github.definitelystable.spongetube.core.engine.TransportPhaseKind.RESPONSE_BODY_COMPLETE,
+                ),
+                successfulKinds,
+            )
 
             val finalEpoch = (monitor.observations.value.state as? DefaultRouteState.Available)
                 ?.routeEpoch
             assertEquals(initialEpoch, finalEpoch)
-            val cpuStart = attemptCpuStartMs.get()
-            val cpuEnd = attemptCpuEndMs.get()
-            assertTrue(cpuStart >= 0 && cpuEnd >= cpuStart)
-            val cpuTimeUs = (cpuEnd - cpuStart) * 1_000L
+            assertEquals(ownerStarts.size, bindingHits.get())
+
+            val correlatedOriginIds = attemptProofs.mapNotNull {
+                it.transportCorrelationId?.toLongOrNull()
+            }
+            assertEquals(correlatedOriginIds.size, correlatedOriginIds.toSet().size)
+            val receivedBytes = attemptProofs.sumOf(PhysicalAttemptProof::networkBytes)
+            val protocol = protocols.distinct().singleOrNull() ?: "UNKNOWN"
             val maxRssBytes = readVmHwmBytes()
-            assertTrue(maxRssBytes == null || maxRssBytes > 0)
 
             val g0Row = JSONObject().apply {
                 put("trialId", planned.getString("trialId"))
@@ -317,7 +337,7 @@ class TransportPairN0AndroidTest {
                 put("comparison", JSONObject(plan.getJSONObject("comparison").toString()))
                 put("route", JSONObject().apply {
                     put("exactNetworkBound", true)
-                    put("permitRouteEpoch", checkNotNull(permitEpoch))
+                    put("permitRouteEpoch", initialEpoch)
                 })
                 put("result", "SUCCESS")
                 put("requestCorrectness", JSONObject().apply {
@@ -327,12 +347,12 @@ class TransportPairN0AndroidTest {
                     put("publishedBytes", "PASS")
                 })
                 put("recovery", JSONObject().apply {
-                    put("recoveryChainCount", chainStarts)
-                    put("ownerCount", owners)
-                    put("originRequestCount", 1)
-                    // Raw device evidence cannot self-certify transport-internal
-                    // retry visibility. The independent host verifier upgrades
-                    // this only after reconciling the complete origin trace.
+                    put("recoveryChainCount", 1)
+                    put("ownerCount", ownerStarts.size)
+                    // Device raw counts only explicit owners that received an
+                    // origin correlation. Host reconciliation owns final origin
+                    // GET count and transport-internal replay derivation.
+                    put("originRequestCount", correlatedOriginIds.size)
                     put("internalRetryVisibility", "OPAQUE")
                     put("internalRetryCount", JSONObject.NULL)
                 })
@@ -343,38 +363,31 @@ class TransportPairN0AndroidTest {
                     put("cpuTimeUs", cpuTimeUs)
                     put("maxRssBytes", maxRssBytes ?: JSONObject.NULL)
                     put("bytesRequested", RESOURCE_LENGTH)
-                    put("bytesReceived", attemptCompleted.networkBytes)
+                    put("bytesReceived", receivedBytes)
                     put("bytesPublished", committed.length)
                 })
-                put(
-                    "negotiatedProtocol",
-                    if (backend == TransportEvaluationBackend.PLATFORM_HTTP_ENGINE) {
-                        protocol.get()
-                    } else {
-                        "UNKNOWN"
-                    },
-                )
-                // G0 eligibility is finalized on the host only after origin
-                // amplification is independently falsified.
+                put("negotiatedProtocol", protocol)
                 put("performanceSampleEligible", false)
                 put("limitations", JSONArray().apply {
                     put("RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION")
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
-                    put("FIRST_BYTE_IS_FIRST_ACCEPTED_16K_CHUNK")
+                    put("FIRST_BYTE_IS_FIRST_ACCEPTED_FETCHBROKER_CHUNK_IN_RECOVERY_CHAIN")
                     put("COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION")
-                    put("CANCELLATION_NOT_EXERCISED_IN_N0")
+                    put("TRANSPORT_PHASES_ARE_PHYSICAL_ATTEMPT_LEVEL")
                 })
             }
 
             val raw = JSONObject().apply {
                 put("schemaVersion", 1)
-                put("phase", "M2-G2-B-N0")
+                put("phase", "M2-G2-C-NETWORK")
+                put("scenarioFamily", scenario.family)
+                put("scenarioVariant", scenario.variant)
                 put("runId", plan.getString("runId"))
                 put("pairId", plan.getString("pairId"))
                 put("trial", g0Row)
                 put("proof", JSONObject().apply {
-                    put("originRequestId", originRequestId)
+                    put("correlatedOriginRequestIds", JSONArray(correlatedOriginIds))
                     put("committedSha256", committed.sha256.hex)
                     put("committedBytes", committed.length)
                     put("processInstanceId", PROCESS_INSTANCE_ID)
@@ -387,25 +400,30 @@ class TransportPairN0AndroidTest {
                     put("routeEpochBefore", initialEpoch)
                     put("routeEpochAfter", checkNotNull(finalEpoch))
                     put("bindingRevision", "binding-1")
-                    put("bindingTargetResolved", bindingHits.get() == 1)
-                    put("attemptStartedCount", events.count {
-                        it.event == FetchEventKind.ATTEMPT_STARTED
+                    put("bindingTargetResolutionCount", bindingHits.get())
+                    put("permitRouteEpochs", JSONArray().apply {
+                        permits.forEach { event ->
+                            put(checkNotNull(event.permit).routeEpoch)
+                        }
                     })
-                    put("attemptCompletedCount", events.count {
-                        it.event == FetchEventKind.ATTEMPT_COMPLETED
-                    })
-                    put("attemptProgressCount", events.count {
-                        it.event == FetchEventKind.ATTEMPT_PROGRESS
-                    })
-                    put("attemptCorrelationCount", events.count {
-                        it.event == FetchEventKind.ATTEMPT_CORRELATED
-                    })
-                    put("remoteAttemptChargeCount", remoteCharges)
                     put("chainStartedElapsedRealtimeNs", chainStarted.elapsedRealtimeNs)
+                    put("firstBrokerProgressElapsedRealtimeNs", firstProgressElapsedRealtimeNs)
                     put("chainTerminatedElapsedRealtimeNs", chainTerminated.elapsedRealtimeNs)
-                    put("attemptStartedElapsedRealtimeNs", attemptStarted.eventElapsedRealtimeNs)
-                    put("firstProgressElapsedRealtimeNs", firstProgress.eventElapsedRealtimeNs)
-                    put("attemptCompletedElapsedRealtimeNs", attemptCompleted.eventElapsedRealtimeNs)
+                    put("physicalAttempts", JSONArray().apply {
+                        attemptProofs.forEach { attempt ->
+                            put(JSONObject().apply {
+                                put("fetchId", attempt.fetchId)
+                                put("startElapsedRealtimeNs", attempt.startNs)
+                                put("endElapsedRealtimeNs", attempt.endNs)
+                                put("terminal", attempt.terminal)
+                                put(
+                                    "transportCorrelationId",
+                                    attempt.transportCorrelationId ?: JSONObject.NULL,
+                                )
+                                put("networkBytes", attempt.networkBytes)
+                            })
+                        }
+                    })
                     put("transportPhases", JSONArray().apply {
                         phaseSnapshot.forEach { phase ->
                             put(JSONObject().apply {
@@ -413,6 +431,22 @@ class TransportPairN0AndroidTest {
                                 put("attempt", phase.observation.attempt)
                                 put("kind", phase.observation.kind.name)
                                 put("elapsedRealtimeNs", phase.elapsedRealtimeNs)
+                            })
+                        }
+                    })
+                    put("recoveryFailureCount", recoveryEvidence.failures().size)
+                    put("recoveryFailures", JSONArray().apply {
+                        recoveryEvidence.failures().forEach { failure ->
+                            put(JSONObject(failure.toArtifactMap()))
+                        }
+                    })
+                    put("recoveryBackoffs", JSONArray().apply {
+                        backoffs.forEach { event ->
+                            val backoff = checkNotNull(event.backoff)
+                            put(JSONObject().apply {
+                                put("retryOrdinal", backoff.retryOrdinal)
+                                put("windowMs", backoff.windowMs)
+                                put("delayMs", backoff.delayMs)
                             })
                         }
                     })
@@ -441,10 +475,12 @@ class TransportPairN0AndroidTest {
                     )
                     put("runtimeBackoffBaseMs", RecoveryPolicy.DEFAULT.backoff.baseMs)
                     put("runtimeBackoffCapMs", RecoveryPolicy.DEFAULT.backoff.capMs)
+                    put("negotiatedProtocols", JSONArray(protocols))
                 })
             }
             PlatformTestStorageRegistry.getInstance().openOutputFile(
-                "m2-g2-n0/" + planned.getString("trialId") + ".json",
+                "m2-g2-network/" + scenario.artifactSlug + "/" +
+                    planned.getString("trialId") + ".json",
             ).bufferedWriter().use { writer ->
                 writer.write(raw.toString())
                 writer.write("\n")
@@ -498,12 +534,10 @@ class TransportPairN0AndroidTest {
 
     private fun readProcessStartClockTicks(): Long {
         val stat = File("/proc/self/stat").readText()
-        // /proc/<pid>/stat field 2 is parenthesized and may contain spaces.
-        // Field 22 (starttime) is token index 19 after the closing parenthesis.
         val close = stat.lastIndexOf(')')
-        require(close > 0) { "malformed /proc/self/stat" }
+        require(close > 0)
         val fields = stat.substring(close + 1).trim().split(Regex("\\s+"))
-        require(fields.size > 19) { "missing process starttime in /proc/self/stat" }
+        require(fields.size > 19)
         return fields[19].toLong().also { require(it > 0) }
     }
 
@@ -522,6 +556,15 @@ class TransportPairN0AndroidTest {
     private data class RecordedTransportPhase(
         val observation: TransportPhaseObservation,
         val elapsedRealtimeNs: Long,
+    )
+
+    private data class PhysicalAttemptProof(
+        val fetchId: String,
+        val startNs: Long,
+        val endNs: Long,
+        val terminal: String,
+        val transportCorrelationId: String?,
+        val networkBytes: Long,
     )
 
     private class G2RecoveryJitter(
@@ -553,11 +596,33 @@ class TransportPairN0AndroidTest {
         }
     }
 
+    private data class Scenario(
+        val family: String,
+        val variant: String,
+        val planAsset: String,
+        val artifactSlug: String,
+    ) {
+        companion object {
+            fun parse(raw: String?): Scenario = when (raw) {
+                "N2" -> Scenario("N2", "HIGH_RTT_JITTER", "m2-g2-n2-plan.json", "n2")
+                "N3" -> Scenario("N3", "BURST_PACKET_LOSS", "m2-g2-n3-plan.json", "n3")
+                "N5" -> Scenario("N5", "BURST_LOSS", "m2-g2-n5-plan.json", "n5")
+                "N5GE" -> Scenario(
+                    "N5",
+                    "BURST_LOSS_GE_MOMENT_MATCH",
+                    "m2-g2-n5-ge-plan.json",
+                    "n5-ge",
+                )
+                else -> error("unsupported G2-C NETWORK scenario: $raw")
+            }
+        }
+    }
+
     private companion object {
         const val ARG_ORIGIN = "spongetube.m2g2.originBaseUrl"
         const val ARG_TRIAL_ID = "spongetube.m2g2.trialId"
+        const val ARG_SCENARIO = "spongetube.m2g2.networkScenario"
         const val ARG_RECOVERY_JITTER_SEED = "spongetube.m2g2.recoveryJitterSeed"
-        const val PLAN_ASSET = "m2-g2-n0-plan.json"
         const val RESOURCE_PATH = "/fixtures/F1/segment-0-00001.m4s"
         const val RESOURCE_LENGTH = 711_501L
         const val RESOURCE_SHA256 =

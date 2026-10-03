@@ -83,6 +83,42 @@ class HttpRangeFetchExecutorTest {
     }
 
     @Test
+    fun successfulResponseReportsOrderedTransportPhases() {
+        val observations = mutableListOf<TransportPhaseObservation>()
+
+        val (disposition, received) = execute(
+            start = 100,
+            endExclusive = 1_100,
+            phaseObserver = TransportPhaseObserver { observations += it },
+        )
+
+        assertTrue(disposition is FetchAttemptDisposition.Success)
+        assertEquals(1_000, received.size)
+        assertEquals(
+            listOf(
+                TransportPhaseKind.RESPONSE_HEADERS,
+                TransportPhaseKind.FIRST_BODY_BYTES,
+                TransportPhaseKind.RESPONSE_BODY_COMPLETE,
+            ),
+            observations.map { it.kind },
+        )
+        assertTrue(observations.all { it.fetchKey == FetchKey("fixture:TEST/r") })
+        assertTrue(observations.all { it.attempt == 1 })
+    }
+
+    @Test
+    fun phaseObserverFailureCannotChangeTransportOutcome() {
+        val (disposition, received) = execute(
+            start = 100,
+            endExclusive = 1_100,
+            phaseObserver = TransportPhaseObserver { error("measurement failure") },
+        )
+
+        assertTrue(disposition is FetchAttemptDisposition.Success)
+        assertEquals(1_000, received.size)
+    }
+
+    @Test
     fun wholeResourceUnitRequestsExplicitFullRange() {
         val (disposition, received) = execute(start = null, endExclusive = null)
 
@@ -611,6 +647,7 @@ class HttpRangeFetchExecutorTest {
     private fun execute(
         start: Long?,
         endExclusive: Long?,
+        phaseObserver: TransportPhaseObserver = TransportPhaseObserver.NONE,
     ): Pair<FetchAttemptDisposition, ByteArray> {
         val request = request(start, endExclusive)
         val executor = HttpRangeFetchExecutor(
@@ -623,6 +660,7 @@ class HttpRangeFetchExecutorTest {
             connectTimeoutMs = 5_000,
             readTimeoutMs = 5_000,
             chunkSize = 256,
+            phaseObserver = phaseObserver,
         )
         val expectedCorrelation = "lab-${rangeHeaders.size + 1}"
         val received = ByteArrayOutputStream()

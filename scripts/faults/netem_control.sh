@@ -111,6 +111,24 @@ if enabled:
 PY
 }
 
+inspect_link_state() {
+  local raw offloads
+  raw="$(sudo -n ip netns exec "$NS" ip -j link show dev "$LAB_IF")"
+  offloads="$(inspect_offloads)"
+  python3 - "$raw" "$offloads" <<'PY'
+import json, sys
+links = json.loads(sys.argv[1])
+offloads = json.loads(sys.argv[2])
+if not isinstance(links, list) or len(links) != 1:
+    raise SystemExit("expected exactly one media link")
+link = links[0]
+mtu = link.get("mtu")
+if type(mtu) is not int or mtu < 512 or mtu > 65535:
+    raise SystemExit(f"invalid media link MTU: {mtu!r}")
+print(json.dumps({"mtu": mtu, "offloads": offloads}, sort_keys=True))
+PY
+}
+
 clear_root() {
   tc_ns qdisc del dev "$LAB_IF" root 2>/dev/null || true
 }
@@ -165,6 +183,20 @@ apply_burst_loss() {
   install_scoped_netem     loss random "$(ppm_to_percent "$loss_ppm")" "$(ppm_to_percent "$correlation_ppm")"     seed "$seed"
 }
 
+apply_ge_loss() {
+  local good_to_bad_ppm="${1:?goodToBadPpm required}"
+  local bad_to_good_ppm="${2:?badToGoodPpm required}"
+  local bad_loss_ppm="${3:?badLossPpm required}"
+  local good_loss_ppm="${4:?goodLossPpm required}"
+  local seed="${5:?seed required}"
+  require_ppm "$good_to_bad_ppm"
+  require_ppm "$bad_to_good_ppm"
+  require_ppm "$bad_loss_ppm"
+  require_ppm "$good_loss_ppm"
+  require_uint "$seed"
+  install_scoped_netem     loss gemodel     "$(ppm_to_percent "$good_to_bad_ppm")"     "$(ppm_to_percent "$bad_to_good_ppm")"     "$(ppm_to_percent "$bad_loss_ppm")"     "$(ppm_to_percent "$good_loss_ppm")"     seed "$seed"
+}
+
 inspect_qdisc() {
   tc_ns -s -j qdisc show dev "$LAB_IF"
 }
@@ -199,6 +231,9 @@ case "$COMMAND" in
   apply-burst-loss)
     apply_burst_loss "$@"
     ;;
+  apply-ge-loss)
+    apply_ge_loss "$@"
+    ;;
   inspect-qdisc)
     inspect_qdisc
     ;;
@@ -210,6 +245,9 @@ case "$COMMAND" in
     ;;
   inspect-offloads)
     inspect_offloads
+    ;;
+  inspect-link-state)
+    inspect_link_state
     ;;
   remove)
     clear_root

@@ -175,6 +175,72 @@ def check_raw(
             f"{expected['trialId']}: no body progress observed")
     require(proof.get("attemptCorrelationCount") == 1, f"{expected['trialId']}: correlation count mismatch")
     require(proof.get("remoteAttemptChargeCount") == 1, f"{expected['trialId']}: recovery charge mismatch")
+    chain_started_ns = proof.get("chainStartedElapsedRealtimeNs")
+    chain_terminated_ns = proof.get("chainTerminatedElapsedRealtimeNs")
+    attempt_started_ns = proof.get("attemptStartedElapsedRealtimeNs")
+    first_progress_ns = proof.get("firstProgressElapsedRealtimeNs")
+    attempt_completed_ns = proof.get("attemptCompletedElapsedRealtimeNs")
+    require(
+        type(chain_started_ns) is int
+        and type(chain_terminated_ns) is int
+        and type(attempt_started_ns) is int
+        and type(first_progress_ns) is int
+        and type(attempt_completed_ns) is int
+        and 0 <= chain_started_ns <= attempt_started_ns <= first_progress_ns <= attempt_completed_ns <= chain_terminated_ns,
+        f"{expected['trialId']}: recovery/attempt timing bounds missing",
+    )
+    transport_phases = proof.get("transportPhases")
+    require(
+        isinstance(transport_phases, list) and len(transport_phases) == 3,
+        f"{expected['trialId']}: transport phase timeline incomplete",
+    )
+    expected_phase_kinds = [
+        "RESPONSE_HEADERS",
+        "FIRST_BODY_BYTES",
+        "RESPONSE_BODY_COMPLETE",
+    ]
+    require(
+        [phase.get("kind") for phase in transport_phases] == expected_phase_kinds,
+        f"{expected['trialId']}: transport phase order drift",
+    )
+    phase_times = []
+    phase_fetch_keys = set()
+    for phase in transport_phases:
+        require(
+            type(phase.get("attempt")) is int and phase["attempt"] == 1,
+            f"{expected['trialId']}: transport phase attempt drift",
+        )
+        fetch_key = phase.get("fetchKey")
+        require(
+            isinstance(fetch_key, str) and fetch_key,
+            f"{expected['trialId']}: transport phase fetch key missing",
+        )
+        phase_fetch_keys.add(fetch_key)
+        elapsed = phase.get("elapsedRealtimeNs")
+        require(
+            type(elapsed) is int and elapsed >= 0,
+            f"{expected['trialId']}: transport phase timestamp missing",
+        )
+        phase_times.append(elapsed)
+    require(len(phase_fetch_keys) == 1, f"{expected['trialId']}: transport phase fetch key changed")
+    require(
+        attempt_started_ns <= phase_times[0] <= phase_times[1] <= phase_times[2] <= attempt_completed_ns,
+        f"{expected['trialId']}: transport phases escaped physical attempt bounds",
+    )
+    require(
+        transport_phases[1]["elapsedRealtimeNs"] <= first_progress_ns,
+        f"{expected['trialId']}: transport first-body phase follows FetchBroker acceptance",
+    )
+    expected_first_byte_us = (first_progress_ns - chain_started_ns) // 1_000
+    expected_completion_us = (chain_terminated_ns - chain_started_ns) // 1_000
+    require(
+        metrics["firstByteUs"] == expected_first_byte_us,
+        f"{expected['trialId']}: firstByteUs is not RecoveryChain-relative",
+    )
+    require(
+        metrics["completionUs"] == expected_completion_us,
+        f"{expected['trialId']}: completionUs is not RecoveryChain-relative",
+    )
     require(proof.get("recoveryJitterProtocol") == RECOVERY_JITTER_PROTOCOL,
             f"{expected['trialId']}: recovery jitter protocol drift")
     require(proof.get("recoveryJitterSeed") == RECOVERY_JITTER_SEED,
@@ -229,7 +295,7 @@ def check_raw(
         f"{expected['trialId']}: firstByteUs measurement boundary is not disclosed",
     )
     require(
-        "COMPLETION_INCLUDES_EXTENT_VERIFY_DURABILITY_PUBLICATION" in limitations,
+        "COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION" in limitations,
         f"{expected['trialId']}: completionUs measurement boundary is not disclosed",
     )
     return row, {

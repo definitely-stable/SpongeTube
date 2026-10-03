@@ -423,6 +423,24 @@ def expected_network_fault(
             burstCorrelationPpm=250000,
             randomSeed=424242,
         )
+    elif variant == "BURST_LOSS_GE_MOMENT_MATCH":
+        require(
+            fault.get("kind") == "BURST_LOSS_GE_MOMENT_MATCH",
+            "N5 GE fault kind mismatch",
+        )
+        require(fault.get("stochastic") is True, "N5 GE loss must be stochastic")
+        require(seed == 424242, "N5 GE seed must be 424242")
+        require(params.get("goodToBadPpm") == 15000, "N5 GE goodToBadPpm mismatch")
+        require(params.get("badToGoodPpm") == 735000, "N5 GE badToGoodPpm mismatch")
+        require(params.get("badLossPpm") == 1000000, "N5 GE badLossPpm mismatch")
+        require(params.get("goodLossPpm") == 0, "N5 GE goodLossPpm mismatch")
+        config.update(
+            goodToBadPpm=15000,
+            badToGoodPpm=735000,
+            badLossPpm=1000000,
+            goodLossPpm=0,
+            randomSeed=424242,
+        )
     else:
         raise FaultOracleError(f"unsupported NETWORK variant {variant!r}")
 
@@ -557,6 +575,16 @@ def normalize_network_tc_state(
             burstCorrelationPpm=_fraction_to_ppm(
                 loss.get("correlation"), "loss correlation"
             ),
+            randomSeed=int(options.get("seed", -1)),
+        )
+    elif variant == "BURST_LOSS_GE_MOMENT_MATCH":
+        loss = options.get("loss-gemodel") or {}
+        require(isinstance(loss, Mapping), "N5 GE readback missing")
+        state.update(
+            goodToBadPpm=_fraction_to_ppm(loss.get("p"), "GE good-to-bad"),
+            badToGoodPpm=_fraction_to_ppm(loss.get("r"), "GE bad-to-good"),
+            badLossPpm=_fraction_to_ppm(loss.get("1-h"), "GE bad-state loss"),
+            goodLossPpm=_fraction_to_ppm(loss.get("1-k"), "GE good-state loss"),
             randomSeed=int(options.get("seed", -1)),
         )
     else:

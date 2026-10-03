@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/transport-experiment-environment-v1.schema.json",
+  "title": "SpongeTube M2-G2 Transport Experiment Environment v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sourceHeadCommit",
+    "checkoutCommit",
+    "faultEngineFingerprintSha256",
+    "mediaLink",
+    "androidRuntime",
+    "codeFingerprint",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
+    "sourceHeadCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "checkoutCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "faultEngineFingerprintSha256": { "$ref": "#/$defs/sha256" },
+    "mediaLink": {
+      "type": "object",
+      "required": ["mtu", "offloads", "packetizationFidelity", "packetizationProfile"],
+      "properties": {
+        "mtu": { "type": "integer", "minimum": 512, "maximum": 1500 },
+        "offloads": { "$ref": "#/$defs/offloadsDisabled" },
+        "packetizationFidelity": {
+          "type": "string",
+          "const": "GRO_GSO_TSO_DISABLED"
+        },
+        "packetizationProfile": {
+          "type": "string",
+          "enum": [
+            "STANDARD_MTU1500_V1",
+            "G2_EFFECT_MTU512_V1"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "androidRuntime": {
+      "type": "object",
+      "required": [
+        "deviceClass",
+        "androidApi",
+        "abi",
+        "buildFingerprint",
+        "buildId",
+        "securityPatch",
+        "kernelRelease",
+        "batteryPolicy",
+        "acPowered"
+      ],
+      "properties": {
+        "deviceClass": {
+          "type": "string",
+          "const": "ANDROID_EMULATOR"
+        },
+        "androidApi": { "type": "integer", "const": 36 },
+        "abi": { "type": "string", "const": "x86_64" },
+        "buildFingerprint": { "type": "string", "minLength": 1 },
+        "buildId": { "type": "string", "minLength": 1 },
+        "securityPatch": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "kernelRelease": { "type": "string", "minLength": 1 },
+        "batteryPolicy": { "type": "string", "const": "CI_POWERED" },
+        "acPowered": { "type": "boolean", "const": true }
+      },
+      "additionalProperties": false
+    },
+    "codeFingerprint": {
+      "type": "object",
+      "required": ["sha256", "files"],
+      "properties": {
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._/-]+$"
+              },
+              "sha256": { "$ref": "#/$defs/sha256" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "offloadsDisabled": {
+      "type": "object",
+      "required": ["gro", "gso", "tso"],
+      "properties": {
+        "gro": { "type": "boolean", "const": false },
+        "gso": { "type": "boolean", "const": false },
+        "tso": { "type": "boolean", "const": false }
+      },
+      "additionalProperties": false
+    }
+  }
+}

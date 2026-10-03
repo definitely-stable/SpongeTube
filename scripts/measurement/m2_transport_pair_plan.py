@@ -43,6 +43,7 @@ BACKENDS = (
 FROZEN_STOCHASTIC_SEEDS = {
     ("N2", "HIGH_RTT_JITTER"): 424_242,
     ("N5", "BURST_LOSS"): 424_242,
+    ("N5", "BURST_LOSS_GE_MOMENT_MATCH"): 424_242,
 }
 FROZEN_RECOVERY_JITTER_SEED = 424_243
 RECOVERY_BACKOFF_ALGORITHM = "EXPONENTIAL_FULL_JITTER"
@@ -55,6 +56,13 @@ CANONICAL_G2_SCENARIO_HASHES = {
     ("N5", "BURST_LOSS"): "aed0b51ca0f0f5b0409918e1b621ef67d4c7655983bf839f58699c171977d670",
     ("N6", "TRANSPORT_RESET"): "12d6a0aebb9c021f89170dd429356bf29c8822f482f687cc00992cf26d316d45",
     ("N6", "DEFAULT_ROUTE_LOSS_RESTORE"): "05e0359cb33d864600e98547776b98b5a436f372c99ab325e7f0797c80d42c5a",
+}
+SUPPLEMENTARY_G2_SCENARIO_HASHES = {
+    ("N5", "BURST_LOSS_GE_MOMENT_MATCH"): "a548ccf539e256f379cd60e3d3cb902aa421682169b99fc47dac261fe86abeaf",
+}
+G2_SCENARIO_HASHES = {
+    **CANONICAL_G2_SCENARIO_HASHES,
+    **SUPPLEMENTARY_G2_SCENARIO_HASHES,
 }
 PORTABLE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
 REQUIRED_COMPARISON_INPUTS = (
@@ -162,13 +170,13 @@ def validate_g2_scenario(scenario: Mapping[str, Any]) -> None:
 
     key = (scenario["scenarioFamily"], scenario["variant"])
     require(
-        key in CANONICAL_G2_SCENARIO_HASHES,
-        f"{key}: scenario is not in the canonical G2 set",
+        key in G2_SCENARIO_HASHES,
+        f"{key}: scenario is not in the frozen G2 canonical/supplementary set",
     )
     actual_hash = scenario_sha256(scenario)
     require(
-        actual_hash == CANONICAL_G2_SCENARIO_HASHES[key],
-        f"{key}: canonical G2 scenario hash drift: {actual_hash}",
+        actual_hash == G2_SCENARIO_HASHES[key],
+        f"{key}: frozen G2 scenario hash drift: {actual_hash}",
     )
     stochastic = scenario_is_stochastic(scenario)
     seed = scenario.get("randomSeed")

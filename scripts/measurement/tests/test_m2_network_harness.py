@@ -53,6 +53,17 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
                 "burstCorrelationPpm": 250000,
                 "randomSeed": 424242,
             },
+            "n5-ge-moment-match.json": {
+                "direction": "DOWNSTREAM",
+                "ipFamily": "IPV4",
+                "l4Protocol": "TCP",
+                "scope": "MEDIA_DATA_ONLY",
+                "goodToBadPpm": 15000,
+                "badToGoodPpm": 735000,
+                "badLossPpm": 1000000,
+                "goodLossPpm": 0,
+                "randomSeed": 424242,
+            },
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
@@ -75,6 +86,69 @@ class M2NetworkHarnessContractTest(unittest.TestCase):
             harness.compile_config(broken)
         with self.assertRaises(Exception):
             oracle.expected_network_fault(broken)
+
+    def test_ge_moment_match_parameters_fail_closed(self):
+        broken = scenario("n5-ge-moment-match.json")
+        broken["networkFaults"][0]["parameters"]["goodToBadPpm"] = 15001
+        with self.assertRaises(Exception):
+            harness.compile_config(broken)
+        with self.assertRaises(Exception):
+            oracle.expected_network_fault(broken)
+
+    def test_ge_tc_readback_is_independently_normalized(self):
+        qdisc = [
+            {
+                "kind": "prio",
+                "handle": "1:",
+                "options": {"bands": 3, "priomap": [2] * 16},
+            },
+            {
+                "kind": "netem",
+                "handle": "10:",
+                "parent": "1:1",
+                "options": {
+                    "loss-gemodel": {
+                        "p": 0.015,
+                        "r": 0.735,
+                        "1-h": 1.0,
+                        "1-k": 0.0,
+                    },
+                    "seed": 424242,
+                },
+            },
+        ]
+        filters = [{
+            "kind": "flower",
+            "protocol": "ip",
+            "options": {
+                "keys": {
+                    "eth_type": "ipv4",
+                    "ip_proto": "tcp",
+                    "src_port": 18081,
+                },
+                "classid": "1:1",
+            },
+        }]
+        expected = {
+            "direction": "DOWNSTREAM",
+            "ipFamily": "IPV4",
+            "l4Protocol": "TCP",
+            "scope": "MEDIA_DATA_ONLY",
+            "mediaPortScoped": True,
+            "goodToBadPpm": 15000,
+            "badToGoodPpm": 735000,
+            "badLossPpm": 1000000,
+            "goodLossPpm": 0,
+            "randomSeed": 424242,
+        }
+        self.assertEqual(
+            expected,
+            harness.normalize_tc_state(qdisc, filters, "BURST_LOSS_GE_MOMENT_MATCH"),
+        )
+        self.assertEqual(
+            expected,
+            oracle.normalize_network_tc_state(qdisc, filters, "BURST_LOSS_GE_MOMENT_MATCH"),
+        )
 
     def test_deterministic_blackout_rejects_seed(self):
         broken = scenario("n3-burst-packet-loss.json")

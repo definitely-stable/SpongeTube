@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/transport-phase-timings-v1.schema.json",
+  "title": "SpongeTube M2-G2 Transport Phase Timings v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "pairId",
+    "scenarioFamily",
+    "clockDomain",
+    "rows",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "pairId": { "type": "string", "minLength": 1 },
+    "scenarioFamily": { "type": "string", "enum": ["N2", "N3", "N5"] },
+    "clockDomain": { "type": "string", "const": "ANDROID_MONOTONIC" },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "trialId",
+          "orderingBlock",
+          "positionInBlock",
+          "backendId",
+          "firstBrokerChunkUs",
+          "chainCompletionUs",
+          "physicalAttempts"
+        ],
+        "properties": {
+          "trialId": { "type": "string", "minLength": 1 },
+          "orderingBlock": { "type": "integer", "minimum": 1 },
+          "positionInBlock": { "type": "integer", "minimum": 1 },
+          "backendId": { "type": "string", "minLength": 1 },
+          "firstBrokerChunkUs": { "type": "integer", "minimum": 0 },
+          "chainCompletionUs": { "type": "integer", "minimum": 0 },
+          "physicalAttempts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "ownerOrdinal",
+                "attemptStartUs",
+                "responseHeadersUs",
+                "firstTransportBodyUs",
+                "responseBodyCompleteUs",
+                "attemptTerminalUs",
+                "terminal"
+              ],
+              "properties": {
+                "ownerOrdinal": { "type": "integer", "minimum": 1 },
+                "attemptStartUs": { "type": "integer", "minimum": 0 },
+                "responseHeadersUs": { "type": ["integer", "null"], "minimum": 0 },
+                "firstTransportBodyUs": { "type": ["integer", "null"], "minimum": 0 },
+                "responseBodyCompleteUs": { "type": ["integer", "null"], "minimum": 0 },
+                "attemptTerminalUs": { "type": "integer", "minimum": 0 },
+                "terminal": {
+                  "type": "string",
+                  "enum": ["ATTEMPT_COMPLETED", "ATTEMPT_FAILED"]
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false
+}

@@ -43,6 +43,7 @@ VARIANTS = {
     "HIGH_RTT_JITTER": "HIGH_RTT_JITTER",
     "BURST_PACKET_LOSS": "BURST_PACKET_LOSS",
     "BURST_LOSS": "BURST_LOSS",
+    "BURST_LOSS_GE_MOMENT_MATCH": "BURST_LOSS_GE_MOMENT_MATCH",
 }
 
 
@@ -160,6 +161,24 @@ def compile_config(scenario: dict[str, Any]) -> dict[str, Any]:
         )
         if base["lossPpm"] != 1_000_000 or base["durationMs"] != 1_500:
             fail("BURST_PACKET_LOSS does not match the frozen N3 profile")
+    elif variant == "BURST_LOSS_GE_MOMENT_MATCH":
+        if fault.get("stochastic") is not True:
+            fail("BURST_LOSS_GE_MOMENT_MATCH must be stochastic")
+        base.update(
+            goodToBadPpm=integer(params.get("goodToBadPpm"), "goodToBadPpm", minimum=1, maximum=999_999),
+            badToGoodPpm=integer(params.get("badToGoodPpm"), "badToGoodPpm", minimum=1, maximum=999_999),
+            badLossPpm=integer(params.get("badLossPpm"), "badLossPpm", maximum=1_000_000),
+            goodLossPpm=integer(params.get("goodLossPpm"), "goodLossPpm", maximum=1_000_000),
+            randomSeed=integer(seed, "randomSeed"),
+        )
+        if (
+            base["goodToBadPpm"] != 15_000
+            or base["badToGoodPpm"] != 735_000
+            or base["badLossPpm"] != 1_000_000
+            or base["goodLossPpm"] != 0
+            or base["randomSeed"] != 424_242
+        ):
+            fail("BURST_LOSS_GE_MOMENT_MATCH does not match N5_GE_MOMENT_MATCH_V1")
     else:
         if fault.get("stochastic") is not True:
             fail("BURST_LOSS must be stochastic")
@@ -329,6 +348,17 @@ def normalize_tc_state(
             burstCorrelationPpm=_ppm(loss.get("correlation"), "loss correlation"),
             randomSeed=integer(options.get("seed"), "tc seed"),
         )
+    elif variant == "BURST_LOSS_GE_MOMENT_MATCH":
+        loss = options.get("loss-gemodel") or {}
+        if not isinstance(loss, dict):
+            fail("Gilbert-Elliott readback is not an object")
+        state.update(
+            goodToBadPpm=_ppm(loss.get("p"), "GE good-to-bad"),
+            badToGoodPpm=_ppm(loss.get("r"), "GE bad-to-good"),
+            badLossPpm=_ppm(loss.get("1-h"), "GE bad-state loss"),
+            goodLossPpm=_ppm(loss.get("1-k"), "GE good-state loss"),
+            randomSeed=integer(options.get("seed"), "tc seed"),
+        )
     else:
         fail(f"unknown network variant {variant}")
     return state
@@ -371,6 +401,15 @@ def apply_config(scenario: dict[str, Any], config: dict[str, Any]) -> tuple[Any,
         ])
     elif variant == "BURST_PACKET_LOSS":
         helper(["apply-blackout", str(config["lossPpm"])])
+    elif variant == "BURST_LOSS_GE_MOMENT_MATCH":
+        helper([
+            "apply-ge-loss",
+            str(config["goodToBadPpm"]),
+            str(config["badToGoodPpm"]),
+            str(config["badLossPpm"]),
+            str(config["goodLossPpm"]),
+            str(config["randomSeed"]),
+        ])
     else:
         helper([
             "apply-burst-loss",

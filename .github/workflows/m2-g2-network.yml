@@ -1,0 +1,112 @@
+name: M2-G2 Paired API36 Network Evidence
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-network.yml"
+      - ".work/schemas/transport-experiment-environment-v1.schema.json"
+      - ".work/schemas/transport-phase-timings-v1.schema.json"
+      - ".work/schemas/transport-pair-plan-v1.schema.json"
+      - ".work/schemas/transport-evaluation-trials-v1.schema.json"
+      - ".work/milestones/M2.md"
+      - "core/engine/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/run-m2-g2-network.sh"
+      - "scripts/ci/verify-m2-g2-network.py"
+      - "scripts/ci/prepare-emulator.sh"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/n2-high-rtt-jitter.json"
+      - "test-fixtures/network/m2/n3-burst-packet-loss.json"
+      - "test-fixtures/network/m2/n5-burst-loss.json"
+      - "test-fixtures/network/m2/n5-ge-moment-match.json"
+      - "test-fixtures/network/m2/g2/**"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-network.yml"
+      - ".work/schemas/transport-experiment-environment-v1.schema.json"
+      - ".work/schemas/transport-phase-timings-v1.schema.json"
+      - "core/engine/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "scripts/ci/run-m2-g2-network.sh"
+      - "scripts/ci/verify-m2-g2-network.py"
+      - "test-fixtures/network/m2/g2/**"
+      - "test-fixtures/network/m2/n2-high-rtt-jitter.json"
+      - "test-fixtures/network/m2/n3-burst-packet-loss.json"
+      - "test-fixtures/network/m2/n5-burst-loss.json"
+      - "test-fixtures/network/m2/n5-ge-moment-match.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-g2-network-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api36-network-paired:
+    name: m2-g2-${{ matrix.slug }}-api36-paired
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: N2
+            slug: n2
+          - family: N3
+            slug: n3
+          - family: N5
+            slug: n5
+    env:
+      SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Execute frozen ${{ matrix.family }} paired schedule
+        shell: bash
+        run: bash scripts/ci/run-m2-g2-network.sh "${{ matrix.family }}"
+
+      - name: Cleanup G2-C lab
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          bash scripts/faults/netem_control.sh remove >/dev/null 2>&1 || true
+          bash scripts/faults/m2_e0_netns.sh teardown >/dev/null 2>&1 || true
+          adb emu kill >/dev/null 2>&1 || true
+          rm -f "core/engine/src/androidTest/assets/m2-g2-${{ matrix.slug }}-plan.json"
+
+      - name: Upload G2-C ${{ matrix.family }} evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-g2-${{ matrix.slug }}-api36-paired
+          path: |
+            build/m2-g2-network/${{ matrix.slug }}/
+            core/engine/build/outputs/androidTest-results/
+            core/engine/build/reports/androidTests/
+          if-no-files-found: error
+          retention-days: 14
