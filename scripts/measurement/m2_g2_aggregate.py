@@ -374,10 +374,25 @@ def resolve_key(
     generated_root: pathlib.Path,
 ) -> pathlib.Path:
     if key.startswith("evidence/"):
-        return evidence_root / key.removeprefix("evidence/")
-    if key.startswith("generated/"):
-        return generated_root / key.removeprefix("generated/")
-    raise G2AggregateError(f"unsupported indexed path: {key}")
+        root = evidence_root
+        raw_relative = key.removeprefix("evidence/")
+    elif key.startswith("generated/"):
+        root = generated_root
+        raw_relative = key.removeprefix("generated/")
+    else:
+        raise G2AggregateError(f"unsupported indexed path: {key}")
+
+    relative = pathlib.PurePosixPath(raw_relative)
+    require(
+        raw_relative
+        and not relative.is_absolute()
+        and ".." not in relative.parts
+        and "." not in relative.parts,
+        f"unsafe indexed path: {key}",
+    )
+    candidate = root.joinpath(*relative.parts)
+    require(candidate.is_relative_to(root), f"indexed path escaped root: {key}")
+    return candidate
 
 
 def evaluate_experiment(
