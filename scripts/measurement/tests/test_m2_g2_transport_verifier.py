@@ -174,6 +174,37 @@ class G2TransportVerifierTest(unittest.TestCase):
         self.assertEqual(3, finalized["recovery"]["originRequestCount"])
         self.assertTrue(finalized["performanceSampleEligible"])
 
+    def test_reset_failure_rejects_non_reset_transport_kind(self):
+        failure = {
+            "observation": {
+                "plane": "TRANSPORT",
+                "type": "TRANSPORT_IO",
+                "kind": "READ_TIMEOUT",
+            },
+        }
+        with self.assertRaisesRegex(
+            verifier.TransportResetEvidenceError,
+            "not RESET_PEER-compatible",
+        ):
+            verifier.validate_reset_failure_observation(
+                failure,
+                trial_id="trial-1",
+            )
+
+    def test_reset_failure_accepts_canonical_transport_kinds(self):
+        for kind in ("CONNECTION_RESET", "PREMATURE_EOF", "IO"):
+            with self.subTest(kind=kind):
+                verifier.validate_reset_failure_observation(
+                    {
+                        "observation": {
+                            "plane": "TRANSPORT",
+                            "type": "TRANSPORT_IO",
+                            "kind": kind,
+                        },
+                    },
+                    trial_id="trial-1",
+                )
+
     def test_phase_timing_schema_accepts_canonical_n6_family(self):
         schema = verifier.shared.load_json(verifier.PHASE_SCHEMA)
         document = {
