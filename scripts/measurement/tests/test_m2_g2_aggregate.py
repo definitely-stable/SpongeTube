@@ -185,18 +185,55 @@ def create_bundle(root: pathlib.Path):
 
         raw = artifact_root / "raw"
         raw.mkdir(parents=True, exist_ok=True)
+        trace = [
+            {
+                "requestId": 1,
+                "plane": "control",
+                "method": "GET",
+                "path": "/__lab/config",
+                "status": 200,
+                "outcome": "SUCCESS",
+            }
+        ]
         for row in trials["trials"]:
+            before = len(trace)
+            request_id = before + 1
+            trace.append(
+                {
+                    "requestId": request_id,
+                    "plane": "data",
+                    "method": "GET",
+                    "path": "/fixtures/F1/segment-0-00001.m4s",
+                    "status": 206,
+                    "outcome": "SUCCESS",
+                }
+            )
+            proof = {
+                "recoveryJitterProtocol": "SHA256_COUNTER_REJECTION_V1",
+                "recoveryJitterSeed": 424243,
+                "recoveryJitterSampleCount": 0,
+                "recoveryJitterSamples": [],
+                "recoveryBackoffs": [],
+            }
+            if spec["id"] == "N0_CONTROL":
+                proof["originRequestId"] = request_id
+            else:
+                proof["correlatedOriginRequestIds"] = [request_id]
+                trial_root = artifact_root / "trials" / row["trialId"]
+                trial_root.mkdir(parents=True, exist_ok=True)
+                (trial_root / "origin-before-count.txt").write_text(
+                    f"{before}\n",
+                    encoding="utf-8",
+                )
+                (trial_root / "origin-after-count.txt").write_text(
+                    f"{len(trace)}\n",
+                    encoding="utf-8",
+                )
             write_json(
                 raw / f"{row['trialId']}.json",
                 {
                     "schemaVersion": 1,
-                    "proof": {
-                        "recoveryJitterProtocol": "SHA256_COUNTER_REJECTION_V1",
-                        "recoveryJitterSeed": 424243,
-                        "recoveryJitterSampleCount": 0,
-                        "recoveryJitterSamples": [],
-                        "recoveryBackoffs": [],
-                    },
+                    "proof": proof,
                 },
             )
             if spec["id"] in {"N2_HIGH_RTT_JITTER", "N5_BURST_LOSS"}:
@@ -215,6 +252,12 @@ def create_bundle(root: pathlib.Path):
                         "l4Protocol": "TCP",
                     },
                 )
+        server = artifact_root / "server"
+        server.mkdir(parents=True, exist_ok=True)
+        (server / "requests.jsonl").write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in trace),
+            encoding="utf-8",
+        )
     return evidence, generated
 
 
@@ -345,6 +388,25 @@ class G2AggregateTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 G2AggregateError,
                 "stochastic effect must remain inconclusive",
+            ):
+                collect(
+                    evidence_root=evidence,
+                    generated_root=generated,
+                    run_id="g2-test",
+                    git_commit=GIT_COMMIT,
+                )
+
+    def test_rejects_origin_partition_count_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence, generated = create_bundle(pathlib.Path(tmp))
+            root = experiment_root(evidence, "N2_HIGH_RTT_JITTER")
+            count = next(
+                (root / "trials").glob("*/origin-after-count.txt")
+            )
+            count.write_text("99\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                G2AggregateError,
+                "origin partition drift",
             ):
                 collect(
                     evidence_root=evidence,
