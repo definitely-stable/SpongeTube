@@ -154,6 +154,7 @@ class TransportPairRouteReplacementAndroidTest {
         var restoredEpoch = 0L
         var chargesBeforeRestore = 0
         var attemptsBeforeRestore = 0
+        var replacementValidationRendezvousObserved = false
 
         try {
             val initial = awaitDirectObservation(monitor, backend)
@@ -232,7 +233,16 @@ class TransportPairRouteReplacementAndroidTest {
             val gate = RecoveryAttemptGate { chainId ->
                 val ordinal = gateCalls.incrementAndGet()
                 if (ordinal == 2) secondGateEntered.complete(Unit)
-                exactGate.awaitPermit(chainId)
+                val permit = exactGate.awaitPermit(chainId)
+                if (ordinal == 2) {
+                    awaitValidatedReplacementRoute(
+                        monitor = monitor,
+                        routeEpoch = checkNotNull(permit.routeEpoch),
+                        routeBinding = checkNotNull(permit.routeBinding),
+                    )
+                    replacementValidationRendezvousObserved = true
+                }
+                permit
             }
             val jitter = G2RecoveryJitter(checkNotNull(jitterSeed))
             assertEquals(367L, G2RecoveryJitter(checkNotNull(jitterSeed)).uniformInclusive(500L))
@@ -307,6 +317,10 @@ class TransportPairRouteReplacementAndroidTest {
             val outcome = withTimeout(OUTCOME_TIMEOUT_MS) { outcomeDeferred.await() }
             handle.close()
             assertEquals(RecoveryTerminalReason.SUCCESS, outcome.terminalReason)
+            assertTrue(
+                "G2-E replacement validation rendezvous was not observed",
+                replacementValidationRendezvousObserved,
+            )
 
             coordinator.shutdown()
             broker.shutdown()
@@ -436,6 +450,7 @@ class TransportPairRouteReplacementAndroidTest {
                     put("RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION")
                     put("API36_EMULATOR_DIRECTIONAL_ONLY")
                     put("ROUTE_REPLACEMENT_RESILIENCE_ONLY")
+                    put("LAB_ONLY_REPLACEMENT_VALIDATION_RENDEZVOUS")
                     put("MAX_RSS_IS_FRESH_PROCESS_HIGH_WATER")
                     put("FIRST_BYTE_IS_FIRST_ACCEPTED_FETCHBROKER_CHUNK_IN_RECOVERY_CHAIN")
                     put("COMPLETION_IS_RECOVERY_CHAIN_TERMINAL_AFTER_PUBLICATION")
@@ -468,6 +483,10 @@ class TransportPairRouteReplacementAndroidTest {
                     put("chargesBeforeRestore", chargesBeforeRestore)
                     put("attemptsBeforeRestore", attemptsBeforeRestore)
                     put("gateCalls", gateCalls.get())
+                    put(
+                        "replacementValidationRendezvousObserved",
+                        replacementValidationRendezvousObserved,
+                    )
                     put("routeEvidence", JSONObject(routeRecorder.toArtifactMap()))
                     put("bindingRevision", "binding-1")
                     put("bindingTargetResolutionCount", bindingHits.get())
@@ -565,6 +584,23 @@ class TransportPairRouteReplacementAndroidTest {
                     backend != TransportEvaluationBackend.PLATFORM_HTTP_ENGINE ||
                         observation.executionBinding is PlatformHttpEngineRouteBinding
                 )
+        }
+    }
+
+    private suspend fun awaitValidatedReplacementRoute(
+        monitor: DefaultRouteMonitor,
+        routeEpoch: Long,
+        routeBinding: RouteExecutionBinding,
+    ) = withTimeout(ROUTE_TIMEOUT_MS) {
+        monitor.observations.first { observation ->
+            val state = observation.state as? DefaultRouteState.Available
+            state != null &&
+                state.routeEpoch == routeEpoch &&
+                state.capabilitiesReceived &&
+                state.capabilities.validated == ObservedBoolean.TRUE &&
+                state.capabilities.vpn == ObservedBoolean.FALSE &&
+                state.capabilities.internet != ObservedBoolean.FALSE &&
+                observation.executionBinding === routeBinding
         }
     }
 
