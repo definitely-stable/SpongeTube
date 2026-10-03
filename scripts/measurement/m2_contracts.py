@@ -1195,6 +1195,9 @@ M2_SLICE_SCHEMAS = frozenset({
     # G2-D binds pinned Toxiproxy/runtime/control-path provenance without
     # mutating already-frozen G0/G2-C evidence contracts.
     "transport-reset-environment-v1.schema.json",
+    # G2-F binds the six canonical paired experiments and their independently
+    # regenerated summaries without rewriting frozen G0/G2-B..E contracts.
+    "m2-g2-evidence-index-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
