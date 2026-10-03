@@ -204,6 +204,152 @@ def privacy(document: Any, label: str) -> None:
         raise G2AggregateError(f"{label}: privacy failure: {error}") from error
 
 
+def read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
+    require(path.is_file(), f"missing JSONL evidence: {path}")
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise G2AggregateError(
+                f"{path}:{line_number}: invalid JSONL row: {error}"
+            ) from error
+        require(
+            isinstance(value, dict),
+            f"{path}:{line_number}: expected JSON object row",
+        )
+        rows.append(value)
+    return rows
+
+
+def validate_origin_counts(
+    root: pathlib.Path,
+    *,
+    experiment_id: str,
+    plan: Mapping[str, Any],
+    trials: Mapping[str, Any],
+) -> None:
+    trace = read_jsonl(root / "server" / "requests.jsonl")
+    require(trace, f"{experiment_id}: origin trace is empty")
+    prelude = trace[0]
+    require(
+        prelude.get("plane") == "control"
+        and prelude.get("method") == "GET"
+        and prelude.get("path") == "/__lab/config"
+        and prelude.get("status") == 200
+        and prelude.get("outcome") == "SUCCESS",
+        f"{experiment_id}: Media Lab readiness prelude drift",
+    )
+
+    finalized = {row["trialId"]: row for row in trials["trials"]}
+    schedule = planned_trial_schedule(plan)
+    require(
+        {row["trialId"] for row in schedule} == set(finalized),
+        f"{experiment_id}: origin schedule/trials mismatch",
+    )
+
+    def validate_data_rows(
+        trial_id: str,
+        rows: list[dict[str, Any]],
+    ) -> list[int]:
+        request_ids: list[int] = []
+        for row in rows:
+            request_id = row.get("requestId")
+            require(
+                type(request_id) is int and request_id > 0,
+                f"{experiment_id}/{trial_id}: invalid origin requestId",
+            )
+            require(
+                row.get("plane") == "data"
+                and row.get("method") == "GET"
+                and row.get("path") == "/fixtures/F1/segment-0-00001.m4s",
+                f"{experiment_id}/{trial_id}: unexpected origin trace row",
+            )
+            request_ids.append(request_id)
+        require(
+            len(request_ids) == len(set(request_ids)),
+            f"{experiment_id}/{trial_id}: duplicate origin requestId",
+        )
+        return request_ids
+
+    if experiment_id == "N0_CONTROL":
+        data_rows = trace[1:]
+        expected_total = sum(
+            row["recovery"]["originRequestCount"]
+            for row in finalized.values()
+        )
+        require(
+            len(data_rows) == expected_total == len(schedule),
+            "N0_CONTROL: origin request total drift",
+        )
+        trace_ids = set(validate_data_rows("all", data_rows))
+        retained_ids: set[int] = set()
+        for planned in schedule:
+            trial_id = planned["trialId"]
+            row = finalized[trial_id]
+            require(
+                row["recovery"]["originRequestCount"] == 1,
+                f"N0_CONTROL/{trial_id}: expected one origin request",
+            )
+            raw = read_json(root / "raw" / f"{trial_id}.json")
+            request_id = raw.get("proof", {}).get("originRequestId")
+            require(
+                type(request_id) is int and request_id > 0,
+                f"N0_CONTROL/{trial_id}: raw originRequestId missing",
+            )
+            retained_ids.add(request_id)
+        require(
+            retained_ids == trace_ids and len(retained_ids) == len(schedule),
+            "N0_CONTROL: raw/origin request correlation drift",
+        )
+        return
+
+    previous_end = 1
+    for planned in schedule:
+        trial_id = planned["trialId"]
+        trial_root = root / "trials" / trial_id
+        start = int(
+            (trial_root / "origin-before-count.txt")
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+        end = int(
+            (trial_root / "origin-after-count.txt")
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+        require(
+            start == previous_end and start < end <= len(trace),
+            f"{experiment_id}/{trial_id}: origin partition drift",
+        )
+        partition = trace[start:end]
+        request_ids = validate_data_rows(trial_id, partition)
+        recovery = finalized[trial_id]["recovery"]
+        require(
+            recovery["originRequestCount"] == len(partition),
+            f"{experiment_id}/{trial_id}: finalized originRequestCount drift",
+        )
+        raw = read_json(root / "raw" / f"{trial_id}.json")
+        correlated = raw.get("proof", {}).get("correlatedOriginRequestIds")
+        require(
+            isinstance(correlated, list)
+            and all(type(value) is int and value > 0 for value in correlated)
+            and set(correlated).issubset(set(request_ids)),
+            f"{experiment_id}/{trial_id}: raw/origin correlation drift",
+        )
+        previous_end = end
+
+    require(
+        previous_end == len(trace),
+        f"{experiment_id}: unassigned origin trace rows remain",
+    )
+
+
 def validate_network_seed_readback(
     root: pathlib.Path,
     *,
@@ -501,6 +647,12 @@ def evaluate_experiment(
         root,
         experiment_id=eid,
         trial_ids=trial_ids,
+    )
+    validate_origin_counts(
+        root,
+        experiment_id=eid,
+        plan=plan,
+        trials=trials,
     )
 
     summary = build_summary(trials, analysis)
