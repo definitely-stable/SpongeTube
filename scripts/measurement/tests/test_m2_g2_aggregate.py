@@ -199,6 +199,22 @@ def create_bundle(root: pathlib.Path):
                     },
                 },
             )
+            if spec["id"] in {"N2_HIGH_RTT_JITTER", "N5_BURST_LOSS"}:
+                write_json(
+                    artifact_root
+                    / "trials"
+                    / row["trialId"]
+                    / "harness"
+                    / "netem-active-state.json",
+                    {
+                        "randomSeed": 424242,
+                        "scope": "MEDIA_DATA_ONLY",
+                        "direction": "DOWNSTREAM",
+                        "mediaPortScoped": True,
+                        "ipFamily": "IPV4",
+                        "l4Protocol": "TCP",
+                    },
+                )
     return evidence, generated
 
 
@@ -329,6 +345,27 @@ class G2AggregateTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 G2AggregateError,
                 "stochastic effect must remain inconclusive",
+            ):
+                collect(
+                    evidence_root=evidence,
+                    generated_root=generated,
+                    run_id="g2-test",
+                    git_commit=GIT_COMMIT,
+                )
+
+    def test_rejects_per_trial_network_seed_readback_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence, generated = create_bundle(pathlib.Path(tmp))
+            root = experiment_root(evidence, "N5_BURST_LOSS")
+            state = next(
+                (root / "trials").glob("*/harness/netem-active-state.json")
+            )
+            value = json.loads(state.read_text(encoding="utf-8"))
+            value["randomSeed"] = 424241
+            write_json(state, value)
+            with self.assertRaisesRegex(
+                G2AggregateError,
+                "active netem randomSeed drift",
             ):
                 collect(
                     evidence_root=evidence,
