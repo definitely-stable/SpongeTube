@@ -184,6 +184,30 @@ def validate_route_evidence(
         f"{trial_id}: replacement route became available before old-route loss",
     )
 
+    old_loss_time = min(row["elapsedRealtimeNs"] for row in old_route_losses)
+    replacement_time = min(row["elapsedRealtimeNs"] for row in replacement_availability)
+    attempts = proof.get("physicalAttempts")
+    require(
+        isinstance(attempts, list) and len(attempts) == 2
+        and all(isinstance(row, Mapping) for row in attempts),
+        f"{trial_id}: route replacement requires exactly two physical attempts",
+    )
+    first_start = attempts[0].get("startElapsedRealtimeNs")
+    first_end = attempts[0].get("endElapsedRealtimeNs")
+    second_start = attempts[1].get("startElapsedRealtimeNs")
+    second_end = attempts[1].get("endElapsedRealtimeNs")
+    require(
+        all(
+            type(value) is int and value >= 0
+            for value in (first_start, first_end, second_start, second_end)
+        ),
+        f"{trial_id}: physical attempt timestamps missing",
+    )
+    require(
+        first_start <= old_loss_time <= first_end < replacement_time <= second_start <= second_end,
+        f"{trial_id}: physical owners are not causally separated by route loss/restore",
+    )
+
     evaluation_sequences = [row.get("sequence") for row in evaluations]
     watermarks = [row.get("routeEventSequenceWatermark") for row in evaluations]
     require(
