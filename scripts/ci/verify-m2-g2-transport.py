@@ -219,11 +219,30 @@ def validate_harness(
     )
 
     signal_log = (trial_dir / "android-fault-signal.log").read_text(encoding="utf-8")
-    marker = f"trial={trial_id} fetchId="
-    signal_lines = [line for line in signal_log.splitlines() if marker in line]
-    require(signal_lines, f"{trial_id}: Android failure signal log is empty")
+    all_signal_lines = signal_log.splitlines()
+    ready_marker = f"ready trial={trial_id}"
+    ready_indexes = [
+        index for index, line in enumerate(all_signal_lines)
+        if ready_marker in line
+    ]
+    require(
+        len(ready_indexes) == 1,
+        f"{trial_id}: expected exactly one Android readiness signal",
+    )
+
+    failure_marker = f"trial={trial_id} fetchId="
+    failure_pairs = [
+        (index, line)
+        for index, line in enumerate(all_signal_lines)
+        if failure_marker in line
+    ]
+    require(failure_pairs, f"{trial_id}: Android failure signal log is empty")
+    require(
+        ready_indexes[0] < failure_pairs[0][0],
+        f"{trial_id}: failure signal preceded Android readiness",
+    )
     parsed_ids: list[str] = []
-    for line in signal_lines:
+    for _, line in failure_pairs:
         match = re.search(rf"trial={re.escape(trial_id)} fetchId=(\S+)", line)
         require(match is not None, f"{trial_id}: malformed Android failure signal")
         parsed_ids.append(match.group(1))
