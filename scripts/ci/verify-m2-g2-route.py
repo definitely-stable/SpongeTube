@@ -123,6 +123,10 @@ def validate_route_evidence(
     require(proof.get("chargesBeforeRestore") == 1, f"{trial_id}: second charge occurred while route unavailable")
     require(proof.get("attemptsBeforeRestore") == 1, f"{trial_id}: second owner started while route unavailable")
     require(proof.get("gateCalls") == 2, f"{trial_id}: route gate invocation count drift")
+    require(
+        proof.get("replacementValidationRendezvousObserved") is True,
+        f"{trial_id}: replacement validation rendezvous missing",
+    )
 
     route = proof.get("routeEvidence")
     require(isinstance(route, Mapping), f"{trial_id}: route evidence missing")
@@ -239,6 +243,25 @@ def validate_route_evidence(
     require(
         first_start <= old_loss_time <= first_end < replacement_time <= second_start <= second_end,
         f"{trial_id}: physical owners are not causally separated by route loss/restore",
+    )
+    replacement_validated = [
+        row for row in events
+        if row.get("routeEpochAfter") == after
+        and isinstance(row.get("runtimeStateAfter"), Mapping)
+        and row["runtimeStateAfter"].get("state") == "AVAILABLE"
+        and row["runtimeStateAfter"].get("capabilitiesReceived") is True
+        and row["runtimeStateAfter"].get("validated") == "TRUE"
+    ]
+    require(
+        replacement_validated,
+        f"{trial_id}: replacement route never reached lab validation rendezvous",
+    )
+    first_validated_time = min(
+        row["elapsedRealtimeNs"] for row in replacement_validated
+    )
+    require(
+        replacement_time <= first_validated_time <= second_start,
+        f"{trial_id}: replacement owner started before validation rendezvous",
     )
 
     evaluation_sequences = [row.get("sequence") for row in evaluations]
@@ -441,6 +464,7 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         "limitations": [
             "API36_EMULATOR_DIRECTIONAL_ONLY",
             "ROUTE_REPLACEMENT_TIMINGS_INCLUDE_REAL_CONNECTIVITY_TRANSITION",
+            "LAB_ONLY_REPLACEMENT_VALIDATION_RENDEZVOUS",
             "NO_PHYSICAL_DEVICE_PERFORMANCE_CLAIM",
             "NO_PRODUCTION_TRANSPORT_SELECTION",
         ],
