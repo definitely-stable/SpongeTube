@@ -98,5 +98,5 @@ jobs:
             core/engine/build/outputs/androidTest-results/
             core/engine/build/outputs/connected_android_test_additional_output/
             core/engine/build/reports/androidTests/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
