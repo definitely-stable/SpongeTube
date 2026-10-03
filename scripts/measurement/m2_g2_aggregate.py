@@ -204,6 +204,32 @@ def privacy(document: Any, label: str) -> None:
         raise G2AggregateError(f"{label}: privacy failure: {error}") from error
 
 
+def validate_network_seed_readback(
+    root: pathlib.Path,
+    *,
+    experiment_id: str,
+    trial_ids: set[str],
+) -> None:
+    if experiment_id not in {"N2_HIGH_RTT_JITTER", "N5_BURST_LOSS"}:
+        return
+    for trial_id in sorted(trial_ids):
+        state = read_json(
+            root / "trials" / trial_id / "harness" / "netem-active-state.json"
+        )
+        require(
+            state.get("randomSeed") == 424242,
+            f"{experiment_id}/{trial_id}: active netem randomSeed drift",
+        )
+        require(
+            state.get("scope") == "MEDIA_DATA_ONLY"
+            and state.get("direction") == "DOWNSTREAM"
+            and state.get("mediaPortScoped") is True
+            and state.get("ipFamily") == "IPV4"
+            and state.get("l4Protocol") == "TCP",
+            f"{experiment_id}/{trial_id}: active netem scope/readback drift",
+        )
+
+
 def validate_jitter(raw_dir: pathlib.Path, trial_ids: set[str]) -> None:
     actual = {path.stem for path in raw_dir.glob("*.json")}
     require(actual == trial_ids, "raw trial set differs from retained trials-v1")
@@ -469,7 +495,13 @@ def evaluate_experiment(
         trial_count=len(trials["trials"]),
         paired_blocks=analysis["pairedPerformanceBlockCount"],
     )
-    validate_jitter(root / "raw", {row["trialId"] for row in trials["trials"]})
+    trial_ids = {row["trialId"] for row in trials["trials"]}
+    validate_jitter(root / "raw", trial_ids)
+    validate_network_seed_readback(
+        root,
+        experiment_id=eid,
+        trial_ids=trial_ids,
+    )
 
     summary = build_summary(trials, analysis)
     generated = generated_root / eid.lower()
