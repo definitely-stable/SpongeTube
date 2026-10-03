@@ -2,6 +2,12 @@ name: M2-G2 N0 Paired API36 Evidence
 
 on:
   workflow_call:
+    inputs:
+      concurrency_suffix:
+        description: Unique suffix when invoked by a canonical caller workflow.
+        required: false
+        type: string
+        default: ""
   pull_request:
     paths:
       - ".github/workflows/m2-g2-n0.yml"
@@ -36,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: m2-g2-n0-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: m2-g2-n0-${{ github.workflow }}-${{ inputs.concurrency_suffix || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
