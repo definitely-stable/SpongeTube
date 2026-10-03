@@ -36,7 +36,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 scripts/measurement/m2_transport_pair_plan.py build   --scenario "$SCENARIO"   --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json   --device-state test-fixtures/network/m2/g2/device-api36-emulator.json   --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json   --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json   --route-policy test-fixtures/network/m2/g2/route-exact-default.json   --run-id "$RUN_ID"   --pair-id "$PAIR_ID"   --ordering-seed 20261001   --blocks 2   --playback-mode SPONGE   --connection-state COLD   --output "$ROOT/plan.json"
+python3 scripts/measurement/m2_transport_pair_plan.py build   --scenario "$SCENARIO"   --provenance "$ROOT/provenance.json"   --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json   --device-state test-fixtures/network/m2/g2/device-api36-emulator.json   --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json   --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json   --route-policy test-fixtures/network/m2/g2/route-exact-default.json   --run-id "$RUN_ID"   --pair-id "$PAIR_ID"   --ordering-seed 20261001   --blocks 2   --playback-mode SPONGE   --connection-state COLD   --output "$ROOT/plan.json"
 
 python3 scripts/measurement/m2_transport_pair_plan.py verify   --plan "$ROOT/plan.json"   --scenario "$SCENARIO"   --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json   --device-state test-fixtures/network/m2/g2/device-api36-emulator.json   --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json   --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json   --route-policy test-fixtures/network/m2/g2/route-exact-default.json
 
