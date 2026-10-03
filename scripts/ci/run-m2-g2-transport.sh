@@ -118,43 +118,43 @@ fi
 api_level="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
 abi="$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
 fingerprint="$(adb shell getprop ro.build.fingerprint | tr -d '\r')"
+build_id="$(adb shell getprop ro.build.id | tr -d '\r')"
+security_patch="$(adb shell getprop ro.build.version.security_patch | tr -d '\r')"
+android_kernel="$(adb shell uname -r | tr -d '\r')"
 test "$api_level" = "36"
 test "$abi" = "x86_64"
+adb shell dumpsys battery > "$ROOT/battery.txt"
+grep -Fq 'AC powered: true' "$ROOT/battery.txt"
 
-python3 - "$ROOT/provenance.json" "$SOURCE_HEAD_SHA" "$checkout_sha" "$TOXI_SHA" "$api_level" "$abi" "$fingerprint" <<'PY'
-import hashlib, json, pathlib, sys
-out, source, checkout, toxi_sha, api, abi, fingerprint = sys.argv[1:]
-paths = [
-    ".github/workflows/m2-g2-transport.yml",
-    "core/engine/src/androidTest/java/io/github/definitelystable/spongetube/core/engine/route/TransportPairNetworkAndroidTest.kt",
-    "scripts/ci/run-m2-g2-transport.sh",
-    "scripts/ci/verify-m2-g2-transport.py",
-    "scripts/faults/m2_transport_harness.py",
-    "scripts/measurement/m2_transport_pair_plan.py",
-]
-files = []
-for value in paths:
-    digest = hashlib.sha256(pathlib.Path(value).read_bytes()).hexdigest()
-    files.append({"path": value, "sha256": digest})
-doc = {
-    "schemaVersion": 1,
-    "sourceHeadCommit": source,
-    "checkoutCommit": checkout,
-    "toxiproxy": {"version": "2.12.0", "binarySha256": toxi_sha},
-    "androidRuntime": {
+python3 - "$ROOT/android-runtime.json" "$api_level" "$abi" "$fingerprint" "$build_id" "$security_patch" "$android_kernel" <<'PY'
+import json, sys
+path, api, abi, fingerprint, build_id, security_patch, kernel = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump({
         "deviceClass": "ANDROID_EMULATOR",
         "androidApi": int(api),
         "abi": abi,
         "buildFingerprint": fingerprint,
-    },
-    "codeFiles": files,
-    "limitations": [
-        "GITHUB_HOSTED_RUNNER_AND_API36_EMULATOR_ONLY",
-        "NO_PHYSICAL_DEVICE_PERFORMANCE_CLAIM",
-    ],
-}
-pathlib.Path(out).write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        "buildId": build_id,
+        "securityPatch": security_patch,
+        "kernelRelease": kernel,
+        "batteryPolicy": "CI_POWERED",
+        "acPowered": True,
+    }, handle, indent=2, sort_keys=True)
+    handle.write("\n")
 PY
+
+python3 scripts/measurement/m2_transport_reset_environment.py build \
+  --run-id "$RUN_ID" \
+  --source-head-commit "$SOURCE_HEAD_SHA" \
+  --checkout-commit "$checkout_sha" \
+  --toxiproxy-sha256 "$TOXI_SHA" \
+  --android-runtime "$ROOT/android-runtime.json" \
+  --output "$ROOT/transport-reset-environment-v1.json"
+
+python3 scripts/measurement/m2_transport_reset_environment.py verify \
+  --environment "$ROOT/transport-reset-environment-v1.json" \
+  --android-runtime "$ROOT/android-runtime.json"
 
 jitter_seed="$(python3 - <<'PY'
 import json
@@ -357,7 +357,7 @@ done < "$ROOT/schedule.txt"
 test "$(find "$RAW_ROOT" -maxdepth 1 -type f -name '*.json' | wc -l)" -eq 4
 test -s "$TRACE"
 
-python3 scripts/ci/verify-m2-g2-transport.py   --plan "$ROOT/plan.json"   --raw-dir "$RAW_ROOT"   --trial-root "$TRIAL_ROOT"   --origin-trace "$TRACE"   --scenario "$SCENARIO"   --provenance "$ROOT/provenance.json"   --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json   --device-state test-fixtures/network/m2/g2/device-api36-emulator.json   --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json   --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json   --route-policy test-fixtures/network/m2/g2/route-exact-default.json   --output-dir "$OUTPUT_ROOT"
+python3 scripts/ci/verify-m2-g2-transport.py   --plan "$ROOT/plan.json"   --raw-dir "$RAW_ROOT"   --trial-root "$TRIAL_ROOT"   --origin-trace "$TRACE"   --scenario "$SCENARIO"   --environment "$ROOT/transport-reset-environment-v1.json"   --android-runtime "$ROOT/android-runtime.json"   --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json   --device-state test-fixtures/network/m2/g2/device-api36-emulator.json   --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json   --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json   --route-policy test-fixtures/network/m2/g2/route-exact-default.json   --output-dir "$OUTPUT_ROOT"
 
 python3 scripts/measurement/m2_transport_pair_plan.py verify-results   --plan "$ROOT/plan.json"   --trials "$OUTPUT_ROOT/transport-evaluation-trials-v1.json"   --scenario "$SCENARIO"   --work test-fixtures/network/m2/g2/work-f1-video-segment-1.json   --device-state test-fixtures/network/m2/g2/device-api36-emulator.json   --cache-state test-fixtures/network/m2/g2/cache-empty-http-disabled.json   --recovery-policy test-fixtures/network/m2/g2/recovery-sponge-v2.json   --route-policy test-fixtures/network/m2/g2/route-exact-default.json
 
