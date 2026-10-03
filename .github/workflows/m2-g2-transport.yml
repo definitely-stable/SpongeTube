@@ -73,6 +73,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m py_compile scripts/ci/verify-m2-g2-transport.py
+          bash -n scripts/ci/run-m2-g2-transport.sh
           python3 scripts/measurement/tests/test_m2_transport_harness.py -v
           python3 scripts/measurement/tests/test_m2_transport_pair_plan.py -v
 
