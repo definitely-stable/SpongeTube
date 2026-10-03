@@ -26,7 +26,7 @@ from m2_transport_pair_plan import (  # noqa: E402
 
 
 GIT_COMMIT = "a" * 40
-CHECKOUT_COMMIT = "b" * 40
+CHECKOUT_COMMIT = GIT_COMMIT
 RESOURCE_LENGTH = 711_501
 
 
@@ -257,7 +257,7 @@ class G2AggregateTest(unittest.TestCase):
                     git_commit=GIT_COMMIT,
                 )
 
-    def test_rejects_mixed_checkout_revision(self):
+    def test_rejects_checkout_revision_different_from_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             evidence, generated = create_bundle(pathlib.Path(tmp))
             (
@@ -266,7 +266,7 @@ class G2AggregateTest(unittest.TestCase):
             ).write_text("c" * 40 + "\n", encoding="utf-8")
             with self.assertRaisesRegex(
                 G2AggregateError,
-                "mixed checkout revisions",
+                "checkout commit mismatch",
             ):
                 collect(
                     evidence_root=evidence,
