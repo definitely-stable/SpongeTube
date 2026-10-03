@@ -69,40 +69,48 @@ class G2TransportVerifierTest(unittest.TestCase):
                 "trialId": trial_id,
                 "signal": "ATTEMPT_FAILED",
                 "fetchId": "fetch-1",
+                "attemptCorrelationId": "fetch-1:attempt-1",
+                "controlProtocol": "ADB_REVERSE_LOOPBACK_HTTP_V1",
                 "hostObservationClockDomain": "HOST_FAULT_MONOTONIC",
                 "hostObservedAtElapsedRealtimeNs": 40,
+                "faultDisarmedAtElapsedRealtimeNs": 55,
                 "failureSignalsObservedAtTrigger": trigger_count,
+                "originCountBeforeTrial": 1,
+                "originCountAtTrigger": 2,
+                "originRequestIdsBeforeDisarm": [2],
             },
-        )
-        (trial / "android-fault-signal.log").write_text(
-            f"ready trial={trial_id}\n"
-            f"trial={trial_id} fetchId=fetch-1\n",
-            encoding="utf-8",
         )
         return trial
 
-    def test_harness_binds_disarm_to_first_android_failure_signal(self):
+    def test_harness_binds_disarm_to_first_android_failure_barrier(self):
         with tempfile.TemporaryDirectory() as tmp:
             trial = self.make_trial(pathlib.Path(tmp))
-            fetch_id, signal_ids = verifier.validate_harness(
+            (
+                fetch_id,
+                attempt_correlation,
+                origin_before,
+                origin_at,
+                first_owner_ids,
+            ) = verifier.validate_harness(
                 trial,
                 plan=self.plan,
                 trial_id=trial.name,
             )
             self.assertEqual("fetch-1", fetch_id)
-            self.assertEqual(["fetch-1"], signal_ids)
+            self.assertEqual("fetch-1:attempt-1", attempt_correlation)
+            self.assertEqual(1, origin_before)
+            self.assertEqual(2, origin_at)
+            self.assertEqual([2], first_owner_ids)
 
-    def test_harness_rejects_failure_before_readiness(self):
+    def test_harness_rejects_foreign_attempt_correlation(self):
         with tempfile.TemporaryDirectory() as tmp:
             trial = self.make_trial(pathlib.Path(tmp))
-            (trial / "android-fault-signal.log").write_text(
-                f"trial={trial.name} fetchId=fetch-1\n"
-                f"ready trial={trial.name}\n",
-                encoding="utf-8",
-            )
+            trigger = json.loads((trial / "reset-trigger.json").read_text())
+            trigger["attemptCorrelationId"] = "17"
+            write(trial / "reset-trigger.json", trigger)
             with self.assertRaisesRegex(
                 verifier.TransportResetEvidenceError,
-                "preceded Android readiness",
+                "application-attempt correlation drift",
             ):
                 verifier.validate_harness(
                     trial,
@@ -122,6 +130,29 @@ class G2TransportVerifierTest(unittest.TestCase):
                     plan=self.plan,
                     trial_id=trial.name,
                 )
+
+    def test_barrier_retry_visibility_is_observable_per_owner(self):
+        row = {
+            "trialId": "trial-1",
+            "recovery": {
+                "originRequestCount": 0,
+                "internalRetryVisibility": "OPAQUE",
+                "internalRetryCount": None,
+            },
+            "performanceSampleEligible": False,
+            "limitations": ["RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"],
+        }
+        first = [{"requestId": 2}, {"requestId": 3}]
+        second = [{"requestId": 4}]
+        finalized = verifier.finalize_retry_visibility(
+            row,
+            first_owner_origin=first,
+            second_owner_origin=second,
+        )
+        self.assertEqual("OBSERVABLE", finalized["recovery"]["internalRetryVisibility"])
+        self.assertEqual(1, finalized["recovery"]["internalRetryCount"])
+        self.assertEqual(3, finalized["recovery"]["originRequestCount"])
+        self.assertTrue(finalized["performanceSampleEligible"])
 
     def test_scenario_rejects_noncanonical_reset_parameters(self):
         scenario = {
