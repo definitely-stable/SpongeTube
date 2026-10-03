@@ -52,6 +52,11 @@ EXPECTED_DISARMED = {
     "toxics": [],
 }
 EXPECTED_FINAL = {"proxies": 0, "toxics": 0}
+RESET_COMPATIBLE_FAILURE_KINDS = {
+    "CONNECTION_RESET",
+    "PREMATURE_EOF",
+    "IO",
+}
 # Reuse the hardened generic raw-device proof verifier from G2-C.  Only the
 # scenario identity and expected phase differ; fault lifecycle is verified here.
 shared.SPECS["N6"] = {
@@ -260,6 +265,24 @@ def validate_harness(
     return fetch_id, attempt_correlation, origin_before, origin_at_trigger, first_owner_ids
 
 
+def validate_reset_failure_observation(
+    failure: Mapping[str, Any],
+    *,
+    trial_id: str,
+) -> None:
+    observation = failure.get("observation")
+    require(
+        isinstance(observation, Mapping)
+        and observation.get("plane") == "TRANSPORT"
+        and observation.get("type") == "TRANSPORT_IO",
+        f"{trial_id}: reset owner did not retain a TRANSPORT_IO observation",
+    )
+    require(
+        observation.get("kind") in RESET_COMPATIBLE_FAILURE_KINDS,
+        f"{trial_id}: reset owner failure kind is not RESET_PEER-compatible",
+    )
+
+
 def finalize_retry_visibility(
     row: dict[str, Any],
     *,
@@ -401,6 +424,10 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
         require(
             raw_failures[0].get("attemptCorrelationId") == trigger_attempt_correlation,
             f"{trial_id}: control barrier is not bound to retained application attempt",
+        )
+        validate_reset_failure_observation(
+            raw_failures[0],
+            trial_id=trial_id,
         )
 
         require(
