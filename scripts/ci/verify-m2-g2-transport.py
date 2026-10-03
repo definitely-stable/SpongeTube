@@ -356,6 +356,12 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
             first_owner_origin and second_owner_origin,
             f"{trial_id}: reset/recovery origin partitions must both be non-empty",
         )
+        origin_ids = [row.get("requestId") for row in trial_origin]
+        require(
+            all(type(value) is int and value > 0 for value in origin_ids)
+            and len(origin_ids) == len(set(origin_ids)),
+            f"{trial_id}: duplicate/missing origin request id",
+        )
         for origin_row in trial_origin:
             shared.validate_origin_row(origin_row, trial_id=trial_id)
         previous_end = end
