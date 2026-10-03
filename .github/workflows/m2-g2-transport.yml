@@ -2,6 +2,12 @@ name: M2-G2 Paired API36 Transport Reset
 
 on:
   workflow_call:
+    inputs:
+      concurrency_suffix:
+        description: Unique suffix when invoked by a canonical caller workflow.
+        required: false
+        type: string
+        default: ""
   pull_request:
     branches: [ main ]
     paths:
@@ -42,7 +48,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: m2-g2-transport-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: m2-g2-transport-${{ github.workflow }}-${{ inputs.concurrency_suffix || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
