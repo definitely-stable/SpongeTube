@@ -277,11 +277,38 @@ def validate_harness(
     evidence = load_json(harness_dir / "fault-harness-events.json")
     require(evidence.get("runId") == plan["runId"], f"{family} harness runId drift")
     require(evidence.get("scenarioHash") == plan["scenario"]["hash"], f"{family} harness scenario hash drift")
-    operations = [event.get("operation") for event in evidence.get("events", [])]
+    require(
+        evidence.get("clockDomain") == "HOST_FAULT_MONOTONIC",
+        f"{family} harness clock domain drift",
+    )
+    events = evidence.get("events")
+    require(
+        isinstance(events, list) and len(events) == 5 and all(isinstance(event, Mapping) for event in events),
+        f"{family} harness lifecycle events missing",
+    )
+    operations = [event.get("operation") for event in events]
     require(
         operations == ["HARNESS_STARTED", "FAULT_ARMED", "FAULT_APPLIED", "FAULT_REMOVED", "HARNESS_STOPPED"],
         f"{family} harness lifecycle is incomplete",
     )
+    event_times = [event.get("elapsedRealtimeNs") for event in events]
+    require(
+        all(type(value) is int and value >= 0 for value in event_times)
+        and event_times == sorted(event_times),
+        f"{family} harness event timestamps are not monotonic",
+    )
+    if profile == "N3":
+        applied = events[2]
+        removed = events[3]
+        parameters = applied.get("parameters")
+        require(
+            isinstance(parameters, Mapping) and parameters.get("durationMs") == 1_500,
+            "N3 blackout duration parameter drift",
+        )
+        require(
+            removed["elapsedRealtimeNs"] - applied["elapsedRealtimeNs"] >= 1_500_000_000,
+            "N3 blackout ended before frozen 1500 ms duration",
+        )
 
     final_qdisc = load_json_array(harness_dir / "qdisc-final.json")
     final_netem = _find_kind(final_qdisc, "netem")
@@ -492,6 +519,7 @@ def check_raw(
 
     prior_end = chain_start
     total_network_bytes = 0
+    attempt_correlated_ids: list[int] = []
     for attempt in attempts:
         start_ns = attempt.get("startElapsedRealtimeNs")
         end_ns = attempt.get("endElapsedRealtimeNs")
@@ -503,9 +531,26 @@ def check_raw(
             f"{trial_id}: physical attempt timing invalid",
         )
         require(type(network_bytes) is int and network_bytes >= 0, f"{trial_id}: physical network bytes invalid")
+        correlation = attempt.get("transportCorrelationId")
+        if correlation is not None:
+            require(
+                isinstance(correlation, str)
+                and correlation.isdigit()
+                and int(correlation) > 0,
+                f"{trial_id}: malformed physical-attempt origin correlation",
+            )
+            attempt_correlated_ids.append(int(correlation))
         prior_end = end_ns
         total_network_bytes += network_bytes
     require(total_network_bytes == metrics["bytesReceived"], f"{trial_id}: accepted network byte accounting drift")
+    require(
+        attempt_correlated_ids == correlated,
+        f"{trial_id}: physical-attempt/origin correlation lineage drift",
+    )
+    require(
+        attempts[-1].get("transportCorrelationId") is not None,
+        f"{trial_id}: successful physical attempt lacks origin correlation",
+    )
     require(metrics["bytesReceived"] >= RESOURCE_LENGTH, f"{trial_id}: successful chain accepted too few bytes")
 
     phases = proof.get("transportPhases")
@@ -548,6 +593,30 @@ def check_raw(
             "attemptTerminalUs": (end_ns - chain_start) // 1_000,
             "terminal": attempt["terminal"],
         })
+
+    progress_owners = []
+    for ordinal, attempt in enumerate(attempts, start=1):
+        start_ns = attempt["startElapsedRealtimeNs"]
+        end_ns = attempt["endElapsedRealtimeNs"]
+        if start_ns <= first_progress <= end_ns and attempt["networkBytes"] > 0:
+            owned = [
+                phase for phase in phases
+                if start_ns <= phase["elapsedRealtimeNs"] <= end_ns
+            ]
+            first_body = next(
+                (
+                    phase["elapsedRealtimeNs"]
+                    for phase in owned
+                    if phase.get("kind") == "FIRST_BODY_BYTES"
+                ),
+                None,
+            )
+            if first_body is not None and first_body <= first_progress:
+                progress_owners.append(ordinal)
+    require(
+        len(progress_owners) == 1,
+        f"{trial_id}: first broker chunk is not causally bound to one transport body phase",
+    )
 
     failures = proof.get("recoveryFailures")
     validate_failure_lineage(failures, trial_id=trial_id)
@@ -737,12 +806,17 @@ def verify_network(
             set(proof["correlatedRequestIds"]).issubset(set(origin_ids)),
             f"{raw_row['trialId']}: device correlation escaped its serialized trial origin slice",
         )
-        physical = proof["physicalAttemptCount"]
+        correlated_owner_count = len(proof["correlatedRequestIds"])
         require(
-            len(trial_origin) >= physical,
+            len(trial_origin) >= correlated_owner_count,
             f"{raw_row['trialId']}: origin visibility is insufficient to count internal HTTP replay",
         )
-        internal_retries = len(trial_origin) - physical
+        # Only owners that actually exposed a response correlation are known to
+        # have reached the HTTP origin. CONNECT_TIMEOUT / pre-header failures
+        # remain application-owned physical attempts but are not subtracted
+        # from the origin GET count. Any additional serialized origin GET is
+        # therefore an origin-visible transport-internal replay.
+        internal_retries = len(trial_origin) - correlated_owner_count
         total_internal_replays += internal_retries
 
         row = copy.deepcopy(raw_row)

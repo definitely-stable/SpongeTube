@@ -318,21 +318,37 @@ def write_trial_harness(root: pathlib.Path, profile: str, trial_id: str, plan: d
     trial = root / trial_id
     write_json(trial / "harness" / "netem-active-state.json", verifier.SPECS[profile]["active"])
     write_json(trial / "harness" / "netem-clean-state.json", {"filters": 0, "netem": 0, "prio": 0})
+    base_ns = 1_000_000_000
+    event_times = [
+        base_ns,
+        base_ns + 1_000_000,
+        base_ns + 2_000_000,
+        base_ns + (1_502_000_000 if profile == "N3" else 3_000_000),
+        base_ns + (1_503_000_000 if profile == "N3" else 4_000_000),
+    ]
+    operations = (
+        "HARNESS_STARTED",
+        "FAULT_ARMED",
+        "FAULT_APPLIED",
+        "FAULT_REMOVED",
+        "HARNESS_STOPPED",
+    )
+    events = []
+    for index, (operation, elapsed_ns) in enumerate(zip(operations, event_times), start=1):
+        parameters = {"durationMs": 1_500} if profile == "N3" and operation == "FAULT_APPLIED" else {}
+        events.append({
+            "sequence": index,
+            "operation": operation,
+            "elapsedRealtimeNs": elapsed_ns,
+            "parameters": parameters,
+        })
     write_json(
         trial / "harness" / "fault-harness-events.json",
         {
             "runId": plan["runId"],
             "scenarioHash": plan["scenario"]["hash"],
-            "events": [
-                {"operation": name}
-                for name in (
-                    "HARNESS_STARTED",
-                    "FAULT_ARMED",
-                    "FAULT_APPLIED",
-                    "FAULT_REMOVED",
-                    "HARNESS_STOPPED",
-                )
-            ],
+            "clockDomain": "HOST_FAULT_MONOTONIC",
+            "events": events,
         },
     )
     if profile == "N3":
@@ -555,6 +571,101 @@ class G2NetworkVerifierTest(unittest.TestCase):
             write_json(path, value)
             with self.assertRaisesRegex(verifier.NetworkEvidenceError, "must not self-certify"):
                 case.verify()
+        finally:
+            case.close()
+
+    def test_n3_shortened_blackout_is_rejected(self):
+        case = NetworkCase("N3")
+        try:
+            trial_id = case.schedule[0]["trialId"]
+            path = case.trial_root / trial_id / "harness" / "fault-harness-events.json"
+            value = json.loads(path.read_text())
+            applied_ns = value["events"][2]["elapsedRealtimeNs"]
+            value["events"][3]["elapsedRealtimeNs"] = applied_ns + 100_000_000
+            value["events"][4]["elapsedRealtimeNs"] = applied_ns + 101_000_000
+            write_json(path, value)
+            with self.assertRaisesRegex(
+                verifier.NetworkEvidenceError,
+                "ended before frozen 1500 ms",
+            ):
+                case.verify()
+        finally:
+            case.close()
+
+    def test_first_broker_chunk_must_follow_transport_body_phase(self):
+        case = NetworkCase("N2")
+        try:
+            trial_id = case.schedule[0]["trialId"]
+            path = case.raw_dir / f"{trial_id}.json"
+            value = json.loads(path.read_text())
+            chain_start = value["proof"]["chainStartedElapsedRealtimeNs"]
+            value["proof"]["firstBrokerProgressElapsedRealtimeNs"] = chain_start
+            value["trial"]["metrics"]["firstByteUs"] = 0
+            write_json(path, value)
+            with self.assertRaisesRegex(
+                verifier.NetworkEvidenceError,
+                "first broker chunk is not causally bound",
+            ):
+                case.verify()
+        finally:
+            case.close()
+
+    def test_pre_origin_failed_owner_is_not_counted_as_internal_http_replay(self):
+        case = NetworkCase("N2")
+        try:
+            first = case.schedule[0]
+            trial_id = first["trialId"]
+            raw_path = case.raw_dir / f"{trial_id}.json"
+            raw = json.loads(raw_path.read_text())
+            proof = raw["proof"]
+            trial = raw["trial"]
+            original = proof["physicalAttempts"][0]
+            chain_start = proof["chainStartedElapsedRealtimeNs"]
+            failed_start = chain_start + 100_000
+            failed_end = chain_start + 500_000
+            success = copy.deepcopy(original)
+            success["startElapsedRealtimeNs"] += 1_000_000
+            success["endElapsedRealtimeNs"] += 1_000_000
+            proof["physicalAttempts"] = [{
+                "fetchId": "fetch-pre-origin-timeout",
+                "startElapsedRealtimeNs": failed_start,
+                "endElapsedRealtimeNs": failed_end,
+                "terminal": "ATTEMPT_FAILED",
+                "transportCorrelationId": None,
+                "networkBytes": 0,
+            }, success]
+            for phase in proof["transportPhases"]:
+                phase["elapsedRealtimeNs"] += 1_000_000
+            proof["firstBrokerProgressElapsedRealtimeNs"] += 1_000_000
+            proof["chainTerminatedElapsedRealtimeNs"] += 1_000_000
+            trial["metrics"]["firstByteUs"] = (
+                proof["firstBrokerProgressElapsedRealtimeNs"] - chain_start
+            ) // 1_000
+            trial["metrics"]["completionUs"] = (
+                proof["chainTerminatedElapsedRealtimeNs"] - chain_start
+            ) // 1_000
+            trial["recovery"]["ownerCount"] = 2
+            proof["bindingTargetResolutionCount"] = 2
+            proof["recoveryFailureCount"] = 1
+            proof["recoveryFailures"] = [{
+                "observation": {"plane": "TRANSPORT", "type": "TRANSPORT_IO"},
+                "classification": "TRANSIENT_TRANSPORT",
+                "decision": {"kind": "RETRY_AFTER_BACKOFF"},
+                "action": {"kind": "SCHEDULE_BACKOFF"},
+            }]
+            proof["recoveryBackoffs"] = [{
+                "retryOrdinal": 1,
+                "windowMs": 500,
+                "delayMs": 367,
+            }]
+            proof["recoveryJitterSampleCount"] = 1
+            proof["recoveryJitterSamples"] = [367]
+            write_json(raw_path, raw)
+
+            trials, _, _ = case.verify()
+            finalized = next(row for row in trials["trials"] if row["trialId"] == trial_id)
+            self.assertEqual(1, finalized["recovery"]["originRequestCount"])
+            self.assertEqual(0, finalized["recovery"]["internalRetryCount"])
         finally:
             case.close()
 

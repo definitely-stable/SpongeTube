@@ -219,10 +219,12 @@ trace_path = pathlib.Path(sys.argv[1])
 raw_path = pathlib.Path(sys.argv[2])
 before = int(sys.argv[3])
 raw_trial = json.loads(raw_path.read_text(encoding="utf-8"))
-physical_attempts = len(raw_trial["proof"]["physicalAttempts"])
 correlated = {
     int(value) for value in raw_trial["proof"]["correlatedOriginRequestIds"]
 }
+if not correlated:
+    raise SystemExit("successful G2-C trial exposed no origin correlation")
+
 deadline = time.monotonic() + 5.0
 stable_signature = None
 stable_since = None
@@ -248,7 +250,11 @@ while time.monotonic() < deadline:
         for row in trial_rows
         if isinstance(row.get("requestId"), int)
     }
-    enough = len(trial_rows) >= physical_attempts and correlated.issubset(ids)
+    # A physical owner may fail before reaching HTTP (for example
+    # CONNECT_TIMEOUT). Wait only for device-correlated origin-reaching owners,
+    # then require the complete trace partition to remain stable long enough to
+    # capture any transport-internal replay that occurred before chain terminal.
+    enough = correlated.issubset(ids)
     signature = (
         len(rows),
         tuple(row.get("requestId") for row in trial_rows),
@@ -269,8 +275,7 @@ while time.monotonic() < deadline:
 
 raise SystemExit(
     "Media Lab trace did not settle with all device-correlated requests "
-    f"within 5s: before={before}, attempts={physical_attempts}, "
-    f"correlated={sorted(correlated)}"
+    f"within 5s: before={before}, correlated={sorted(correlated)}"
 )
 PY
 }
