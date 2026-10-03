@@ -75,6 +75,7 @@ class G2TransportVerifierTest(unittest.TestCase):
             },
         )
         (trial / "android-fault-signal.log").write_text(
+            f"ready trial={trial_id}\n"
             f"trial={trial_id} fetchId=fetch-1\n",
             encoding="utf-8",
         )
@@ -90,6 +91,24 @@ class G2TransportVerifierTest(unittest.TestCase):
             )
             self.assertEqual("fetch-1", fetch_id)
             self.assertEqual(["fetch-1"], signal_ids)
+
+    def test_harness_rejects_failure_before_readiness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trial = self.make_trial(pathlib.Path(tmp))
+            (trial / "android-fault-signal.log").write_text(
+                f"trial={trial.name} fetchId=fetch-1\n"
+                f"ready trial={trial.name}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                verifier.TransportResetEvidenceError,
+                "preceded Android readiness",
+            ):
+                verifier.validate_harness(
+                    trial,
+                    plan=self.plan,
+                    trial_id=trial.name,
+                )
 
     def test_harness_rejects_multiple_failures_visible_before_disarm(self):
         with tempfile.TemporaryDirectory() as tmp:
