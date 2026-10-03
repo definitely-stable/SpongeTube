@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A through M2-F complete; M2-G active (G2-D transport reset in progress)**
+Status: **Active — M2-A through M2-F complete; M2-G active (G2-E exact-route replacement regression in progress; G2-D complete)**
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
