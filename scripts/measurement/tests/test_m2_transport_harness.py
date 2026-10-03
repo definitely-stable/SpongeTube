@@ -217,6 +217,59 @@ class M2TransportHarnessContractTest(unittest.TestCase):
             self.assertEqual("REMOVED", retained["events"][-1]["result"])
             self.assertEqual(clean, json.loads(state_path.read_text(encoding="utf-8")))
 
+    def test_disarm_rejects_drifted_toxic_readback(self):
+        fixture = scenario("n6-transport-reset.json")
+        drifted = {
+            "name": harness.PROXY_NAME,
+            "enabled": True,
+            "toxics": [{
+                "name": harness.TOXIC_NAME,
+                "type": "timeout",
+                "stream": "downstream",
+                "toxicityPpm": 1_000_000,
+                "attributes": {"timeout": 0},
+            }],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            scenario_path = root / "scenario.json"
+            evidence_path = root / "events.json"
+            state_path = root / "state.json"
+            scenario_path.write_text(json.dumps(fixture), encoding="utf-8")
+            evidence_path.write_text(json.dumps({
+                "schemaVersion": 1,
+                "runId": "run",
+                "sessionId": "session",
+                "scenarioHash": harness.scenario_sha256(fixture),
+                "harness": {
+                    "harnessId": harness.HARNESS_ID,
+                    "harnessVersion": harness.HARNESS_VERSION,
+                    "toolId": harness.TOOL_ID,
+                    "toolVersion": harness.TOOL_VERSION,
+                },
+                "clockDomain": "HOST_FAULT_MONOTONIC",
+                "events": [],
+            }), encoding="utf-8")
+            args = argparse.Namespace(
+                scenario=str(scenario_path),
+                api="http://control.invalid",
+                evidence=str(evidence_path),
+                state=str(state_path),
+                run_id="run",
+                session_id="session",
+            )
+            with mock.patch.object(
+                harness.toxi,
+                "get_proxy",
+                return_value=drifted,
+            ), mock.patch.object(
+                harness.toxi,
+                "normalized_proxy_state",
+                side_effect=lambda value: value,
+            ):
+                with self.assertRaisesRegex(Exception, "readback drifted"):
+                    harness.disarm(args)
+
     def test_disarm_fails_closed_when_fault_was_already_removed(self):
         fixture = scenario("n6-transport-reset.json")
         with tempfile.TemporaryDirectory() as tmp:
