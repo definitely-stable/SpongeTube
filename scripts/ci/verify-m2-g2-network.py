@@ -673,6 +673,39 @@ def check_raw(
     }, timing_row
 
 
+def derive_internal_retry_visibility(
+    *,
+    physical_owner_count: int,
+    correlated_owner_count: int,
+    origin_request_count: int,
+) -> tuple[str, int | None]:
+    require(
+        0 <= correlated_owner_count <= physical_owner_count,
+        "correlated owner count exceeds physical owner count",
+    )
+    require(
+        origin_request_count >= correlated_owner_count,
+        "origin request count is smaller than correlated owner count",
+    )
+    extra_origin = origin_request_count - correlated_owner_count
+    uncorrelated_owners = physical_owner_count - correlated_owner_count
+
+    # No extra origin request exists: even uncorrelated owners are proven not
+    # to have produced a retained origin GET in this serialized partition.
+    if extra_origin == 0:
+        return "OBSERVABLE", 0
+
+    # Every physical owner is explicitly correlated. Any additional origin GET
+    # cannot belong to RecoveryCoordinator and is therefore a transport replay.
+    if uncorrelated_owners == 0:
+        return "OBSERVABLE", extra_origin
+
+    # An uncorrelated owner may have reached the origin before its response was
+    # lost. Without request-level transport retry telemetry the extra GET cannot
+    # be attributed safely. Preserve the frozen G0 conservative state.
+    return "OPAQUE", None
+
+
 def validate_origin_row(row: Mapping[str, Any], *, trial_id: str) -> None:
     require(row.get("plane") == "data" and row.get("method") == "GET", f"{trial_id}: unexpected origin trace row")
     require(row.get("path") == RESOURCE_PATH, f"{trial_id}: origin path drift")
@@ -807,30 +840,33 @@ def verify_network(
             f"{raw_row['trialId']}: device correlation escaped its serialized trial origin slice",
         )
         correlated_owner_count = len(proof["correlatedRequestIds"])
-        require(
-            len(trial_origin) >= correlated_owner_count,
-            f"{raw_row['trialId']}: origin visibility is insufficient to count internal HTTP replay",
+        visibility, internal_retries = derive_internal_retry_visibility(
+            physical_owner_count=proof["physicalAttemptCount"],
+            correlated_owner_count=correlated_owner_count,
+            origin_request_count=len(trial_origin),
         )
-        # Only owners that actually exposed a response correlation are known to
-        # have reached the HTTP origin. CONNECT_TIMEOUT / pre-header failures
-        # remain application-owned physical attempts but are not subtracted
-        # from the origin GET count. Any additional serialized origin GET is
-        # therefore an origin-visible transport-internal replay.
-        internal_retries = len(trial_origin) - correlated_owner_count
-        total_internal_replays += internal_retries
+        if internal_retries is not None:
+            total_internal_replays += internal_retries
 
         row = copy.deepcopy(raw_row)
         row["recovery"]["originRequestCount"] = len(trial_origin)
-        row["recovery"]["internalRetryVisibility"] = "OBSERVABLE"
+        row["recovery"]["internalRetryVisibility"] = visibility
         row["recovery"]["internalRetryCount"] = internal_retries
-        row["performanceSampleEligible"] = bool(spec["performanceEligible"])
+        row["performanceSampleEligible"] = bool(
+            spec["performanceEligible"] and visibility == "OBSERVABLE"
+        )
         row["limitations"] = [
             item for item in row["limitations"]
             if item != "RAW_DEVICE_ROW_REQUIRES_HOST_RETRY_FINALIZATION"
         ]
-        row["limitations"].append(
-            "INTERNAL_HTTP_REPLAY_COUNT_DERIVED_FROM_SERIALIZED_ORIGIN_TRACE_PARTITION"
-        )
+        if visibility == "OBSERVABLE":
+            row["limitations"].append(
+                "INTERNAL_HTTP_REPLAY_COUNT_DERIVED_FROM_SERIALIZED_ORIGIN_TRACE_PARTITION"
+            )
+        else:
+            row["limitations"].append(
+                "INTERNAL_HTTP_REPLAY_ATTRIBUTION_AMBIGUOUS_WITH_UNCORRELATED_OWNER"
+            )
         if profile == "N5":
             row["limitations"].append(
                 "LEGACY_NETEM_CORRELATED_RANDOM_STATE_IS_NOT_FULLY_SEED_REPRODUCIBLE"

@@ -674,6 +674,24 @@ class G2NetworkVerifierTest(unittest.TestCase):
         finally:
             case.close()
 
+    def test_internal_retry_visibility_stays_opaque_when_extra_get_is_ambiguous(self):
+        visibility, count = verifier.derive_internal_retry_visibility(
+            physical_owner_count=2,
+            correlated_owner_count=1,
+            origin_request_count=2,
+        )
+        self.assertEqual("OPAQUE", visibility)
+        self.assertIsNone(count)
+
+    def test_internal_retry_visibility_counts_extra_get_when_all_owners_correlate(self):
+        visibility, count = verifier.derive_internal_retry_visibility(
+            physical_owner_count=1,
+            correlated_owner_count=1,
+            origin_request_count=2,
+        )
+        self.assertEqual("OBSERVABLE", visibility)
+        self.assertEqual(1, count)
+
     def test_provider_failure_cannot_masquerade_as_network_recovery(self):
         bad = [{
             "observation": {"plane": "PROVIDER", "type": "HTTP_RESPONSE"},
