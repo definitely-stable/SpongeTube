@@ -674,6 +674,17 @@ class G2NetworkVerifierTest(unittest.TestCase):
         finally:
             case.close()
 
+    def test_intermediate_origin_disconnect_is_valid_but_not_terminal_success(self):
+        row = origin_row(7)
+        row["bodyBytesWritten"] = 16_384
+        row["outcome"] = "CLIENT_DISCONNECTED"
+        verifier.validate_origin_row(row, trial_id="trial")
+        with self.assertRaisesRegex(
+            verifier.NetworkEvidenceError,
+            "terminal successful owner origin did not succeed",
+        ):
+            verifier.validate_successful_origin_row(row, trial_id="trial")
+
     def test_internal_retry_visibility_stays_opaque_when_extra_get_is_ambiguous(self):
         visibility, count = verifier.derive_internal_retry_visibility(
             physical_owner_count=2,

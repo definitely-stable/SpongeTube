@@ -666,6 +666,7 @@ def check_raw(
     }
     return copy.deepcopy(row), {
         "correlatedRequestIds": correlated,
+        "successfulRequestId": int(attempts[-1]["transportCorrelationId"]),
         "physicalAttemptCount": len(attempts),
         "processInstanceId": proof["processInstanceId"],
         "processPid": proof["processPid"],
@@ -714,8 +715,26 @@ def validate_origin_row(row: Mapping[str, Any], *, trial_id: str) -> None:
     require(row.get("resolvedRangeStart") == 0 and row.get("resolvedRangeEndExclusive") == RESOURCE_LENGTH, f"{trial_id}: origin resolved range drift")
     require(row.get("status") == 206, f"{trial_id}: origin status drift")
     require(row.get("plannedResponseBytes") == RESOURCE_LENGTH, f"{trial_id}: origin body plan drift")
-    require(row.get("bodyBytesWritten") == RESOURCE_LENGTH, f"{trial_id}: origin body incomplete")
-    require(row.get("outcome") == "SUCCESS", f"{trial_id}: origin outcome drift")
+    body_written = row.get("bodyBytesWritten")
+    require(
+        type(body_written) is int and 0 <= body_written <= RESOURCE_LENGTH,
+        f"{trial_id}: origin body byte count invalid",
+    )
+    outcome = row.get("outcome")
+    require(
+        outcome in {"SUCCESS", "CLIENT_DISCONNECTED", "SERVER_IO_ERROR"},
+        f"{trial_id}: unexpected origin transport outcome {outcome!r}",
+    )
+    if outcome == "SUCCESS":
+        require(body_written == RESOURCE_LENGTH, f"{trial_id}: successful origin body incomplete")
+
+
+def validate_successful_origin_row(row: Mapping[str, Any], *, trial_id: str) -> None:
+    require(row.get("outcome") == "SUCCESS", f"{trial_id}: terminal successful owner origin did not succeed")
+    require(
+        row.get("bodyBytesWritten") == RESOURCE_LENGTH,
+        f"{trial_id}: terminal successful owner origin body incomplete",
+    )
 
 
 def verify_network(
@@ -807,6 +826,22 @@ def verify_network(
             device_state=inputs["deviceState"],
             recovery_policy=inputs["recoveryPolicy"],
         )
+        origin_by_id = {
+            origin_row.get("requestId"): origin_row
+            for origin_row in trial_origin
+            if type(origin_row.get("requestId")) is int
+        }
+        require(
+            len(origin_by_id) == len(trial_origin),
+            f"{trial_id}: duplicate/missing origin request id",
+        )
+        successful_origin = origin_by_id.get(proof["successfulRequestId"])
+        require(
+            isinstance(successful_origin, Mapping),
+            f"{trial_id}: terminal successful owner is absent from origin partition",
+        )
+        validate_successful_origin_row(successful_origin, trial_id=trial_id)
+
         rows.append(row)
         proofs.append(proof)
         timing_rows.append(timing)
