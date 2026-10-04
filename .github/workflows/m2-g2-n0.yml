@@ -1,6 +1,13 @@
 name: M2-G2 N0 Paired API36 Evidence
 
 on:
+  workflow_call:
+    inputs:
+      concurrency_suffix:
+        description: Unique suffix when invoked by a canonical caller workflow.
+        required: false
+        type: string
+        default: ""
   pull_request:
     paths:
       - ".github/workflows/m2-g2-n0.yml"
@@ -35,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: m2-g2-n0-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: m2-g2-n0-${{ github.workflow }}-${{ inputs.concurrency_suffix || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,11 +50,14 @@ jobs:
     name: m2-g2-n0-api36-paired
     runs-on: ubuntu-24.04
     timeout-minutes: 55
+    env:
+      SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -130,6 +140,12 @@ jobs:
           raw_root="$root/raw"
           output_root="$root/output"
           mkdir -p "$server_root" "$raw_root" "$output_root"
+
+          checkout_sha="$(git rev-parse HEAD)"
+          [[ "$SOURCE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$checkout_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf '%s\n' "$SOURCE_HEAD_SHA" > "$root/source-head-commit.txt"
+          printf '%s\n' "$checkout_sha" > "$root/checkout-commit.txt"
 
           LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
           test -n "$LAB_BIN"

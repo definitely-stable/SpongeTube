@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m2-g2-evidence-index-v1.schema.json",
+  "title": "SpongeTube M2-G2 Canonical Evidence Index v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "gitCommit",
+    "checkoutCommit",
+    "status",
+    "gateId",
+    "requiredExperimentCount",
+    "backendIds",
+    "backendIdentities",
+    "commonComparison",
+    "orderingProtocol",
+    "orderingSeed",
+    "deviceClass",
+    "androidApi",
+    "experiments",
+    "aggregate",
+    "artifacts",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "gitCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "checkoutCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "status": { "type": "string", "const": "PASS" },
+    "gateId": { "type": "string", "const": "M2-ACC-10" },
+    "requiredExperimentCount": { "type": "integer", "const": 6 },
+    "backendIds": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "enum": [
+          "HTTP_URL_CONNECTION_ROUTE_BOUND",
+          "PLATFORM_HTTP_ENGINE"
+        ]
+      }
+    },
+    "backendIdentities": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["backendId", "backendVersion", "implementationId"],
+        "additionalProperties": false,
+        "properties": {
+          "backendId": {
+            "type": "string",
+            "enum": [
+              "HTTP_URL_CONNECTION_ROUTE_BOUND",
+              "PLATFORM_HTTP_ENGINE"
+            ]
+          },
+          "backendVersion": { "type": "string", "minLength": 1 },
+          "implementationId": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "commonComparison": {
+      "type": "object",
+      "required": [
+        "workFingerprint",
+        "deviceStateFingerprint",
+        "playbackMode",
+        "cacheStateFingerprint",
+        "recoveryPolicyFingerprint",
+        "routePolicyFingerprint",
+        "connectionState"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "workFingerprint": { "$ref": "#/$defs/sha256" },
+        "deviceStateFingerprint": { "$ref": "#/$defs/sha256" },
+        "playbackMode": { "type": "string", "const": "SPONGE" },
+        "cacheStateFingerprint": { "$ref": "#/$defs/sha256" },
+        "recoveryPolicyFingerprint": { "$ref": "#/$defs/sha256" },
+        "routePolicyFingerprint": { "$ref": "#/$defs/sha256" },
+        "connectionState": { "type": "string", "const": "COLD" }
+      }
+    },
+    "orderingProtocol": { "type": "string", "const": "COUNTERBALANCED_PAIRS" },
+    "orderingSeed": { "type": "integer", "const": 20261001 },
+    "deviceClass": { "type": "string", "const": "ANDROID_EMULATOR" },
+    "androidApi": { "type": "integer", "const": 36 },
+    "experiments": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "experimentId",
+          "scenarioFamily",
+          "scenarioVariant",
+          "scenarioHash",
+          "status",
+          "resilienceClaim",
+          "trialCount",
+          "pairedBlockCount",
+          "trials",
+          "summary",
+          "verification"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "experimentId": {
+            "type": "string",
+            "enum": [
+              "N0_CONTROL",
+              "N2_HIGH_RTT_JITTER",
+              "N3_BURST_PACKET_LOSS",
+              "N5_BURST_LOSS",
+              "N6_TRANSPORT_RESET",
+              "N6_DEFAULT_ROUTE_LOSS_RESTORE"
+            ]
+          },
+          "scenarioFamily": { "type": "string", "enum": ["N0", "N2", "N3", "N5", "N6"] },
+          "scenarioVariant": {
+            "type": "string",
+            "enum": [
+              "CONTROL",
+              "HIGH_RTT_JITTER",
+              "BURST_PACKET_LOSS",
+              "BURST_LOSS",
+              "TRANSPORT_RESET",
+              "DEFAULT_ROUTE_LOSS_RESTORE"
+            ]
+          },
+          "scenarioHash": { "$ref": "#/$defs/sha256" },
+          "status": { "type": "string", "const": "PASS" },
+          "resilienceClaim": {
+            "type": "string",
+            "enum": [
+              "CONTROL_EQUIVALENT",
+              "OBSERVED_EFFECT_EQUIVALENT",
+              "INCONCLUSIVE_STOCHASTIC_EFFECT",
+              "TRANSPORT_RESET_EQUIVALENT",
+              "ROUTE_REPLACEMENT_EQUIVALENT"
+            ]
+          },
+          "trialCount": { "type": "integer", "const": 4 },
+          "pairedBlockCount": { "type": "integer", "const": 2 },
+          "trials": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string", "minLength": 1 },
+          "verification": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "required": [
+        "correctnessEquivalent",
+        "recoveryEquivalent",
+        "routeBindingEquivalent",
+        "technicalEligibility",
+        "pairedDirectionalMetricsAvailable",
+        "physicalDeviceEvidence",
+        "claimScope",
+        "performanceSelectionAllowed",
+        "selectedBackend",
+        "n5ResilienceEffect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "correctnessEquivalent": { "type": "boolean", "const": true },
+        "recoveryEquivalent": { "type": "boolean", "const": true },
+        "routeBindingEquivalent": { "type": "boolean", "const": true },
+        "technicalEligibility": { "type": "boolean", "const": true },
+        "pairedDirectionalMetricsAvailable": { "type": "boolean", "const": true },
+        "physicalDeviceEvidence": { "type": "boolean", "const": false },
+        "claimScope": { "type": "string", "const": "EMULATOR_DIRECTIONAL" },
+        "performanceSelectionAllowed": { "type": "boolean", "const": false },
+        "selectedBackend": { "type": "null" },
+        "n5ResilienceEffect": { "type": "string", "const": "INCONCLUSIVE_STOCHASTIC_EFFECT" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "sizeBytes"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "sizeBytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

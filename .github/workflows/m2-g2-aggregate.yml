@@ -1,0 +1,230 @@
+name: M2-G2 Canonical Aggregate
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-aggregate.yml"
+      - ".github/workflows/m2-g2-n0.yml"
+      - ".github/workflows/m2-g2-network.yml"
+      - ".github/workflows/m2-g2-transport.yml"
+      - ".github/workflows/m2-g2-route.yml"
+      - ".work/milestones/M2.md"
+      - ".work/ROADMAP.md"
+      - ".work/VERIFICATION.md"
+      - ".work/schemas/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - "core/engine/**"
+      - "core/storage/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "scripts/ci/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/**"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/m2-g2-aggregate.yml"
+      - ".github/workflows/m2-g2-n0.yml"
+      - ".github/workflows/m2-g2-network.yml"
+      - ".github/workflows/m2-g2-transport.yml"
+      - ".github/workflows/m2-g2-route.yml"
+      - ".work/milestones/M2.md"
+      - ".work/ROADMAP.md"
+      - ".work/VERIFICATION.md"
+      - ".work/schemas/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - "core/engine/**"
+      - "core/storage/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "scripts/ci/**"
+      - "scripts/faults/**"
+      - "scripts/measurement/**"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-g2-aggregate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: g2-f-host-contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact G2 source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify G2-F host contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/measurement/m2_g2_aggregate.py
+          python3 -m unittest \
+            scripts.measurement.tests.test_m2_g2_aggregate \
+            scripts.measurement.tests.test_m2_transport_evaluation_oracle \
+            scripts.measurement.tests.test_m2_transport_pair_plan
+
+  n0:
+    name: canonical-n0
+    needs: contracts
+    uses: ./.github/workflows/m2-g2-n0.yml
+    with:
+      concurrency_suffix: aggregate-${{ github.run_id }}
+
+  network:
+    name: canonical-network
+    needs: contracts
+    uses: ./.github/workflows/m2-g2-network.yml
+    with:
+      concurrency_suffix: aggregate-${{ github.run_id }}
+
+  transport-reset:
+    name: canonical-transport-reset
+    needs: contracts
+    uses: ./.github/workflows/m2-g2-transport.yml
+    with:
+      concurrency_suffix: aggregate-${{ github.run_id }}
+
+  route-replacement:
+    name: canonical-route-replacement
+    needs: contracts
+    uses: ./.github/workflows/m2-g2-route.yml
+    with:
+      concurrency_suffix: aggregate-${{ github.run_id }}
+
+  aggregate:
+    name: aggregate-m2-acc-10
+    needs: [n0, network, transport-reset, route-replacement]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      G2_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      G2_RUN_ID: m2-g2-canonical-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout exact G2 source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Download canonical N0 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g2-n0-api36-paired
+          path: build/m2-g2-aggregate/evidence/n0
+
+      - name: Download canonical N2 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g2-n2-api36-paired
+          path: build/m2-g2-aggregate/evidence/n2
+
+      - name: Download canonical N3 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g2-n3-api36-paired
+          path: build/m2-g2-aggregate/evidence/n3
+
+      - name: Download canonical N5 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g2-n5-api36-paired
+          path: build/m2-g2-aggregate/evidence/n5
+
+      - name: Download canonical N6 transport-reset evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g2-n6-api36-paired
+          path: build/m2-g2-aggregate/evidence/n6
+
+      - name: Download canonical N6 route-replacement evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g2-route-api36-paired
+          path: build/m2-g2-aggregate/evidence/route
+
+      - name: Assemble and independently verify G2 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="build/m2-g2-aggregate"
+          mkdir -p "$root/generated" "$root/summary"
+
+          python3 scripts/measurement/m2_g2_aggregate.py collect \
+            --evidence-root "$root/evidence" \
+            --generated-root "$root/generated" \
+            --run-id "$G2_RUN_ID" \
+            --git-commit "$G2_SOURCE_SHA" \
+            --output "$root/summary/m2-g2-evidence-index-v1.json"
+
+          python3 scripts/measurement/m2_g2_aggregate.py verify-index \
+            --index "$root/summary/m2-g2-evidence-index-v1.json" \
+            --evidence-root "$root/evidence" \
+            --generated-root "$root/generated" \
+            --expected-git-commit "$G2_SOURCE_SHA"
+
+          jq -r '
+            .experiments[]
+            | [
+                .experimentId,
+                .status,
+                .resilienceClaim,
+                (.trialCount | tostring),
+                (.pairedBlockCount | tostring)
+              ]
+            | @tsv
+          ' "$root/summary/m2-g2-evidence-index-v1.json" \
+            > "$root/summary/experiment-matrix.tsv"
+
+          test "$(wc -l < "$root/summary/experiment-matrix.tsv")" -eq 6
+          test "$(jq -r '.aggregate.selectedBackend' "$root/summary/m2-g2-evidence-index-v1.json")" = "null"
+          test "$(jq -r '.aggregate.performanceSelectionAllowed' "$root/summary/m2-g2-evidence-index-v1.json")" = "false"
+          test "$(jq -r '.aggregate.n5ResilienceEffect' "$root/summary/m2-g2-evidence-index-v1.json")" = "INCONCLUSIVE_STOCHASTIC_EFFECT"
+
+          {
+            echo "gitCommit=$G2_SOURCE_SHA"
+            echo "runId=$G2_RUN_ID"
+            echo "gate=M2-ACC-10 PASS"
+            echo "canonicalExperiments=6/6 PASS"
+            echo "claimScope=EMULATOR_DIRECTIONAL"
+            echo "technicalEligibility=true"
+            echo "selectedBackend=none"
+            echo "performanceSelectionAllowed=false"
+            echo "n5ResilienceEffect=INCONCLUSIVE_STOCHASTIC_EFFECT"
+          } > "$root/summary/acceptance.txt"
+
+      - name: Upload canonical G2 aggregate
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-g2-canonical-evidence
+          path: |
+            build/m2-g2-aggregate/summary/
+            build/m2-g2-aggregate/generated/
+          if-no-files-found: error
+          retention-days: 14
