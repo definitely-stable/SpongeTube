@@ -188,6 +188,14 @@ class G2TransportVerifierTest(unittest.TestCase):
         ):
             verifier.validate_reset_failure_observation(
                 failure,
+                first_owner_origin=[{
+                    "plane": "data",
+                    "method": "GET",
+                    "path": verifier.RESOURCE_PATH,
+                    "status": 206,
+                    "outcome": "CLIENT_DISCONNECTED",
+                    "bodyBytesWritten": 0,
+                }],
                 trial_id="trial-1",
             )
 
@@ -202,8 +210,68 @@ class G2TransportVerifierTest(unittest.TestCase):
                             "kind": kind,
                         },
                     },
+                    first_owner_origin=[],
                     trial_id="trial-1",
                 )
+
+    def test_reset_failure_accepts_connect_timeout_only_with_causal_origin_cutoff(self):
+        failure = {
+            "observation": {
+                "plane": "TRANSPORT",
+                "type": "TRANSPORT_IO",
+                "kind": "CONNECT_TIMEOUT",
+            },
+        }
+        verifier.validate_reset_failure_observation(
+            failure,
+            first_owner_origin=[{
+                "plane": "data",
+                "method": "GET",
+                "path": verifier.RESOURCE_PATH,
+                "status": 206,
+                "outcome": "CLIENT_DISCONNECTED",
+                "bodyBytesWritten": 0,
+            }],
+            trial_id="trial-1",
+        )
+
+    def test_reset_failure_rejects_unbound_connect_timeout(self):
+        failure = {
+            "observation": {
+                "plane": "TRANSPORT",
+                "type": "TRANSPORT_IO",
+                "kind": "CONNECT_TIMEOUT",
+            },
+        }
+        for rows in (
+            [],
+            [{
+                "plane": "data",
+                "method": "GET",
+                "path": verifier.RESOURCE_PATH,
+                "status": 206,
+                "outcome": "SUCCESS",
+                "bodyBytesWritten": verifier.RESOURCE_LENGTH,
+            }],
+            [{
+                "plane": "data",
+                "method": "GET",
+                "path": verifier.RESOURCE_PATH,
+                "status": 206,
+                "outcome": "CLIENT_DISCONNECTED",
+                "bodyBytesWritten": 1,
+            }],
+        ):
+            with self.subTest(rows=rows):
+                with self.assertRaisesRegex(
+                    verifier.TransportResetEvidenceError,
+                    "lacks causal RESET_PEER origin proof",
+                ):
+                    verifier.validate_reset_failure_observation(
+                        failure,
+                        first_owner_origin=rows,
+                        trial_id="trial-1",
+                    )
 
     def test_phase_timing_schema_accepts_canonical_n6_family(self):
         schema = verifier.shared.load_json(verifier.PHASE_SCHEMA)

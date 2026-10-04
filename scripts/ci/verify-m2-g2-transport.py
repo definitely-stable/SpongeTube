@@ -52,7 +52,7 @@ EXPECTED_DISARMED = {
     "toxics": [],
 }
 EXPECTED_FINAL = {"proxies": 0, "toxics": 0}
-RESET_COMPATIBLE_FAILURE_KINDS = {
+RESET_DIRECT_FAILURE_KINDS = {
     "CONNECTION_RESET",
     "PREMATURE_EOF",
     "IO",
@@ -268,6 +268,7 @@ def validate_harness(
 def validate_reset_failure_observation(
     failure: Mapping[str, Any],
     *,
+    first_owner_origin: list[Mapping[str, Any]],
     trial_id: str,
 ) -> None:
     observation = failure.get("observation")
@@ -277,9 +278,32 @@ def validate_reset_failure_observation(
         and observation.get("type") == "TRANSPORT_IO",
         f"{trial_id}: reset owner did not retain a TRANSPORT_IO observation",
     )
+    kind = observation.get("kind")
+    if kind in RESET_DIRECT_FAILURE_KINDS:
+        return
+
+    # Platform HttpEngine can normalize an already-established downstream RST
+    # as CONNECT_TIMEOUT when no response bytes become visible to the client.
+    # Accept that normalization only with retained causal proof that the first
+    # owner reached Media Lab and every upstream response was cut off by the
+    # armed reset before any body byte was delivered. This must not turn a
+    # generic/unbound connect timeout into RESET_PEER evidence.
     require(
-        observation.get("kind") in RESET_COMPATIBLE_FAILURE_KINDS,
+        kind == "CONNECT_TIMEOUT",
         f"{trial_id}: reset owner failure kind is not RESET_PEER-compatible",
+    )
+    require(
+        first_owner_origin
+        and all(
+            row.get("plane") == "data"
+            and row.get("method") == "GET"
+            and row.get("path") == RESOURCE_PATH
+            and row.get("status") == 206
+            and row.get("outcome") == "CLIENT_DISCONNECTED"
+            and row.get("bodyBytesWritten") == 0
+            for row in first_owner_origin
+        ),
+        f"{trial_id}: CONNECT_TIMEOUT lacks causal RESET_PEER origin proof",
     )
 
 
@@ -427,6 +451,7 @@ def verify(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any], di
         )
         validate_reset_failure_observation(
             raw_failures[0],
+            first_owner_origin=first_owner_origin,
             trial_id=trial_id,
         )
 
