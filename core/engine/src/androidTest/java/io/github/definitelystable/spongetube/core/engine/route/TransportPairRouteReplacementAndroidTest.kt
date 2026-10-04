@@ -36,12 +36,14 @@ import io.github.definitelystable.spongetube.core.engine.delivery.DeliveryMateri
 import io.github.definitelystable.spongetube.core.engine.recovery.FailureClassification
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryActionKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAttemptGate
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAttemptPermit
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryBudgetDimension
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryBudgetEventKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumer
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumerId
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryConsumerKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryCoordinator
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryChainId
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryEvidenceRecorder
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryJitterSource
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
@@ -146,6 +148,7 @@ class TransportPairRouteReplacementAndroidTest {
         val firstAdmitted = CountDownLatch(1)
         val releaseFirstConnect = CountDownLatch(1)
         val secondGateEntered = CompletableDeferred<Unit>()
+        val validatedReplacementPermit = CompletableDeferred<RecoveryAttemptPermit>()
         val gateCalls = AtomicInteger()
         val fetchEvents = CopyOnWriteArrayList<FetchEvent>()
         val protocols = CopyOnWriteArrayList<String>()
@@ -234,16 +237,23 @@ class TransportPairRouteReplacementAndroidTest {
             val gate = RecoveryAttemptGate { chainId ->
                 val ordinal = gateCalls.incrementAndGet()
                 if (ordinal == 2) secondGateEntered.complete(Unit)
-                val permit = exactGate.awaitPermit(chainId)
-                if (ordinal == 2) {
-                    awaitValidatedReplacementRoute(
-                        monitor = monitor,
-                        routeEpoch = checkNotNull(permit.routeEpoch),
-                        routeBinding = checkNotNull(permit.routeBinding),
-                    )
-                    replacementValidationRendezvousObserved.set(true)
+                if (ordinal != 2) {
+                    exactGate.awaitPermit(chainId)
+                } else {
+                    try {
+                        val permit = awaitValidatedReplacementPermit(
+                            chainId = chainId,
+                            exactGate = exactGate,
+                            monitor = monitor,
+                        )
+                        replacementValidationRendezvousObserved.set(true)
+                        validatedReplacementPermit.complete(permit)
+                        permit
+                    } catch (throwable: Throwable) {
+                        validatedReplacementPermit.completeExceptionally(throwable)
+                        throw throwable
+                    }
                 }
-                permit
             }
             val jitter = G2RecoveryJitter(checkNotNull(jitterSeed))
             assertEquals(367L, G2RecoveryJitter(checkNotNull(jitterSeed)).uniformInclusive(500L))
@@ -298,8 +308,11 @@ class TransportPairRouteReplacementAndroidTest {
             assertEquals(2, gateCalls.get())
 
             setConnectivityEnabled(instrumentation, enabled = true)
-            val restored = awaitDirectObservation(monitor, backend, initialEpoch)
-            restoredEpoch = (restored.state as DefaultRouteState.Available).routeEpoch
+            val replacementPermit = withTimeout(ROUTE_TIMEOUT_MS) {
+                validatedReplacementPermit.await()
+            }
+            restoredEpoch = checkNotNull(replacementPermit.routeEpoch)
+            val restoredBinding = checkNotNull(replacementPermit.routeBinding)
             assertTrue(restoredEpoch > initialEpoch)
             // routeEpoch, not Android Network/binding object identity, is the
             // contract boundary. Android may reuse the same Network object
@@ -311,7 +324,7 @@ class TransportPairRouteReplacementAndroidTest {
             if (initialRouteRef != restoredRouteRef) {
                 assertTrue(
                     "G2-E replacement route reused the old route execution binding",
-                    initial.executionBinding !== restored.executionBinding,
+                    initial.executionBinding !== restoredBinding,
                 )
             }
 
@@ -588,20 +601,47 @@ class TransportPairRouteReplacementAndroidTest {
         }
     }
 
-    private suspend fun awaitValidatedReplacementRoute(
+    /**
+     * Lab-only stabilization barrier for owner #2.
+     *
+     * Android may briefly publish an ALLOW-able replacement route and then
+     * replace it again before that epoch reaches VALIDATED. A permit for that
+     * transient epoch must never strand the recovery chain: no owner has been
+     * opened and no budget has been charged yet, so reacquiring the exact gate
+     * is still part of the same permit wait, not a retry.
+     */
+    private suspend fun awaitValidatedReplacementPermit(
+        chainId: RecoveryChainId,
+        exactGate: RouteAwareRecoveryAttemptGate,
         monitor: DefaultRouteMonitor,
-        routeEpoch: Long,
-        routeBinding: RouteExecutionBinding,
-    ) = withTimeout(ROUTE_TIMEOUT_MS) {
-        monitor.observations.first { observation ->
+    ): RecoveryAttemptPermit {
+        var permit = exactGate.awaitPermit(chainId)
+        while (true) {
+            val routeEpoch = checkNotNull(permit.routeEpoch)
+            val routeBinding = checkNotNull(permit.routeBinding)
+            val observation = monitor.observations.value
             val state = observation.state as? DefaultRouteState.Available
-            state != null &&
-                state.routeEpoch == routeEpoch &&
+            val samePermitRoute =
+                state?.routeEpoch == routeEpoch &&
+                    observation.executionBinding === routeBinding
+
+            if (
+                samePermitRoute &&
                 state.capabilitiesReceived &&
                 state.capabilities.validated == ObservedBoolean.TRUE &&
                 state.capabilities.vpn == ObservedBoolean.FALSE &&
-                state.capabilities.internet != ObservedBoolean.FALSE &&
-                observation.executionBinding === routeBinding
+                state.capabilities.internet != ObservedBoolean.FALSE
+            ) {
+                return permit
+            }
+
+            if (!samePermitRoute) {
+                permit = exactGate.awaitPermit(chainId)
+                continue
+            }
+
+            val sequence = observation.sequence
+            monitor.observations.first { it.sequence > sequence }
         }
     }
 
