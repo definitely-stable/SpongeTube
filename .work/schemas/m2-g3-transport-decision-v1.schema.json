@@ -55,7 +55,6 @@
     "candidateBackends": {
       "type": "array",
       "minItems": 2,
-      "maxItems": 2,
       "items": {
         "type": "string",
         "enum": [
@@ -142,7 +141,6 @@
         "reasonCodes": {
           "type": "array",
           "minItems": 9,
-          "maxItems": 9,
           "items": {
             "type": "string",
             "enum": [
@@ -161,7 +159,6 @@
         "reopenTriggers": {
           "type": "array",
           "minItems": 3,
-          "maxItems": 3,
           "items": {
             "type": "string",
             "enum": [
