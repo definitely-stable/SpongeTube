@@ -412,6 +412,116 @@ def verify_index(
         for proof in gate["proofs"]:
             require(proof in by_path, f"{gate['gateId']}: unindexed proof {proof}")
 
+    # Re-open the retained proof set and independently re-check its semantics.
+    # This deliberately does not trust the producer's gate rows or artifact
+    # metadata alone: changing a proof and recomputing its index hash must not
+    # be sufficient to manufacture an acceptance PASS.
+    source_paths = sorted((retained_root / "source").glob("*-source-sha.txt"))
+    require(len(source_paths) == 5, "retained source-marker set must contain exactly five owning paths")
+    for path in source_paths:
+        require(
+            path.read_text(encoding="utf-8").strip() == expected_git_commit,
+            f"retained source marker drift: {path.relative_to(retained_root)}",
+        )
+
+    b_path = retained_root / "m2-b" / "route-verification-summary.json"
+    b = load_summary(b_path, "route-verification-summary-v1.schema.json")
+    require(b["androidApi"] == 36, "retained M2-B proof is not API36")
+
+    c_path = retained_root / "m2-c" / "recovery-verification-summary.json"
+    c = load_summary(c_path, "recovery-verification-summary-v1.schema.json")
+    for gate_id in ("M2-ACC-05", "M2-ACC-06"):
+        require(c["gates"][gate_id]["status"] == "PASS", f"retained M2-C {gate_id} not PASS")
+
+    retained_d: dict[str, pathlib.Path] = {}
+    for variant, family in EXPECTED_PROVIDER_VARIANTS.items():
+        path = retained_root / "m2-d" / variant / "provider-verification-summary.json"
+        document = load_summary(path, "provider-verification-summary-v1.schema.json")
+        require(document["evidenceSource"] == "ANDROID_MEDIA_LAB", f"{variant}: retained provider source drift")
+        require(document["variant"] == variant, f"{variant}: retained provider variant drift")
+        require(document["scenarioFamily"] == family, f"{variant}: retained provider family drift")
+        require(document["gates"]["M2-ACC-08"]["status"] == "PASS", f"{variant}: retained M2-ACC-08 not PASS")
+        retained_d[variant] = path
+    retained_n10 = read_json(retained_d["BINDING_EXPIRY_REFRESH"])
+    for gate_id in ("M2-ACC-05", "M2-ACC-06", "M2-ACC-07", "M2-ACC-08"):
+        require(retained_n10["gates"][gate_id]["status"] == "PASS", f"retained N10 {gate_id} not PASS")
+
+    retained_e: list[pathlib.Path] = []
+    for owner, plane, expected_count in (
+        ("transport", "TRANSPORT", 4),
+        ("network", "NETWORK", 3),
+    ):
+        paths = find_files(retained_root / "m2-e" / owner, "fault-verification-summary.json")
+        require(len(paths) == expected_count, f"retained M2-E {owner} proof-count drift")
+        for path in paths:
+            document = load_summary(path, "fault-verification-summary-v1.schema.json")
+            require(document["primaryPlane"] == plane, f"{path}: retained M2-E plane drift")
+            for gate_id in ("M2-ACC-01", "M2-ACC-02", "M2-ACC-09"):
+                require(document["gates"][gate_id] is True, f"{path}: retained {gate_id} not true")
+            require(all(document["checks"].values()), f"{path}: retained M2-E check failed")
+            retained_e.append(path)
+    require(len(retained_e) == 7, "retained M2-E proof set must contain seven summaries")
+
+    retained_f2_path = retained_root / "m2-f" / "F2_DEFAULT_ROUTE_LOSS_RESTORE" / "f4-verification-summary.json"
+    retained_f2 = load_summary(retained_f2_path, "m2-f-verification-summary-v1.schema.json")
+    require(retained_f2["caseKind"] == "F2_DEFAULT_ROUTE_LOSS_RESTORE", "retained F2 case drift")
+    retained_f3: dict[str, pathlib.Path] = {}
+    for case_kind in sorted(EXPECTED_F3_CASES):
+        path = retained_root / "m2-f" / case_kind / "f4-verification-summary.json"
+        document = load_summary(path, "m2-f-verification-summary-v1.schema.json")
+        require(document["caseKind"] == case_kind, f"retained F3 case drift: {case_kind}")
+        require(document["gates"]["M2-ACC-03"] == "PASS", f"{case_kind}: retained privacy not PASS")
+        retained_f3[case_kind] = path
+    for document in [retained_f2, *(read_json(path) for path in retained_f3.values())]:
+        for gate_id in ("M2-ACC-04", "M2-ACC-05", "M2-ACC-06"):
+            require(document["gates"][gate_id] == "PASS", f"{document['caseKind']}: retained {gate_id} not PASS")
+
+    retained_g2_path = retained_root / "m2-g" / "m2-g2-evidence-index-v1.json"
+    retained_g3_path = retained_root / "m2-g" / "m2-g3-transport-decision-v1.json"
+    retained_g2 = load_summary(retained_g2_path, "m2-g2-evidence-index-v1.schema.json")
+    retained_g3 = load_summary(retained_g3_path, "m2-g3-transport-decision-v1.schema.json")
+    require(
+        retained_g2["gitCommit"] == expected_git_commit
+        and retained_g2["checkoutCommit"] == expected_git_commit,
+        "retained G2 source revision drift",
+    )
+    require(
+        retained_g3["source"]["gitCommit"] == expected_git_commit
+        and retained_g3["source"]["checkoutCommit"] == expected_git_commit,
+        "retained G3 source revision drift",
+    )
+    require(retained_g3["sourceArtifact"]["sha256"] == sha256(retained_g2_path), "retained G3 -> G2 digest mismatch")
+    require(retained_g3["sourceArtifact"]["sizeBytes"] == retained_g2_path.stat().st_size, "retained G3 -> G2 size mismatch")
+    require(retained_g3["decision"]["selectedBackend"] is None, "retained G3 selected a backend")
+    require(retained_g3["deviceEvidence"]["performanceSelectionAllowed"] is False, "retained G3 allows performance selection")
+    require(retained_g3["n5ResilienceEffect"] == "INCONCLUSIVE_STOCHASTIC_EFFECT", "retained G3 upgraded N5")
+    require(retained_g2["aggregate"]["selectedBackend"] is None, "retained G2 selected a backend")
+    require(retained_g2["aggregate"]["performanceSelectionAllowed"] is False, "retained G2 allows performance selection")
+    require(retained_g2["aggregate"]["n5ResilienceEffect"] == "INCONCLUSIVE_STOCHASTIC_EFFECT", "retained G2 upgraded N5")
+
+    def rel(path: pathlib.Path) -> str:
+        return path.relative_to(retained_root).as_posix()
+
+    e_proofs = sorted(rel(path) for path in retained_e)
+    f3_proofs = [rel(retained_f3[case_kind]) for case_kind in sorted(retained_f3)]
+    d_proofs = [rel(retained_d[variant]) for variant in sorted(retained_d)]
+    expected_gate_rows = {
+        "M2-ACC-01": (["M2-E"], e_proofs),
+        "M2-ACC-02": (["M2-E"], e_proofs),
+        "M2-ACC-03": (["M2-B", "M2-F"], [rel(b_path), *f3_proofs]),
+        "M2-ACC-04": (["M2-F"], [rel(retained_f2_path), *f3_proofs]),
+        "M2-ACC-05": (["M2-C", "M2-D", "M2-F"], [rel(c_path), rel(retained_d["BINDING_EXPIRY_REFRESH"]), rel(retained_f2_path), *f3_proofs]),
+        "M2-ACC-06": (["M2-C", "M2-D", "M2-F"], [rel(c_path), rel(retained_d["BINDING_EXPIRY_REFRESH"]), rel(retained_f2_path), *f3_proofs]),
+        "M2-ACC-07": (["M2-D"], [rel(retained_d["BINDING_EXPIRY_REFRESH"])]),
+        "M2-ACC-08": (["M2-D"], d_proofs),
+        "M2-ACC-09": (["M2-E"], e_proofs),
+        "M2-ACC-10": (["M2-G"], [rel(retained_g2_path), rel(retained_g3_path)]),
+    }
+    for row in gates:
+        owners, proofs = expected_gate_rows[row["gateId"]]
+        require(row["owners"] == owners, f"{row['gateId']}: owner mapping drift")
+        require(row["proofs"] == proofs, f"{row['gateId']}: proof mapping drift")
+
     decision = index["transportDecision"]
     require(decision["state"] == "TECHNICALLY_ELIGIBLE_NO_SELECTION", "transport decision state drift")
     require(decision["selectedBackend"] is None, "canonical M2 acceptance selected a backend")
