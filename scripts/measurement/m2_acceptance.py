@@ -142,6 +142,32 @@ def copy_retained(
     return target
 
 
+SOURCE_ARTIFACTS = {
+    "android-smoke-evidence",
+    "m2-e-transport-api36",
+    "m2-e-network-api36",
+    "m2-f2-route-recovery",
+    "m2-f3-vpn-continuity",
+    "m2-g3-transport-decision",
+}
+
+
+def source_artifact_name(relative: str) -> str:
+    if relative.startswith(("m2-b/", "m2-c/", "m2-d/")) or relative == "source/smoke-source-sha.txt":
+        return "android-smoke-evidence"
+    if relative.startswith("m2-e/transport/") or relative == "source/m2-e-transport-source-sha.txt":
+        return "m2-e-transport-api36"
+    if relative.startswith("m2-e/network/") or relative == "source/m2-e-network-source-sha.txt":
+        return "m2-e-network-api36"
+    if relative.startswith("m2-f/F2_") or relative == "source/m2-f2-source-sha.txt":
+        return "m2-f2-route-recovery"
+    if relative.startswith("m2-f/F3_") or relative == "source/m2-f3-source-sha.txt":
+        return "m2-f3-vpn-continuity"
+    if relative.startswith("m2-g/"):
+        return "m2-g3-transport-decision"
+    raise M2AcceptanceError(f"retained path has no source artifact identity: {relative}")
+
+
 def collect(
     *,
     smoke_root: pathlib.Path,
@@ -278,6 +304,7 @@ def collect(
     for owner, path, document in sorted(e_docs, key=lambda row: (row[0], row[2]["scenarioHash"])):
         token = path.parent.parent.name if path.parent.name == "verified" else path.parent.name
         e_keys.append(keep(path, f"m2-e/{owner}/{token}/fault-verification-summary.json"))
+    e_keys.sort()
 
     f2_key = keep(f2_paths[0], "m2-f/F2_DEFAULT_ROUTE_LOSS_RESTORE/f4-verification-summary.json")
     f3_keys = {
@@ -349,6 +376,7 @@ def collect(
         "artifacts": [
             {
                 "path": name,
+                "sourceArtifact": source_artifact_name(name),
                 "sha256": sha256(path),
                 "sizeBytes": path.stat().st_size,
             }
@@ -407,6 +435,10 @@ def verify_index(
         require(actual.is_file(), f"indexed artifact missing: {path}")
         require(sha256(actual) == row["sha256"], f"artifact digest mismatch: {path}")
         require(actual.stat().st_size == row["sizeBytes"], f"artifact size mismatch: {path}")
+        require(
+            row["sourceArtifact"] == source_artifact_name(path),
+            f"source artifact identity mismatch: {path}",
+        )
         by_path[path] = row
     for gate in gates:
         for proof in gate["proofs"]:
