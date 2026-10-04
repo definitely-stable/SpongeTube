@@ -60,6 +60,7 @@ jobs:
     timeout-minutes: 50
     env:
       SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
+      GIT_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout
@@ -444,8 +445,6 @@ jobs:
 
       - name: Run N0 and N1 smoke scenarios
         shell: bash
-        env:
-          GIT_SHA: ${{ env.SOURCE_SHA }}
         run: |
           set -euo pipefail
 
