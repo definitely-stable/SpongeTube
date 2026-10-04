@@ -238,6 +238,11 @@ class M2AcceptanceTest(unittest.TestCase):
             )
             self.assertIsNone(index["transportDecision"]["selectedBackend"])
             self.assertFalse(index["transportDecision"]["performanceSelectionAllowed"])
+            self.assertTrue(all(row["sourceArtifact"] for row in index["artifacts"]))
+            self.assertEqual(
+                sorted(index["gates"][0]["proofs"]),
+                index["gates"][0]["proofs"],
+            )
             verify_index(index, retained_root=retained, expected_git_commit=GIT_COMMIT)
 
     def test_rejects_source_revision_drift(self):
@@ -325,6 +330,34 @@ class M2AcceptanceTest(unittest.TestCase):
                     break
             with self.assertRaisesRegex(M2AcceptanceError, "retained M2-ACC-08 not PASS"):
                 verify_index(index, retained_root=retained, expected_git_commit=GIT_COMMIT)
+
+    def test_canonicalizes_fault_proof_order_independent_of_scenario_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            smoke, transport, network, f2, f3, g3, retained = create_bundle(root)
+            fault_paths = sorted(transport.rglob("fault-verification-summary.json"))
+            first = json.loads(fault_paths[0].read_text(encoding="utf-8"))
+            last = json.loads(fault_paths[-1].read_text(encoding="utf-8"))
+            first["scenarioHash"] = "f" * 64
+            last["scenarioHash"] = "0" * 64
+            write_json(fault_paths[0], first)
+            write_json(fault_paths[-1], last)
+            index = collect(
+                smoke_root=smoke,
+                transport_root=transport,
+                network_root=network,
+                f2_root=f2,
+                f3_root=f3,
+                g3_root=g3,
+                retained_root=retained,
+                run_id="m2-h-order-test",
+                git_commit=GIT_COMMIT,
+            )
+            self.assertEqual(
+                sorted(index["gates"][0]["proofs"]),
+                index["gates"][0]["proofs"],
+            )
+            verify_index(index, retained_root=retained, expected_git_commit=GIT_COMMIT)
 
     def test_rejects_duplicate_gate_in_index(self):
         with tempfile.TemporaryDirectory() as tmp:
