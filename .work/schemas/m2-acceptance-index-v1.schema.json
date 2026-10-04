@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m2-acceptance-index-v1.schema.json",
+  "title": "SpongeTube M2 Canonical Acceptance Index v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "gitCommit",
+    "status",
+    "gateCount",
+    "contracts",
+    "gates",
+    "artifacts",
+    "transportDecision",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "gitCommit": { "$ref": "#/$defs/gitCommit" },
+    "status": { "type": "string", "const": "PASS" },
+    "gateCount": { "type": "integer", "const": 10 },
+    "contracts": {
+      "type": "object",
+      "required": ["m2MilestoneSha256", "verificationSha256"],
+      "additionalProperties": false,
+      "properties": {
+        "m2MilestoneSha256": { "$ref": "#/$defs/sha256" },
+        "verificationSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["gateId", "status", "owners", "proofs"],
+        "additionalProperties": false,
+        "properties": {
+          "gateId": {
+            "type": "string",
+            "pattern": "^M2-ACC-(0[1-9]|10)$"
+          },
+          "status": { "type": "string", "const": "PASS" },
+          "owners": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "M2-B",
+                "M2-C",
+                "M2-D",
+                "M2-E",
+                "M2-F",
+                "M2-G"
+              ]
+            }
+          },
+          "proofs": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "sizeBytes"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "sizeBytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "transportDecision": {
+      "type": "object",
+      "required": [
+        "state",
+        "selectedBackend",
+        "physicalDeviceEvidence",
+        "performanceSelectionAllowed",
+        "n5ResilienceEffect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "TECHNICALLY_ELIGIBLE_NO_SELECTION"
+        },
+        "selectedBackend": { "type": "null" },
+        "physicalDeviceEvidence": { "type": "boolean", "const": false },
+        "performanceSelectionAllowed": { "type": "boolean", "const": false },
+        "n5ResilienceEffect": {
+          "type": "string",
+          "const": "INCONCLUSIVE_STOCHASTIC_EFFECT"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+  }
+}
