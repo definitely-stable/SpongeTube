@@ -210,15 +210,6 @@ jobs:
           mkdir -p build/m2-e-network/android
           printf '%s\n' "$GIT_SHA" > build/m2-e-network/android/source-sha.txt
 
-      - name: Bind exact source revision
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$GIT_SHA"
-          mkdir -p build/m2-e-network/android
-          printf '%s\n' "$GIT_SHA" > build/m2-e-network/android/source-sha.txt
-
       - name: Set up JDK 17
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
