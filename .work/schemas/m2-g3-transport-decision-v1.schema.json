@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m2-g3-transport-decision-v1.schema.json",
+  "title": "SpongeTube M2-G3 Transport Decision v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "status",
+    "source",
+    "sourceArtifact",
+    "candidateBackends",
+    "technicalEligibility",
+    "equivalence",
+    "deviceEvidence",
+    "n5ResilienceEffect",
+    "dependencyPolicy",
+    "decision",
+    "nextAllowedAction",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "status": { "type": "string", "const": "PASS" },
+    "source": {
+      "type": "object",
+      "required": [
+        "schemaId",
+        "runId",
+        "gitCommit",
+        "checkoutCommit",
+        "gateId",
+        "requiredExperimentCount"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schemaId": { "type": "string", "const": "m2-g2-evidence-index-v1" },
+        "runId": { "type": "string", "minLength": 1 },
+        "gitCommit": { "$ref": "#/$defs/gitCommit" },
+        "checkoutCommit": { "$ref": "#/$defs/gitCommit" },
+        "gateId": { "type": "string", "const": "M2-ACC-10" },
+        "requiredExperimentCount": { "type": "integer", "const": 6 }
+      }
+    },
+    "sourceArtifact": {
+      "type": "object",
+      "required": ["path", "sha256", "sizeBytes"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "candidateBackends": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "enum": [
+          "HTTP_URL_CONNECTION_ROUTE_BOUND",
+          "PLATFORM_HTTP_ENGINE"
+        ]
+      }
+    },
+    "technicalEligibility": { "type": "boolean", "const": true },
+    "equivalence": {
+      "type": "object",
+      "required": [
+        "correctness",
+        "recovery",
+        "routeBinding",
+        "discriminatingCorrectnessResilienceEvidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "correctness": { "type": "boolean", "const": true },
+        "recovery": { "type": "boolean", "const": true },
+        "routeBinding": { "type": "boolean", "const": true },
+        "discriminatingCorrectnessResilienceEvidence": { "type": "boolean", "const": false }
+      }
+    },
+    "deviceEvidence": {
+      "type": "object",
+      "required": [
+        "deviceClass",
+        "androidApi",
+        "claimScope",
+        "physicalDeviceEvidence",
+        "pairedDirectionalMetricsAvailable",
+        "performanceSelectionAllowed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "deviceClass": { "type": "string", "const": "ANDROID_EMULATOR" },
+        "androidApi": { "type": "integer", "const": 36 },
+        "claimScope": { "type": "string", "const": "EMULATOR_DIRECTIONAL" },
+        "physicalDeviceEvidence": { "type": "boolean", "const": false },
+        "pairedDirectionalMetricsAvailable": { "type": "boolean", "const": true },
+        "performanceSelectionAllowed": { "type": "boolean", "const": false }
+      }
+    },
+    "n5ResilienceEffect": {
+      "type": "string",
+      "const": "INCONCLUSIVE_STOCHASTIC_EFFECT"
+    },
+    "dependencyPolicy": {
+      "type": "object",
+      "required": [
+        "conditionalCandidatePresent",
+        "selectionClearanceStatus",
+        "selectionRequiresClearance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "conditionalCandidatePresent": { "type": "boolean", "const": false },
+        "selectionClearanceStatus": {
+          "type": "string",
+          "const": "NOT_EVALUATED_NO_SELECTION"
+        },
+        "selectionRequiresClearance": { "type": "boolean", "const": true }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "state",
+        "selectedBackend",
+        "basis",
+        "reasonCodes",
+        "reopenTriggers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "TECHNICALLY_ELIGIBLE_NO_SELECTION"
+        },
+        "selectedBackend": { "type": "null" },
+        "basis": {
+          "type": "string",
+          "const": "CORRECTNESS_AND_RESILIENCE_EQUIVALENCE"
+        },
+        "reasonCodes": {
+          "type": "array",
+          "minItems": 9,
+          "items": {
+            "type": "string",
+            "enum": [
+              "G2_M2_ACC_10_PASS",
+              "BOTH_REQUIRED_BACKENDS_TECHNICALLY_ELIGIBLE",
+              "CORRECTNESS_EQUIVALENT",
+              "RECOVERY_EQUIVALENT",
+              "ROUTE_BINDING_EQUIVALENT",
+              "NO_DISCRIMINATING_CORRECTNESS_RESILIENCE_EVIDENCE",
+              "NO_PHYSICAL_DEVICE_EVIDENCE",
+              "PERFORMANCE_SELECTION_FORBIDDEN",
+              "N5_STOCHASTIC_EFFECT_INCONCLUSIVE"
+            ]
+          }
+        },
+        "reopenTriggers": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string",
+            "enum": [
+              "PHYSICAL_DEVICE_EVIDENCE",
+              "PROVIDER_REQUIREMENT",
+              "MEASURED_COMPATIBILITY_OR_RESILIENCE_GAP"
+            ]
+          }
+        }
+      }
+    },
+    "nextAllowedAction": {
+      "type": "string",
+      "const": "M2_H_CANONICAL_ACCEPTANCE"
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+  }
+}

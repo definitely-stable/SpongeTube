@@ -1015,6 +1015,25 @@ metrics, but requires `selectedBackend=null`,
 `physicalDeviceEvidence=false` and `performanceSelectionAllowed=false`.
 Transport selection remains a G3 action.
 
+M2-G3 adds `m2-g3-transport-decision-v1` and
+`scripts/measurement/m2_transport_decision.py`. Its canonical workflow first
+executes a fresh reusable G2 aggregate for the exact source revision and then
+produces/verifies the retained decision from that index only. The G3 verifier
+requires the exact two first-comparison backends, all six G2 experiments,
+M2-ACC-10 PASS, correctness/recovery/route-binding equivalence,
+`selectedBackend=null`, emulator-only claim scope,
+`physicalDeviceEvidence=false`, `performanceSelectionAllowed=false` and the
+canonical N5 `INCONCLUSIVE_STOCHASTIC_EFFECT` boundary. The source G2 index is
+bound into the decision by SHA-256 and byte size.
+
+With the current evidence G3 MUST produce
+`TECHNICALLY_ELIGIBLE_NO_SELECTION`; it is a failure to select a backend from
+emulator directional metrics or to hide a selected backend in a deferred
+decision. Negative tests falsify mixed revisions, candidate drift, lost
+equivalence, N5 claim upgrades, selection permission and decision/source
+tampering. A PASS decision authorizes M2-H aggregation; it does not change
+production transport behavior or make representative performance claims.
+
 ### 23.3 Additional M2 evidence rules
 
 - a stochastic NETWORK fault without a persisted seed invalidates the run;

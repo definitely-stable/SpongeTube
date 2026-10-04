@@ -1198,6 +1198,9 @@ M2_SLICE_SCHEMAS = frozenset({
     # G2-F binds the six canonical paired experiments and their independently
     # regenerated summaries without rewriting frozen G0/G2-B..E contracts.
     "m2-g2-evidence-index-v1.schema.json",
+    # G3 records the retained non-selection decision from canonical G2 evidence
+    # without mutating the frozen G0/G2 evidence contracts.
+    "m2-g3-transport-decision-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and

@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A through M2-F complete; M2-G active (G2-B/C/D/E complete; G2-F canonical aggregation / independent combined gate in progress)**
+Status: **Active — M2-A through M2-F complete; M2-G active (G2 complete; G3 retained decision gate in progress, #126)**
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -87,7 +87,7 @@ M2 is split into focused deliveries (an ownership map, not a frozen API):
 - **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery** (#81, complete, `.work/evidence/2026-09-26-m2-d-provider-recovery.md`, ADR-0004): delivery binding revision, CAS/single-flight refresh, `sponge-recovery-v2`, `Retry-After`, N8/N9/N10 deterministic provider simulator, M2-ACC-07/08; #50 review recorded; production stale-binding signal unresolved.
 - **M2-E — Transport / Packet Fault Harness** (#85, complete, `.work/evidence/2026-09-28-m2-e-fault-harness.md`, ADR-0005): pinned Toxiproxy 2.12.0 owns TRANSPORT faults; scoped tc/netem owns NETWORK faults on the direct API36 namespace/veth media path. E2/E3 provide typed harnesses, normalized tool readback, traffic-synchronized N3 blackout, fault-engine fingerprinting with GRO/GSO/TSO disabled on the lab veth, independent M2-ACC-01/02/09 verification and retained M2-ACC-05/06 regressions.
 - **M2-F — Android Route/VPN Recovery Integration**: end-to-end VPN/default-route recovery on Android's actual selected network.
-- **M2-G — Transport Evidence Evaluation**: transport comparison under the controlled experiment contract.
+- **M2-G — Transport Evidence Evaluation**: G0/G1/G2 complete; #126 G3 consumes fresh canonical G2 evidence and records a retained decision without manufacturing a performance winner from emulator data.
 - **M2-H — Canonical M2 Acceptance**: aggregation of already-working owning-slice evidence.
 
 #50 is a review dependency for M2-D and the production provider seam; it does not block provider-independent M2-A/B/C work.
