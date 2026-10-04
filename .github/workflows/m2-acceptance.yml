@@ -1,0 +1,241 @@
+name: M2 Canonical Acceptance
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/android-smoke.yml"
+      - ".github/workflows/m2-e-transport.yml"
+      - ".github/workflows/m2-e-network.yml"
+      - ".github/workflows/m2-f-route-recovery.yml"
+      - ".github/workflows/m2-f-vpn-continuity.yml"
+      - ".github/workflows/m2-g2-aggregate.yml"
+      - ".github/workflows/m2-g3-decision.yml"
+      - ".github/workflows/m2-acceptance.yml"
+      - ".work/milestones/M2.md"
+      - ".work/ROADMAP.md"
+      - ".work/VERIFICATION.md"
+      - ".work/schemas/**"
+      - "scripts/ci/**"
+      - "scripts/measurement/**"
+      - "scripts/faults/**"
+      - "core/engine/**"
+      - "core/storage/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/**"
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/android-smoke.yml"
+      - ".github/workflows/m2-e-transport.yml"
+      - ".github/workflows/m2-e-network.yml"
+      - ".github/workflows/m2-f-route-recovery.yml"
+      - ".github/workflows/m2-f-vpn-continuity.yml"
+      - ".github/workflows/m2-g2-aggregate.yml"
+      - ".github/workflows/m2-g3-decision.yml"
+      - ".github/workflows/m2-acceptance.yml"
+      - ".work/milestones/M2.md"
+      - ".work/ROADMAP.md"
+      - ".work/VERIFICATION.md"
+      - ".work/schemas/**"
+      - "scripts/ci/**"
+      - "scripts/measurement/**"
+      - "scripts/faults/**"
+      - "core/engine/**"
+      - "core/storage/**"
+      - "tools/media-lab/**"
+      - "tools/fault-harness/**"
+      - "test-fixtures/media/**"
+      - "test-fixtures/network/m2/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: m2-h-host-contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact M2-H source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify M2-H contracts and falsification suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          python3 -m py_compile scripts/measurement/m2_acceptance.py
+          python3 -m unittest \
+            scripts.measurement.tests.test_m2_acceptance \
+            scripts.measurement.tests.test_m2_contracts \
+            scripts.measurement.tests.test_m2_transport_decision -v
+
+  smoke:
+    name: canonical-b-c-d
+    needs: contracts
+    uses: ./.github/workflows/android-smoke.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      concurrency_suffix: m2-h-smoke-${{ github.run_id }}
+
+  transport:
+    name: canonical-e-transport
+    needs: contracts
+    uses: ./.github/workflows/m2-e-transport.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      concurrency_suffix: m2-h-transport-${{ github.run_id }}
+
+  network:
+    name: canonical-e-network
+    needs: contracts
+    uses: ./.github/workflows/m2-e-network.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      concurrency_suffix: m2-h-network-${{ github.run_id }}
+
+  route:
+    name: canonical-f-route
+    needs: contracts
+    uses: ./.github/workflows/m2-f-route-recovery.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      concurrency_suffix: m2-h-route-${{ github.run_id }}
+
+  vpn:
+    name: canonical-f-vpn
+    needs: contracts
+    uses: ./.github/workflows/m2-f-vpn-continuity.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      concurrency_suffix: m2-h-vpn-${{ github.run_id }}
+
+  transport-decision:
+    name: canonical-g
+    needs: contracts
+    uses: ./.github/workflows/m2-g3-decision.yml
+    with:
+      concurrency_suffix: m2-h-g3-${{ github.run_id }}
+
+  aggregate:
+    name: aggregate-m2-acceptance
+    needs: [smoke, transport, network, route, vpn, transport-decision]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      M2_H_RUN_ID: m2-h-canonical-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout exact M2-H source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Download Android Smoke evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-smoke-evidence
+          path: build/m2-h/input/smoke
+
+      - name: Download M2-E transport evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-e-transport-api36
+          path: build/m2-h/input/transport
+
+      - name: Download M2-E network evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-e-network-api36
+          path: build/m2-h/input/network
+
+      - name: Download M2-F route evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-f2-route-recovery
+          path: build/m2-h/input/f2
+
+      - name: Download M2-F VPN evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-f3-vpn-continuity
+          path: build/m2-h/input/f3
+
+      - name: Download M2-G retained decision
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m2-g3-transport-decision
+          path: build/m2-h/input/g3
+
+      - name: Assemble and independently verify M2 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="build/m2-h"
+          retained="$root/retained"
+          summary="$root/summary"
+          mkdir -p "$retained" "$summary"
+
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+          python3 scripts/measurement/m2_acceptance.py collect \
+            --smoke-root "$root/input/smoke" \
+            --transport-root "$root/input/transport" \
+            --network-root "$root/input/network" \
+            --f2-root "$root/input/f2" \
+            --f3-root "$root/input/f3" \
+            --g3-root "$root/input/g3" \
+            --retained-root "$retained" \
+            --run-id "$M2_H_RUN_ID" \
+            --git-commit "$SOURCE_SHA" \
+            --output "$summary/m2-acceptance-index-v1.json"
+
+          python3 scripts/measurement/m2_acceptance.py verify-index \
+            --index "$summary/m2-acceptance-index-v1.json" \
+            --retained-root "$retained" \
+            --expected-git-commit "$SOURCE_SHA"
+
+          test "$(jq -r '.status' "$summary/m2-acceptance-index-v1.json")" = "PASS"
+          test "$(jq -r '.gateCount' "$summary/m2-acceptance-index-v1.json")" = "10"
+          test "$(jq -r '[.gates[] | select(.status == "PASS")] | length' "$summary/m2-acceptance-index-v1.json")" = "10"
+          test "$(jq -r '.transportDecision.state' "$summary/m2-acceptance-index-v1.json")" = "TECHNICALLY_ELIGIBLE_NO_SELECTION"
+          test "$(jq -r '.transportDecision.selectedBackend' "$summary/m2-acceptance-index-v1.json")" = "null"
+          test "$(jq -r '.transportDecision.performanceSelectionAllowed' "$summary/m2-acceptance-index-v1.json")" = "false"
+
+          {
+            echo "gitCommit=$SOURCE_SHA"
+            echo "runId=$M2_H_RUN_ID"
+            echo "acceptance=10/10 PASS"
+            echo "transportDecision=TECHNICALLY_ELIGIBLE_NO_SELECTION"
+            echo "selectedBackend=none"
+            echo "performanceSelectionAllowed=false"
+            echo "nextMilestone=M3"
+          } > "$summary/acceptance.txt"
+
+      - name: Upload canonical M2 acceptance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-canonical-acceptance
+          path: |
+            build/m2-h/summary/
+            build/m2-h/retained/
+          if-no-files-found: error
+          retention-days: 14
