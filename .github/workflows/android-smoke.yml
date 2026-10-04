@@ -2,6 +2,17 @@ name: Android Smoke
 
 on:
   workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source revision to checkout for canonical callers.
+        required: false
+        type: string
+        default: ""
+      concurrency_suffix:
+        description: Unique suffix for nested canonical callers.
+        required: false
+        type: string
+        default: ""
   pull_request:
     paths:
       - ".github/workflows/android-smoke.yml"
@@ -39,7 +50,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-smoke-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: android-smoke-${{ inputs.concurrency_suffix || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -47,12 +58,25 @@ jobs:
     name: android-smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 50
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
+      GIT_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+
+      - name: Bind exact source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir -p build/android-smoke
+          printf '%s\n' "$SOURCE_SHA" > build/android-smoke/source-sha.txt
 
       - name: Set up JDK 17
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -421,8 +445,6 @@ jobs:
 
       - name: Run N0 and N1 smoke scenarios
         shell: bash
-        env:
-          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
 

@@ -1034,6 +1034,27 @@ equivalence, N5 claim upgrades, selection permission and decision/source
 tampering. A PASS decision authorizes M2-H aggregation; it does not change
 production transport behavior or make representative performance claims.
 
+M2-H adds `m2-acceptance-index-v1`,
+`scripts/measurement/m2_acceptance.py` and the `M2 Canonical Acceptance`
+workflow. H executes the accepted B/C/D/E/F/G owning evidence paths on one
+exact source revision rather than looking up historical latest-successful
+artifacts. Each reusable B/C/D/E/F producer binds that source SHA in the
+downloaded evidence; G3 independently binds its fresh G2 source revision.
+
+The H aggregator validates the existing owning summary schemas and privacy
+contract, requires the canonical B/C/D/E/F/G scenario sets, copies only the
+minimal portable proof set, and indexes every retained proof by relative path,
+SHA-256 and byte size. The index MUST contain exactly ten unique PASS rows,
+M2-ACC-01 through M2-ACC-10. Missing, duplicate, skipped or unknown gates,
+mixed source revisions, schema/privacy failures, proof digest/size drift,
+provider-scenario drift, lost F3 privacy, lost E fault fidelity, a G3/G2
+binding mismatch, transport selection or an N5 claim upgrade all fail H.
+
+A canonical H PASS closes M2 correctness/resilience acceptance only. Emulator
+evidence remains non-representative for device performance, G3 remains
+`TECHNICALLY_ELIGIBLE_NO_SELECTION`, and live provider compatibility is not
+promoted into an M2 acceptance claim.
+
 ### 23.3 Additional M2 evidence rules
 
 - a stochastic NETWORK fault without a persisted seed invalidates the run;
