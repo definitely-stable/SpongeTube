@@ -250,14 +250,116 @@ def verify_decision(
     source_path: pathlib.Path,
     expected_git_commit: str | None,
 ) -> None:
+    """Independently verify the retained decision without calling its builder."""
+
     validate_schema(DECISION_SCHEMA, decision)
     privacy(decision, "G3 decision")
-    expected = build_decision(
-        source,
-        source_path=source_path,
-        expected_git_commit=expected_git_commit,
+    validate_g2_source(source, expected_git_commit=expected_git_commit)
+
+    source_binding = decision["source"]
+    require(source_binding["runId"] == source["runId"], "G3 source runId mismatch")
+    require(
+        source_binding["gitCommit"] == source["gitCommit"]
+        and source_binding["checkoutCommit"] == source["checkoutCommit"],
+        "G3 source revision binding mismatch",
     )
-    require(decision == expected, "G3 decision differs from independently recomputed verdict")
+    require(source_binding["gateId"] == source["gateId"], "G3 source gate mismatch")
+    require(
+        source_binding["requiredExperimentCount"] == source["requiredExperimentCount"],
+        "G3 source experiment count mismatch",
+    )
+
+    artifact = decision["sourceArtifact"]
+    require(artifact["path"] == source_path.name, "G3 source artifact path mismatch")
+    require(artifact["sha256"] == sha256(source_path), "G3 source artifact SHA-256 mismatch")
+    require(
+        artifact["sizeBytes"] == source_path.stat().st_size,
+        "G3 source artifact size mismatch",
+    )
+
+    require(
+        decision["candidateBackends"] == list(EXPECTED_BACKENDS),
+        "G3 candidate backend order/set mismatch",
+    )
+    aggregate = source["aggregate"]
+    equivalence = decision["equivalence"]
+    require(
+        equivalence["correctness"] == aggregate["correctnessEquivalent"],
+        "G3 correctness verdict drift",
+    )
+    require(
+        equivalence["recovery"] == aggregate["recoveryEquivalent"],
+        "G3 recovery verdict drift",
+    )
+    require(
+        equivalence["routeBinding"] == aggregate["routeBindingEquivalent"],
+        "G3 route-binding verdict drift",
+    )
+    require(
+        equivalence["discriminatingCorrectnessResilienceEvidence"] is False,
+        "G3 cannot claim a discriminator absent from canonical G2",
+    )
+
+    device = decision["deviceEvidence"]
+    require(device["deviceClass"] == source["deviceClass"], "G3 device class drift")
+    require(device["androidApi"] == source["androidApi"], "G3 Android API drift")
+    require(device["claimScope"] == aggregate["claimScope"], "G3 claim scope drift")
+    require(
+        device["physicalDeviceEvidence"] == aggregate["physicalDeviceEvidence"],
+        "G3 physical-device evidence drift",
+    )
+    require(
+        device["pairedDirectionalMetricsAvailable"]
+        == aggregate["pairedDirectionalMetricsAvailable"],
+        "G3 paired-metric availability drift",
+    )
+    require(
+        device["performanceSelectionAllowed"]
+        == aggregate["performanceSelectionAllowed"],
+        "G3 performance-selection permission drift",
+    )
+    require(
+        decision["n5ResilienceEffect"] == aggregate["n5ResilienceEffect"],
+        "G3 N5 claim drift",
+    )
+
+    dependency = decision["dependencyPolicy"]
+    require(
+        dependency["conditionalCandidatePresent"] is False,
+        "G3 required comparison unexpectedly includes a conditional candidate",
+    )
+    require(
+        dependency["selectionClearanceStatus"] == "NOT_EVALUATED_NO_SELECTION",
+        "G3 no-selection decision cannot claim dependency clearance",
+    )
+    require(
+        dependency["selectionRequiresClearance"] is True,
+        "future transport selection must retain dependency/distribution clearance",
+    )
+
+    retained = decision["decision"]
+    require(
+        retained["state"] == "TECHNICALLY_ELIGIBLE_NO_SELECTION",
+        "G3 current evidence supports technical eligibility only",
+    )
+    require(retained["selectedBackend"] is None, "G3 deferred decision selected a backend")
+    require(
+        retained["basis"] == "CORRECTNESS_AND_RESILIENCE_EQUIVALENCE",
+        "G3 decision basis drift",
+    )
+    require(
+        retained["reasonCodes"] == list(REASON_CODES),
+        "G3 reason-code set/order drift",
+    )
+    require(
+        retained["reopenTriggers"] == list(REOPEN_TRIGGERS),
+        "G3 reopen-trigger set/order drift",
+    )
+    require(
+        decision["nextAllowedAction"] == "M2_H_CANONICAL_ACCEPTANCE",
+        "G3 next action drift",
+    )
+    require(decision["limitations"] == list(LIMITATIONS), "G3 limitation set drift")
 
 
 def parse_args() -> argparse.Namespace:
