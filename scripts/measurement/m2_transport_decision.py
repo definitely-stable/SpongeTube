@@ -224,9 +224,9 @@ def build_decision(
         },
         "n5ResilienceEffect": aggregate["n5ResilienceEffect"],
         "dependencyPolicy": {
-            "externalTransportDependencyIntroduced": False,
-            "conditionalCandidatesIntroduced": False,
-            "selectionNeedsDependencyClearance": True,
+            "conditionalCandidatePresent": False,
+            "selectionClearanceStatus": "NOT_EVALUATED_NO_SELECTION",
+            "selectionRequiresClearance": True,
         },
         "decision": {
             "state": "TECHNICALLY_ELIGIBLE_NO_SELECTION",
