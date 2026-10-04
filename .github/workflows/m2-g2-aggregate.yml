@@ -2,6 +2,12 @@ name: M2-G2 Canonical Aggregate
 
 on:
   workflow_call:
+    inputs:
+      concurrency_suffix:
+        description: Unique suffix when invoked by a parent canonical workflow.
+        required: false
+        type: string
+        default: ""
   pull_request:
     branches: [ main ]
     paths:
@@ -64,7 +70,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: m2-g2-aggregate-${{ github.event.pull_request.number || github.ref }}
+  group: m2-g2-aggregate-${{ inputs.concurrency_suffix || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
