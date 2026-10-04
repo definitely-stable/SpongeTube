@@ -107,15 +107,18 @@
     "dependencyPolicy": {
       "type": "object",
       "required": [
-        "externalTransportDependencyIntroduced",
-        "conditionalCandidatesIntroduced",
-        "selectionNeedsDependencyClearance"
+        "conditionalCandidatePresent",
+        "selectionClearanceStatus",
+        "selectionRequiresClearance"
       ],
       "additionalProperties": false,
       "properties": {
-        "externalTransportDependencyIntroduced": { "type": "boolean", "const": false },
-        "conditionalCandidatesIntroduced": { "type": "boolean", "const": false },
-        "selectionNeedsDependencyClearance": { "type": "boolean", "const": true }
+        "conditionalCandidatePresent": { "type": "boolean", "const": false },
+        "selectionClearanceStatus": {
+          "type": "string",
+          "const": "NOT_EVALUATED_NO_SELECTION"
+        },
+        "selectionRequiresClearance": { "type": "boolean", "const": true }
       }
     },
     "decision": {
