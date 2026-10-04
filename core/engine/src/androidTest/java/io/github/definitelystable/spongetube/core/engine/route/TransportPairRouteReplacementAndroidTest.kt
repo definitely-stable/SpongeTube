@@ -627,6 +627,7 @@ class TransportPairRouteReplacementAndroidTest {
 
             if (
                 samePermitRoute &&
+                state != null &&
                 state.capabilitiesReceived &&
                 state.capabilities.validated == ObservedBoolean.TRUE &&
                 state.capabilities.vpn == ObservedBoolean.FALSE &&
