@@ -72,10 +72,21 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["path", "sha256", "sizeBytes"],
+        "required": ["path", "sourceArtifact", "sha256", "sizeBytes"],
         "additionalProperties": false,
         "properties": {
           "path": { "type": "string", "minLength": 1 },
+          "sourceArtifact": {
+            "type": "string",
+            "enum": [
+              "android-smoke-evidence",
+              "m2-e-transport-api36",
+              "m2-e-network-api36",
+              "m2-f2-route-recovery",
+              "m2-f3-vpn-continuity",
+              "m2-g3-transport-decision"
+            ]
+          },
           "sha256": { "$ref": "#/$defs/sha256" },
           "sizeBytes": { "type": "integer", "minimum": 1 }
         }
