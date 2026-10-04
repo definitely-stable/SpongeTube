@@ -30,6 +30,7 @@ from m2_transport_pair_plan import (  # noqa: E402
     BACKENDS,
     TransportPairPlanError,
     load_object as load_plan_object,
+    planned_trial_schedule,
     recovery_jitter_sample,
     validate_trials_against_plan,
 )
