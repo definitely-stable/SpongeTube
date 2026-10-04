@@ -108,6 +108,18 @@ Examples:
 
 M2-E selects pinned Toxiproxy 2.12.0 (ADR-0005) for canonical TRANSPORT faults only. Its packet-loss/latency/bandwidth-style toxics are not used to claim NETWORK-plane evidence.
 
+For canonical G2 N6 `TRANSPORT_RESET`, the independent verifier normally
+requires `CONNECTION_RESET`, `PREMATURE_EOF` or generic transport `IO`.
+Platform HttpEngine may surface the same causally proven downstream
+`reset_peer` as `CONNECT_TIMEOUT` when no response body becomes visible to
+the client. That normalization is accepted only when the retained first-owner
+origin partition proves the request reached Media Lab, the response status was
+206, the origin recorded `CLIENT_DISCONNECTED`, zero body bytes were written,
+and the existing synchronous reset/disarm barrier proves the toxic remained
+active through `ATTEMPT_FAILED`. Generic/local connect timeout and
+`READ_TIMEOUT` do not satisfy N6. This is an evidence-normalization rule, not
+a production classifier or retry-policy change.
+
 ### 4.3 Packet/network plane
 
 Owned by an M2 scoped network emulator.
