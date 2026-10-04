@@ -1201,6 +1201,9 @@ M2_SLICE_SCHEMAS = frozenset({
     # G3 records the retained non-selection decision from canonical G2 evidence
     # without mutating the frozen G0/G2 evidence contracts.
     "m2-g3-transport-decision-v1.schema.json",
+    # H binds the exact ten-gate M2 closure proof set without rewriting any
+    # owning-slice artifact schema.
+    "m2-acceptance-index-v1.schema.json",
 })
 
 # SHA-256 of M2 schemas already accepted by an earlier slice (M2-A, M2-B and
