@@ -1,6 +1,18 @@
 name: M2-F VPN Continuity
 
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source revision to checkout for canonical callers.
+        required: false
+        type: string
+        default: ""
+      concurrency_suffix:
+        description: Unique suffix for nested canonical callers.
+        required: false
+        type: string
+        default: ""
   pull_request:
     paths:
       - ".github/workflows/m2-f-vpn-continuity.yml"
@@ -30,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: m2-f3-vpn-continuity-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: m2-f3-vpn-continuity-${{ inputs.concurrency_suffix || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,12 +50,24 @@ jobs:
     name: m2-f3-api36-vpn-continuity
     runs-on: ubuntu-24.04
     timeout-minutes: 55
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+
+      - name: Bind exact source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir -p build/m2-f3
+          printf '%s\n' "$SOURCE_SHA" > build/m2-f3/source-sha.txt
 
       - name: Set up JDK 17
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
