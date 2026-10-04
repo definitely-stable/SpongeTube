@@ -297,6 +297,35 @@ class M2AcceptanceTest(unittest.TestCase):
             with self.assertRaisesRegex(M2AcceptanceError, "digest mismatch"):
                 verify_index(index, retained_root=retained, expected_git_commit=GIT_COMMIT)
 
+    def test_rejects_semantic_tamper_even_when_index_digest_is_recomputed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            smoke, transport, network, f2, f3, g3, retained = create_bundle(root)
+            index = collect(
+                smoke_root=smoke,
+                transport_root=transport,
+                network_root=network,
+                f2_root=f2,
+                f3_root=f3,
+                g3_root=g3,
+                retained_root=retained,
+                run_id="m2-h-test",
+                git_commit=GIT_COMMIT,
+            )
+            relative = "m2-d/HTTP_403_BARE/provider-verification-summary.json"
+            proof = retained / relative
+            document = json.loads(proof.read_text(encoding="utf-8"))
+            document["gates"]["M2-ACC-08"]["status"] = "NOT_EXERCISED"
+            write_json(proof, document)
+            for row in index["artifacts"]:
+                if row["path"] == relative:
+                    import hashlib
+                    row["sha256"] = hashlib.sha256(proof.read_bytes()).hexdigest()
+                    row["sizeBytes"] = proof.stat().st_size
+                    break
+            with self.assertRaisesRegex(M2AcceptanceError, "retained M2-ACC-08 not PASS"):
+                verify_index(index, retained_root=retained, expected_git_commit=GIT_COMMIT)
+
     def test_rejects_duplicate_gate_in_index(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
