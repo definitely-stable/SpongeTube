@@ -336,6 +336,10 @@ class G2RouteVerifierTest(unittest.TestCase):
         proof = route_proof()
         proof["routeEvidence"]["events"][5]["runtimeStateAfter"]["metered"] = "TRUE"
         proof["routeEvidence"]["events"][5]["observedCapabilities"]["metered"] = "TRUE"
+        # Keep the synthetic route-event stream internally consistent so the
+        # generic route oracle accepts it and the G2-E-specific isolation rule
+        # is the component that rejects the metered replacement.
+        proof["routeEvidence"]["events"][6]["runtimeStateAfter"]["metered"] = "TRUE"
         with self.assertRaisesRegex(
             verifier.RouteReplacementEvidenceError,
             "canonical validated/unmetered rendezvous",
