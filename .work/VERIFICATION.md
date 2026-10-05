@@ -1062,6 +1062,13 @@ exact source revision rather than looking up historical latest-successful
 artifacts. Each reusable B/C/D/E/F producer binds that source SHA in the
 downloaded evidence; G3 independently binds its fresh G2 source revision.
 
+Android Smoke serializes its `core:storage` and `core:engine`
+`connectedDebugAndroidTest` evidence producers on the shared API36 AVD.
+Repository-wide `org.gradle.parallel=true` must not allow those two
+instrumentation suites to overlap because both export retained files through
+Android TestStorage/additional-test-output. A TestStorage permission failure is
+a hard failure; the workflow does not retry or ignore it.
+
 The H aggregator validates the existing owning summary schemas and privacy
 contract, requires the canonical B/C/D/E/F/G scenario sets, copies only the
 minimal portable proof set, and indexes every retained proof by relative path,
