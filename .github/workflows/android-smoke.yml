@@ -114,8 +114,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Both suites export retained evidence through Android TestStorage.
+          # org.gradle.parallel=true is enabled repository-wide, so keeping
+          # both connectedDebugAndroidTest tasks in one Gradle invocation can
+          # overlap instrumentation on the same AVD and race ownership of
+          # additional_test_output. Serialize the evidence producers instead
+          # of retrying or ignoring storage permission failures.
           ./gradlew --dependency-verification=strict \
-            :core:storage:connectedDebugAndroidTest \
+            :core:storage:connectedDebugAndroidTest
+
+          ./gradlew --dependency-verification=strict \
             :core:engine:connectedDebugAndroidTest
 
           bash scripts/ci/verify-m1-b-evidence.sh \
