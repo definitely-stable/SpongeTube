@@ -17,6 +17,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -116,7 +118,16 @@ class MediaLabProviderIntegrationTest {
                     Files.readString(config.providerFaultsPath()),
                     eventsResponse.body());
 
-            List<Map<String, Object>> trace = traceRows(config.tracePath());
+            List<Map<String, Object>> trace = awaitTraceRows(
+                    config.tracePath(),
+                    rows -> rows.stream()
+                                    .filter(row -> "PROVIDER_FAULT".equals(row.get("outcome")))
+                                    .filter(row -> "/provider/gen-1/fixtures/F0/sample.bin"
+                                            .equals(row.get("path")))
+                                    .count() >= 2
+                            && rows.stream()
+                                    .anyMatch(row -> "SUCCESS".equals(row.get("outcome"))
+                                            && "/fixtures/F0/sample.bin".equals(row.get("path"))));
             assertEquals(
                     2,
                     trace.stream()
@@ -375,7 +386,16 @@ class MediaLabProviderIntegrationTest {
                     config.providerFaultsPath().toString(),
                     configJson.get("providerFaults"));
 
-            List<Map<String, Object>> trace = traceRows(config.tracePath());
+            List<Map<String, Object>> trace = awaitTraceRows(
+                    config.tracePath(),
+                    rows -> rows.stream().anyMatch(row ->
+                                    "POST".equals(row.get("method"))
+                                            && "/provider/refresh".equals(row.get("path"))
+                                            && Long.valueOf(409L).equals(row.get("status")))
+                            && rows.stream().anyMatch(row ->
+                                    "POST".equals(row.get("method"))
+                                            && "/provider/refresh".equals(row.get("path"))
+                                            && Long.valueOf(200L).equals(row.get("status"))));
             assertEquals(
                     "PROVIDER_FAULT",
                     trace.stream()
@@ -514,7 +534,11 @@ class MediaLabProviderIntegrationTest {
                     Files.readString(config.providerFaultsPath()),
                     eventsResponse.body());
 
-            List<Map<String, Object>> trace = traceRows(config.tracePath());
+            List<Map<String, Object>> trace = awaitTraceRows(
+                    config.tracePath(),
+                    rows -> rows.stream().anyMatch(row ->
+                            "/provider/refresh".equals(row.get("path"))
+                                    && "PROVIDER_FAULT".equals(row.get("outcome"))));
             assertEquals(
                     "PROVIDER_FAULT",
                     trace.stream()
@@ -735,9 +759,37 @@ class MediaLabProviderIntegrationTest {
         return (List<Map<String, Object>>) (List<?>) document(json).get("events");
     }
 
+    private static List<Map<String, Object>> awaitTraceRows(
+            Path tracePath,
+            Predicate<List<Map<String, Object>>> ready) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        List<Map<String, Object>> rows = List.of();
+        do {
+            rows = traceRows(tracePath);
+            if (ready.test(rows)) {
+                return rows;
+            }
+            Thread.sleep(10);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError(
+                "timed out waiting for Media Lab trace persistence; rows=" + rows);
+    }
+
     private static List<Map<String, Object>> traceRows(Path tracePath) throws Exception {
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (String line : Files.readAllLines(tracePath)) {
+        if (!Files.exists(tracePath)) {
+            return rows;
+        }
+        String raw = Files.readString(tracePath);
+        // Request tracing is appended in the handler finally-block. Read only
+        // newline-terminated JSONL rows so a concurrent append cannot expose a
+        // partially persisted document to the test parser.
+        int completeEnd = raw.lastIndexOf('\n');
+        if (completeEnd < 0) {
+            return rows;
+        }
+        String complete = raw.substring(0, completeEnd);
+        for (String line : complete.split("\\R")) {
             if (!line.isBlank()) {
                 rows.add(document(line));
             }
