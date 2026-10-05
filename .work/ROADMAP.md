@@ -73,7 +73,7 @@ Exit:
 
 ## M2 — Network & Provider Resilience
 
-Status: **Active — M2-A through M2-G complete; M2-H canonical acceptance active (#128)**
+Status: **Complete — 2026-10-05; canonical acceptance 10/10 PASS**
 
 Goal: treat bad connectivity as the normal environment while keeping failure attribution explicit.
 
@@ -86,9 +86,9 @@ M2 is split into focused deliveries (an ownership map, not a frozen API):
 - **M2-C — Recovery Chain, Failure Classification & Request Budget** (#79, complete, `.work/evidence/2026-09-25-m2-c-recovery-chain.md`, ADR-0003): `RecoveryCoordinator` as the only logical retry owner, RecoveryChain identity, typed `FailureObservation` + conservative `FailureClassifier`, `sponge-recovery-v1` (`REMOTE_ATTEMPT = 4`, exponential backoff with full jitter), `RecoveryAttemptGate` seam, one FetchBroker owner = one attempt, no Media3 retry; `failure-decision-events-v1`, `recovery-budget-events-v1`; M2-ACC-05/06 executable. Provider actions fail closed until M2-D; route gate wiring is M2-F.
 - **M2-D — Delivery Binding Refresh & Deterministic Provider Fault Recovery** (#81, complete, `.work/evidence/2026-09-26-m2-d-provider-recovery.md`, ADR-0004): delivery binding revision, CAS/single-flight refresh, `sponge-recovery-v2`, `Retry-After`, N8/N9/N10 deterministic provider simulator, M2-ACC-07/08; #50 review recorded; production stale-binding signal unresolved.
 - **M2-E — Transport / Packet Fault Harness** (#85, complete, `.work/evidence/2026-09-28-m2-e-fault-harness.md`, ADR-0005): pinned Toxiproxy 2.12.0 owns TRANSPORT faults; scoped tc/netem owns NETWORK faults on the direct API36 namespace/veth media path. E2/E3 provide typed harnesses, normalized tool readback, traffic-synchronized N3 blackout, fault-engine fingerprinting with GRO/GSO/TSO disabled on the lab veth, independent M2-ACC-01/02/09 verification and retained M2-ACC-05/06 regressions.
-- **M2-F — Android Route/VPN Recovery Integration**: end-to-end VPN/default-route recovery on Android's actual selected network.
+- **M2-F — Android Route/VPN Recovery Integration** (complete, `.work/evidence/2026-09-29-m2-f-route-recovery.md`): end-to-end VPN/default-route recovery on Android's actual selected network.
 - **M2-G — Transport Evidence Evaluation**: complete; G3 retained decision is `TECHNICALLY_ELIGIBLE_NO_SELECTION`, with no performance winner manufactured from emulator evidence.
-- **M2-H — Canonical M2 Acceptance** (#128, active): one same-source run re-executes the accepted B/C/D/E/F/G owning paths and emits a content-addressed 10/10 acceptance index.
+- **M2-H — Canonical M2 Acceptance** (#128, complete, `.work/evidence/2026-10-05-m2-canonical-acceptance.md`): exact-main run `37350866894`, attempt 2, re-executed the accepted B/C/D/E/F/G owning paths on `4f4e2c6ed1ee94bcfc7b9a41a9edb4b4f0c73929` and produced a content-addressed 10/10 acceptance index.
 
 #50 is a review dependency for M2-D and the production provider seam; it does not block provider-independent M2-A/B/C work.
 
