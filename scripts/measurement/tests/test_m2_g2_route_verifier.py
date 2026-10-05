@@ -322,6 +322,30 @@ class G2RouteVerifierTest(unittest.TestCase):
         ):
             validate_route(proof)
 
+    def test_route_evidence_rejects_metered_initial_route(self):
+        proof = route_proof()
+        proof["routeEvidence"]["events"][2]["runtimeStateAfter"]["metered"] = "TRUE"
+        proof["routeEvidence"]["events"][2]["observedCapabilities"]["metered"] = "TRUE"
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "canonical old route was not validated/unmetered",
+        ):
+            validate_route(proof)
+
+    def test_route_evidence_rejects_metered_replacement_route(self):
+        proof = route_proof()
+        proof["routeEvidence"]["events"][5]["runtimeStateAfter"]["metered"] = "TRUE"
+        proof["routeEvidence"]["events"][5]["observedCapabilities"]["metered"] = "TRUE"
+        # Keep the synthetic route-event stream internally consistent so the
+        # generic route oracle accepts it and the G2-E-specific isolation rule
+        # is the component that rejects the metered replacement.
+        proof["routeEvidence"]["events"][6]["runtimeStateAfter"]["metered"] = "TRUE"
+        with self.assertRaisesRegex(
+            verifier.RouteReplacementEvidenceError,
+            "canonical validated/unmetered rendezvous",
+        ):
+            validate_route(proof)
+
     def test_route_evidence_rejects_owner_before_validation_rendezvous(self):
         proof = route_proof()
         proof["physicalAttempts"][1]["startElapsedRealtimeNs"] = 410

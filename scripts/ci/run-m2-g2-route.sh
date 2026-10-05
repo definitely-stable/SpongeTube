@@ -200,8 +200,11 @@ for trial_id in "${TRIAL_IDS[@]}"; do
   # Some emulator service commands return non-zero when the requested state is
   # already established. The Android producer independently waits for a usable
   # non-VPN default route before admitting owner #1.
+  # Canonical G2-E is a Wi-Fi-only default-route experiment. Keep mobile
+  # data disabled so restoring connectivity cannot introduce a second default
+  # transport and extra RecoveryCoordinator owners.
+  adb shell svc data disable >/dev/null 2>&1 || true
   adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
-  adb shell svc data enable >/dev/null 2>&1 || true
   adb shell svc wifi enable >/dev/null 2>&1 || true
   await_adb_device
 
@@ -221,8 +224,11 @@ for trial_id in "${TRIAL_IDS[@]}"; do
   # Some emulator service commands return non-zero when the requested state is
   # already established. The Android producer independently waits for a usable
   # non-VPN default route before admitting owner #1.
+  # Canonical G2-E is a Wi-Fi-only default-route experiment. Keep mobile
+  # data disabled so restoring connectivity cannot introduce a second default
+  # transport and extra RecoveryCoordinator owners.
+  adb shell svc data disable >/dev/null 2>&1 || true
   adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
-  adb shell svc data enable >/dev/null 2>&1 || true
   adb shell svc wifi enable >/dev/null 2>&1 || true
   await_adb_device
 done

@@ -1004,6 +1004,15 @@ block/position facts. Emulator evidence can support correctness/resilience and
 directional measurements only. A performance-based SELECTED decision requires
 retained physical-device evidence and dependency/distribution clearance.
 
+Canonical G2-E `DEFAULT_ROUTE_LOSS_RESTORE` is isolated as a Wi-Fi-only
+API36 emulator experiment. Mobile data stays disabled from initial route
+admission through replacement completion; the producer waits for validated,
+unmetered non-VPN old and replacement epochs. This prevents emulator CELLULAR
+fallback from adding unrelated default-route churn and extra recovery owners.
+The verifier rejects retained route evidence whose admitted old or replacement
+epoch is metered. This restriction is laboratory isolation only and does not
+change production route policy.
+
 M2-G2-F closes the runtime **M2-ACC-10** proof with
 `m2-g2-evidence-index-v1`. The canonical aggregate consumes exactly six
 fresh same-source owning experiments: N0 CONTROL, N2 HIGH_RTT_JITTER, N3
