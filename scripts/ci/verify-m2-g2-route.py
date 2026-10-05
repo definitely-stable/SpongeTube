@@ -244,6 +244,20 @@ def validate_route_evidence(
         first_start <= old_loss_time <= first_end < replacement_time <= second_start <= second_end,
         f"{trial_id}: physical owners are not causally separated by route loss/restore",
     )
+    initial_validated = [
+        row for row in events
+        if row.get("routeEpochAfter") == before
+        and isinstance(row.get("runtimeStateAfter"), Mapping)
+        and row["runtimeStateAfter"].get("state") == "AVAILABLE"
+        and row["runtimeStateAfter"].get("capabilitiesReceived") is True
+        and row["runtimeStateAfter"].get("validated") == "TRUE"
+        and row["runtimeStateAfter"].get("metered") == "FALSE"
+    ]
+    require(
+        initial_validated,
+        f"{trial_id}: canonical old route was not validated/unmetered",
+    )
+
     replacement_validated = [
         row for row in events
         if row.get("routeEpochAfter") == after
@@ -251,10 +265,11 @@ def validate_route_evidence(
         and row["runtimeStateAfter"].get("state") == "AVAILABLE"
         and row["runtimeStateAfter"].get("capabilitiesReceived") is True
         and row["runtimeStateAfter"].get("validated") == "TRUE"
+        and row["runtimeStateAfter"].get("metered") == "FALSE"
     ]
     require(
         replacement_validated,
-        f"{trial_id}: replacement route never reached lab validation rendezvous",
+        f"{trial_id}: replacement route never reached canonical validated/unmetered rendezvous",
     )
     first_validated_time = min(
         row["elapsedRealtimeNs"] for row in replacement_validated
