@@ -593,6 +593,8 @@ class TransportPairRouteReplacementAndroidTest {
                 state.routeEpoch > minimumEpochExclusive &&
                 state.capabilities.vpn == ObservedBoolean.FALSE &&
                 state.capabilities.internet != ObservedBoolean.FALSE &&
+                state.capabilities.validated == ObservedBoolean.TRUE &&
+                state.capabilities.metered == ObservedBoolean.FALSE &&
                 observation.executionBinding != null &&
                 (
                     backend != TransportEvaluationBackend.PLATFORM_HTTP_ENGINE ||
@@ -631,7 +633,8 @@ class TransportPairRouteReplacementAndroidTest {
                 state.capabilitiesReceived &&
                 state.capabilities.validated == ObservedBoolean.TRUE &&
                 state.capabilities.vpn == ObservedBoolean.FALSE &&
-                state.capabilities.internet != ObservedBoolean.FALSE
+                state.capabilities.internet != ObservedBoolean.FALSE &&
+                state.capabilities.metered == ObservedBoolean.FALSE
             ) {
                 return permit
             }
@@ -685,14 +688,18 @@ class TransportPairRouteReplacementAndroidTest {
     ) {
         val commands = if (enabled) {
             listOf(
+                // G2-E measures one deterministic Wi-Fi default-route
+                // replacement. Mobile data stays disabled for the full
+                // measured interval so CELLULAR cannot become a competing
+                // default route and manufacture extra recovery owners.
+                "svc data disable",
                 "cmd connectivity airplane-mode disable",
-                "svc data enable",
                 "svc wifi enable",
             )
         } else {
             listOf(
-                "svc wifi disable",
                 "svc data disable",
+                "svc wifi disable",
                 "cmd connectivity airplane-mode enable",
             )
         }
