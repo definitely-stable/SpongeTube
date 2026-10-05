@@ -781,6 +781,9 @@ class MediaLabProviderIntegrationTest {
             return rows;
         }
         String raw = Files.readString(tracePath);
+        // Request tracing is appended in the handler finally-block. Read only
+        // newline-terminated JSONL rows so a concurrent append cannot expose a
+        // partially persisted document to the test parser.
         int completeEnd = raw.lastIndexOf('\n');
         if (completeEnd < 0) {
             return rows;
