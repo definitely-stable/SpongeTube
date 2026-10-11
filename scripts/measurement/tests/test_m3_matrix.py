@@ -76,6 +76,21 @@ def synthetic_probe(case_class, lane, *, outcome="INCONCLUSIVE"):
 def qualification_probe():
     document = synthetic_probe("V1", "WEB_EMBEDDED")
     document["delivery"]["mediaLayout"] = "SPLIT_AV"
+    document["capabilities"]["https"] = "PRESENT"
+    document["budget"]["mediaProbes"] = [
+        {
+            "probeId": "q-video",
+            "purpose": "VIDEO",
+            "byteLimit": 65536,
+            "bytesRead": 65536,
+        },
+        {
+            "probeId": "q-audio",
+            "purpose": "AUDIO",
+            "byteLimit": 65536,
+            "bytesRead": 65536,
+        },
+    ]
     return document
 
 
@@ -215,6 +230,25 @@ class M3A2QualificationTest(unittest.TestCase):
     def test_v1_muxed_only_does_not_qualify_split_av_case(self):
         document = qualification_probe()
         document["delivery"]["mediaLayout"] = "MUXED"
+        with self.assertRaises(M3MatrixError):
+            validate_qualification_document(document, registry(), case_class="V1")
+
+    def test_v1_layout_without_real_video_and_audio_reads_does_not_qualify(self):
+        document = qualification_probe()
+        document["budget"]["mediaProbes"] = []
+        with self.assertRaises(M3MatrixError):
+            validate_qualification_document(document, registry(), case_class="V1")
+
+    def test_v1_non_https_qualification_does_not_pass(self):
+        document = qualification_probe()
+        document["capabilities"]["https"] = "UNKNOWN"
+        with self.assertRaises(M3MatrixError):
+            validate_qualification_document(document, registry(), case_class="V1")
+
+    def test_v1_qualification_lane_is_predeclared(self):
+        document = qualification_probe()
+        document["client"]["lane"] = "WEB"
+        document["client"]["profileId"] = "yt-dlp:web"
         with self.assertRaises(M3MatrixError):
             validate_qualification_document(document, registry(), case_class="V1")
 
