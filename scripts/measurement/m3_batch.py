@@ -24,7 +24,6 @@ from typing import Any, Callable, Mapping, Sequence
 from m3_contracts import validate_probe_document
 from m3_matrix import (
     M3MatrixError,
-    V1_QUALIFICATION_LANE,
     aggregate_probes,
     load_registry,
     validate_case_input,
@@ -36,7 +35,6 @@ from m3_probe import ProbeRuntimeError, run_live_probe
 
 
 QUALIFICATION_CASE = "V1"
-QUALIFICATION_LANE = V1_QUALIFICATION_LANE
 
 
 class M3BatchError(RuntimeError):
@@ -158,17 +156,26 @@ def _preflight_inputs(
 
     cells = plan.get("cells")
     _require(isinstance(cells, list) and len(cells) == 18, "canonical plan must contain 18 cells")
-    qualification_cells = [
-        cell
-        for cell in cells
-        if cell.get("caseClass") == QUALIFICATION_CASE
-        and cell.get("lane") == QUALIFICATION_LANE
-    ]
+    gate = (plan.get("qualificationGates") or {}).get(QUALIFICATION_CASE)
+    _require(isinstance(gate, Mapping), "canonical plan must contain the V1 qualification gate")
+    ordered_lanes = gate.get("orderedLanes")
     _require(
-        len(qualification_cells) == 1,
-        "canonical plan must contain exactly one V1/WEB_EMBEDDED cell",
+        tuple(ordered_lanes or ()) == tuple(registry["primaryLanes"]),
+        "V1 qualification lanes must equal the frozen primary-lane order",
     )
-
+    _require(
+        gate.get("reuseQualificationAttemptsAsMatrixCells") is True,
+        "V1 qualification attempts must be reused as matrix cells",
+    )
+    for lane in ordered_lanes:
+        matches = [
+            cell for cell in cells
+            if cell.get("caseClass") == QUALIFICATION_CASE and cell.get("lane") == lane
+        ]
+        _require(
+            len(matches) == 1,
+            f"canonical plan must contain exactly one V1/{lane} matrix cell",
+        )
 
 def _run_cell(
     *,
@@ -255,77 +262,106 @@ def execute_batch(
     aggregate_dir.mkdir(parents=True, exist_ok=True)
 
     cells: Sequence[Mapping[str, Any]] = plan["cells"]
-    qualification_cell = next(
-        cell
+    cell_by_key = {
+        (str(cell["caseClass"]), str(cell["lane"])): cell
         for cell in cells
-        if cell["caseClass"] == QUALIFICATION_CASE
-        and cell["lane"] == QUALIFICATION_LANE
-    )
+    }
+    gate = plan["qualificationGates"][QUALIFICATION_CASE]
+    ordered_lanes = list(gate["orderedLanes"])
 
-    # Run qualification before all other provider requests. The exact same
-    # artifact is reused as the V1/WEB_EMBEDDED matrix cell, avoiding a hidden
-    # nineteenth provider experiment.
-    qualification = _run_cell(
-        registry=registry,
-        cell=qualification_cell,
-        inputs=inputs,
-        probe_runner=probe_runner,
-    )
-    qualification_path = qualification_dir / "v1-web-embedded.json"
-    _write_probe(qualification_path, qualification)
+    documents: list[Mapping[str, Any]] = []
+    execution_order: list[dict[str, Any]] = []
+    executed_keys: set[tuple[str, str]] = set()
+    qualification_attempts: list[dict[str, Any]] = []
+    qualification: Mapping[str, Any] | None = None
+    qualification_cell: Mapping[str, Any] | None = None
+    ordinal = 0
 
-    try:
-        validate_qualification_document(
-            qualification,
-            registry,
-            case_class=QUALIFICATION_CASE,
+    # Qualification sweeps only already-planned V1 cells, in frozen primary
+    # lane order. Every attempt is retained and reused as its matrix cell.
+    for lane in ordered_lanes:
+        cell = cell_by_key[(QUALIFICATION_CASE, lane)]
+        ordinal += 1
+        artifact = _run_cell(
+            registry=registry,
+            cell=cell,
+            inputs=inputs,
+            probe_runner=probe_runner,
         )
-    except M3MatrixError as exc:
+        key = (QUALIFICATION_CASE, lane)
+        executed_keys.add(key)
+        documents.append(artifact)
+        _write_probe(probes_dir / _safe_cell_name(cell), artifact)
+        _write_probe(qualification_dir / f"v1-{lane.lower()}.json", artifact)
+
+        attempt = {
+            "ordinal": ordinal,
+            "caseClass": QUALIFICATION_CASE,
+            "lane": lane,
+            "outcome": artifact["outcome"]["classification"],
+            "mediaLayout": artifact["delivery"]["mediaLayout"],
+            "https": artifact["capabilities"]["https"],
+            "qualified": False,
+        }
+        execution_order.append({
+            "ordinal": ordinal,
+            "caseClass": QUALIFICATION_CASE,
+            "lane": lane,
+            "qualificationAttempt": True,
+            "outcome": artifact["outcome"]["classification"],
+        })
+
+        try:
+            validate_qualification_document(
+                artifact,
+                registry,
+                case_class=QUALIFICATION_CASE,
+            )
+        except M3MatrixError as exc:
+            attempt["reason"] = str(exc)
+            qualification_attempts.append(attempt)
+            continue
+
+        attempt["qualified"] = True
+        qualification_attempts.append(attempt)
+        qualification = artifact
+        qualification_cell = cell
+        break
+
+    if qualification is None or qualification_cell is None:
         summary = {
             "schemaVersion": 1,
             "status": "QUALIFICATION_NOT_MET",
             "gitCommit": inputs.git_commit,
-            "qualificationCell": {
-                "caseClass": QUALIFICATION_CASE,
-                "lane": QUALIFICATION_LANE,
-                "outcome": qualification["outcome"]["classification"],
-                "mediaLayout": qualification["delivery"]["mediaLayout"],
-                "providerContentIdSha256": qualification["videoCase"]["providerContentIdSha256"],
-            },
-            "remainingCellsExecuted": 0,
-            "reason": str(exc),
+            "registryId": registry["registryId"],
+            "planId": plan["planId"],
+            "qualificationAttempts": qualification_attempts,
+            "executedProviderProbeCount": len(documents),
+            "matrixCellsExecuted": len(documents),
+            "remainingCellsExecuted": len(cells) - len(documents),
+            "reason": "V1 did not qualify on any frozen primary lane; V0/V2 cells were not executed.",
         }
         _write_json(summary_path, summary)
         if staging_root.exists():
             shutil.rmtree(staging_root)
         _scan_bundle_for_raw_ids(output_dir, inputs)
         raise M3BatchError(
-            "V1/WEB_EMBEDDED qualification did not establish SPLIT_AV or MULTIPLE; "
-            "remaining matrix cells were not executed"
-        ) from exc
+            "V1 qualification did not pass on any frozen primary lane; "
+            "non-V1 matrix cells were not executed"
+        )
 
+    _write_probe(qualification_dir / "v1-qualified.json", qualification)
     _materialize_qualification_for_aggregator(
         root=staging_root,
         registry=registry,
         artifact=qualification,
     )
-    _write_probe(
-        probes_dir / _safe_cell_name(qualification_cell),
-        qualification,
-    )
 
-    documents: list[Mapping[str, Any]] = [qualification]
-    execution_order: list[dict[str, Any]] = [{
-        "ordinal": 1,
-        "caseClass": QUALIFICATION_CASE,
-        "lane": QUALIFICATION_LANE,
-        "reusedQualification": True,
-        "outcome": qualification["outcome"]["classification"],
-    }]
-
-    ordinal = 1
+    # Execute every not-yet-observed matrix cell exactly once. Qualification
+    # attempts already occupy their corresponding V1 cells.
     for cell in cells:
-        if cell is qualification_cell:
+        key = (str(cell["caseClass"]), str(cell["lane"]))
+        if key in executed_keys:
             continue
         ordinal += 1
         artifact = _run_cell(
@@ -334,15 +370,19 @@ def execute_batch(
             inputs=inputs,
             probe_runner=probe_runner,
         )
+        executed_keys.add(key)
         _write_probe(probes_dir / _safe_cell_name(cell), artifact)
         documents.append(artifact)
         execution_order.append({
             "ordinal": ordinal,
             "caseClass": cell["caseClass"],
             "lane": cell["lane"],
-            "reusedQualification": False,
+            "qualificationAttempt": False,
             "outcome": artifact["outcome"]["classification"],
         })
+
+    _require(len(documents) == 18, "canonical success must execute exactly 18 provider probes")
+    _require(len(executed_keys) == 18, "canonical success must cover 18 unique matrix cells")
 
     report = aggregate_probes(
         registry,
@@ -370,11 +410,12 @@ def execute_batch(
         "planId": plan["planId"],
         "qualificationCell": {
             "caseClass": QUALIFICATION_CASE,
-            "lane": QUALIFICATION_LANE,
+            "lane": qualification["client"]["lane"],
             "reusedAsMatrixCell": True,
             "outcome": qualification["outcome"]["classification"],
             "mediaLayout": qualification["delivery"]["mediaLayout"],
         },
+        "qualificationAttempts": qualification_attempts,
         "executedProviderProbeCount": len(documents),
         "matrixCellCount": report["observedCellCount"],
         "executionOrder": execution_order,
@@ -385,7 +426,6 @@ def execute_batch(
         shutil.rmtree(staging_root)
     _scan_bundle_for_raw_ids(output_dir, inputs)
     return summary
-
 
 def _load_plan(path: pathlib.Path) -> Mapping[str, Any]:
     try:
