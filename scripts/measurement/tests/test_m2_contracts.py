@@ -286,7 +286,7 @@ class M2HistoricalContractTest(unittest.TestCase):
         present = {
             path.name
             for path in SCHEMAS.glob("*.schema.json")
-            if not path.name.startswith("m2-")
+            if not path.name.startswith(("m2-", "m3-"))
             and path.name not in M2_SLICE_SCHEMAS
             and path.name not in ACCEPTED_M2_SCHEMA_SHA256
         }
@@ -311,6 +311,7 @@ class M2HistoricalContractTest(unittest.TestCase):
             path.name
             for path in SCHEMAS.glob("*.schema.json")
             if path.name not in HISTORICAL_SCHEMA_SHA256
+            and not path.name.startswith("m3-")
         }
         self.assertEqual(registered, m2_present)
 
