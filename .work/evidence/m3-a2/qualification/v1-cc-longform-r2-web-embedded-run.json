@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "status": "QUALIFICATION_NOT_MET",
+  "gitCommit": "69e064f0e888bc7fe6a60ab888c3a19f796b3a4d",
+  "workflowRunId": 38153754876,
+  "workflowArtifactId": 11707661978,
+  "workflowArtifactDigest": "sha256:1394db343c35f8ef9270aed7ce87d83b0946146a2f790caa4fc9830ff85955b0",
+  "qualificationCell": {
+    "caseClass": "V1",
+    "lane": "WEB_EMBEDDED",
+    "mediaLayout": "UNKNOWN",
+    "outcome": "INCONCLUSIVE",
+    "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20"
+  },
+  "metadataRequestsUsed": 4,
+  "mediaProbeCount": 0,
+  "remainingCellsExecuted": 0,
+  "reason": "V1 WEB_EMBEDDED qualification did not establish split A/V; metadata extraction did not complete.",
+  "nextAction": "Keep V1 r2 fixed and replace single-lane qualification with a deterministic sweep over already-planned primary lanes, reusing every attempt as its matrix cell."
+}
