@@ -51,11 +51,39 @@ EXPECTED_PRODUCER_VERSION = "1"
 EXPECTED_ORACLE_ID = "YT_DLP"
 EXPECTED_ORACLE_VERSION = "2026.08.19"
 EXPECTED_ORACLE_REVISION = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+EXPECTED_SELECTION_SOURCE_REVISION = "3a08beaf031ab68f966401ead017ac81fe8486cf"
+EXPECTED_CASE_ROLES = {
+    "V0": "PUBLIC_ANONYMOUS_EMBEDDABLE_LONG_FORM",
+    "V1": "PUBLIC_ANONYMOUS_LONG_FORM_SPLIT_AV_REFERENCE",
+    "V2": "PUBLIC_ANONYMOUS_NON_EMBEDDABLE_NEGATIVE",
+}
+_ALLOWED_SELECTION_FACT_PREFIXES = (
+    "availability=",
+    "playable_in_embed=",
+    "duration_seconds=",
+    "age_limit=",
+)
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise M3MatrixError(message)
+
+
+def _expect_keys(value: Mapping[str, Any], expected: set[str], path: str) -> None:
+    actual = set(value)
+    _require(actual == expected, f"{path}: keys must be exactly {sorted(expected)}; got {sorted(actual)}")
+
+
+def _reject_urls(value: Any, path: str = "$") -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _reject_urls(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_urls(item, f"{path}[{index}]")
+    elif isinstance(value, str):
+        _require("://" not in value, f"{path}: URLs are not retained in M3-A2 planning data")
 
 
 def _load_json(path: pathlib.Path) -> Any:
@@ -85,6 +113,22 @@ def _case_map(registry: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
 
 def validate_registry(registry: Mapping[str, Any]) -> None:
     _require(isinstance(registry, Mapping), "registry must be an object")
+    _expect_keys(
+        registry,
+        {
+            "registryVersion",
+            "registryId",
+            "frozenAtGitCommit",
+            "producer",
+            "referenceOracle",
+            "primaryLanes",
+            "deferredLanes",
+            "cases",
+            "laneProfiles",
+        },
+        "$",
+    )
+    _reject_urls(registry)
     _require(registry.get("registryVersion") == REGISTRY_VERSION, "unsupported registry version")
     registry_id = registry.get("registryId")
     _require(isinstance(registry_id, str) and registry_id, "registryId is required")
@@ -99,12 +143,14 @@ def validate_registry(registry: Mapping[str, Any]) -> None:
 
     producer = registry.get("producer")
     _require(isinstance(producer, Mapping), "producer must be an object")
+    _expect_keys(producer, {"toolId", "version", "requireSingleGitCommit"}, "$.producer")
     _require(producer.get("toolId") == EXPECTED_PRODUCER_ID, "unexpected producer.toolId")
     _require(producer.get("version") == EXPECTED_PRODUCER_VERSION, "unexpected producer.version")
     _require(producer.get("requireSingleGitCommit") is True, "matrix must require one git commit")
 
     oracle = registry.get("referenceOracle")
     _require(isinstance(oracle, Mapping), "referenceOracle must be an object")
+    _expect_keys(oracle, {"id", "version", "revision"}, "$.referenceOracle")
     _require(oracle.get("id") == EXPECTED_ORACLE_ID, "unexpected reference oracle")
     _require(oracle.get("version") == EXPECTED_ORACLE_VERSION, "unexpected oracle version")
     _require(oracle.get("revision") == EXPECTED_ORACLE_REVISION, "unexpected oracle revision")
@@ -133,6 +179,11 @@ def validate_registry(registry: Mapping[str, Any]) -> None:
     seen_fingerprints: set[str] = set()
     for case in cases:
         _require(isinstance(case, Mapping), "case entry must be an object")
+        _expect_keys(
+            case,
+            {"caseClass", "caseRevision", "providerContentIdSha256", "role", "selectionEvidence", "qualification"},
+            "$.cases[]",
+        )
         case_class = case.get("caseClass")
         revision = case.get("caseRevision")
         fingerprint = case.get("providerContentIdSha256")
@@ -150,16 +201,24 @@ def validate_registry(registry: Mapping[str, Any]) -> None:
         )
         _require(fingerprint not in seen_fingerprints, f"duplicate provider fingerprint for {case_class}")
         seen_fingerprints.add(str(fingerprint))
-        _require(isinstance(role, str) and role, f"{case_class}: role required")
+        _require(
+            role == EXPECTED_CASE_ROLES.get(str(case_class)),
+            f"{case_class}: role does not match frozen case semantics",
+        )
 
         selection = case.get("selectionEvidence")
         _require(isinstance(selection, Mapping), f"{case_class}: selectionEvidence required")
+        _expect_keys(
+            selection,
+            {"sourceRepository", "sourceRevision", "sourcePath", "facts"},
+            f"{case_class}.selectionEvidence",
+        )
         _require(
             selection.get("sourceRepository") == "yt-dlp/yt-dlp",
             f"{case_class}: selection source repository drift",
         )
         _require(
-            selection.get("sourceRevision") == EXPECTED_ORACLE_REVISION,
+            selection.get("sourceRevision") == EXPECTED_SELECTION_SOURCE_REVISION,
             f"{case_class}: selection source revision drift",
         )
         _require(
@@ -173,6 +232,10 @@ def validate_registry(registry: Mapping[str, Any]) -> None:
             and all(isinstance(item, str) and item for item in facts),
             f"{case_class}: selection facts required",
         )
+        _require(
+            all(item.startswith(_ALLOWED_SELECTION_FACT_PREFIXES) for item in facts),
+            f"{case_class}: selection facts contain an unapproved field",
+        )
 
         qualification = case.get("qualification")
         _require(isinstance(qualification, Mapping), f"{case_class}: qualification required")
@@ -182,17 +245,32 @@ def validate_registry(registry: Mapping[str, Any]) -> None:
         _require(isinstance(layouts, list), f"{case_class}: requiredMediaLayouts must be an array")
 
         if case_class == "V1":
+            _expect_keys(
+                qualification,
+                {"mode", "requiredMediaLayouts", "evidencePath"},
+                "V1.qualification",
+            )
             _require(mode == "PROBE_EVIDENCE", "V1 must require probe evidence")
             _require(
                 tuple(layouts) == ("SPLIT_AV", "MULTIPLE"),
                 "V1 must require split/multiple A/V evidence",
             )
             evidence_path = qualification.get("evidencePath")
+            _require(isinstance(evidence_path, str), "V1 qualification evidencePath is required")
+            pure_path = pathlib.PurePosixPath(evidence_path)
             _require(
-                isinstance(evidence_path, str) and evidence_path.startswith(".work/evidence/m3-a2/qualification/"),
-                "V1 qualification evidencePath is required",
+                pure_path.parts[:4] == (".work", "evidence", "m3-a2", "qualification")
+                and ".." not in pure_path.parts
+                and "\\" not in evidence_path
+                and pure_path.suffix == ".json",
+                "V1 qualification evidencePath must be a safe JSON path under .work/evidence/m3-a2/qualification",
             )
         else:
+            _expect_keys(
+                qualification,
+                {"mode", "requiredMediaLayouts"},
+                f"{case_class}.qualification",
+            )
             _require(mode == "REFERENCE_FIXTURE", f"{case_class} must use pinned reference fixture qualification")
             _require(layouts == [], f"{case_class}: no media-layout qualification is required")
 
