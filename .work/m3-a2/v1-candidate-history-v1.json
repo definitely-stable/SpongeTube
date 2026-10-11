@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "yt-dlp/yt-dlp",
+  "sourceRevision": "3a08beaf031ab68f966401ead017ac81fe8486cf",
+  "sourcePath": "yt_dlp/extractor/youtube/_video.py",
+  "eligibilityRule": {
+    "availability": "public",
+    "playableInEmbed": true,
+    "liveStatus": "not_live",
+    "ageLimit": 0,
+    "minimumDurationSeconds": 600,
+    "sourceOrder": true
+  },
+  "attempts": [
+    {
+      "ordinal": 1,
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "durationSeconds": 721,
+      "status": "QUALIFICATION_NOT_MET",
+      "evidencePath": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json",
+      "workflowRunId": 38152263390
+    },
+    {
+      "ordinal": 2,
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "durationSeconds": 4060,
+      "status": "ACTIVE",
+      "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json"
+    }
+  ],
+  "selectionPolicy": "Advance only to the next eligible candidate in pinned source order after retained qualification failure; never skip ahead based on live outcome."
+}
