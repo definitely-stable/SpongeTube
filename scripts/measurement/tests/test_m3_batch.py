@@ -60,6 +60,7 @@ def base_artifact(registry, *, case_class, lane, layout="UNKNOWN", outcome="INCO
         "caseRevision": case["caseRevision"],
         "providerContentIdSha256": case["providerContentIdSha256"],
     }
+    artifact["environment"]["runnerImage"] = RUNNER_IMAGE
     artifact["references"] = [{
         "id": registry["referenceOracle"]["id"],
         "version": registry["referenceOracle"]["version"],
@@ -68,6 +69,22 @@ def base_artifact(registry, *, case_class, lane, layout="UNKNOWN", outcome="INCO
         "productionDependency": False,
     }]
     artifact["delivery"]["mediaLayout"] = layout
+    if case_class == "V1" and lane == "WEB_EMBEDDED" and layout in ("SPLIT_AV", "MULTIPLE"):
+        artifact["capabilities"]["https"] = "PRESENT"
+        artifact["budget"]["mediaProbes"] = [
+            {
+                "probeId": "q-video",
+                "purpose": "VIDEO",
+                "byteLimit": 65536,
+                "bytesRead": 65536,
+            },
+            {
+                "probeId": "q-audio",
+                "purpose": "AUDIO",
+                "byteLimit": 65536,
+                "bytesRead": 65536,
+            },
+        ]
     artifact["outcome"]["classification"] = outcome
     if outcome == "PROVIDER_REJECTED":
         artifact["providerSignals"]["rejection"] = "PRESENT"
