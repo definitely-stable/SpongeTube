@@ -111,7 +111,7 @@ jobs:
             --case-revision "$M3_CASE_REVISION" \
             --lane "$M3_LANE" \
             --git-commit "$GITHUB_SHA" \
-            --runner-image "${ImageOS:-ubuntu-24.04}" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
             --media-probe-mode "$M3_MEDIA_PROBE_MODE" \
             --output build/m3-a1/artifact/m3-a-probe-v1.json
 
