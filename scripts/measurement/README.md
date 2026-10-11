@@ -51,6 +51,12 @@ selection belongs to M3-A3.
 
 ## M3-A2 one-run canonical matrix
 
+The active V1 candidate is revision `v1-cc-longform-r2`. The prior r1
+qualification artifact and run provenance are retained under
+`.work/evidence/m3-a2/qualification/`; fallback order is frozen in
+`.work/m3-a2/v1-candidate-history-v1.json`.
+
+
 `m3_batch.py` is the canonical collection driver for the frozen M3-A2 plan.
 It is designed for `.github/workflows/m3-a2-matrix.yml`, which is manual
 `workflow_dispatch` only.
