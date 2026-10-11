@@ -1,0 +1,492 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spongetube.invalid/schema/m3-a-probe-v1.schema.json",
+  "title": "SpongeTube M3-A YouTube Feasibility Probe v1",
+  "description": "Bounded, redacted, provider-feasibility evidence for M3-A. Semantic and privacy checks live in scripts/measurement/m3_contracts.py.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "probeId",
+    "createdAtUtc",
+    "gitCommit",
+    "producer",
+    "client",
+    "videoCase",
+    "environment",
+    "references",
+    "budget",
+    "capabilities",
+    "requirements",
+    "providerSignals",
+    "delivery",
+    "outcome",
+    "guardrails",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "probeId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$"
+    },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "producer": {
+      "type": "object",
+      "required": [
+        "toolId",
+        "version",
+        "revision"
+      ],
+      "properties": {
+        "toolId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "client": {
+      "type": "object",
+      "required": [
+        "lane",
+        "profileId",
+        "profileVersion"
+      ],
+      "properties": {
+        "lane": {
+          "type": "string",
+          "enum": [
+            "WEB_EMBEDDED",
+            "TV",
+            "ANDROID_VR",
+            "MWEB",
+            "WEB",
+            "WEB_SAFARI",
+            "ANDROID",
+            "IOS"
+          ]
+        },
+        "profileId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profileVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "videoCase": {
+      "type": "object",
+      "required": [
+        "caseClass",
+        "caseRevision",
+        "providerContentIdSha256"
+      ],
+      "properties": {
+        "caseClass": {
+          "type": "string",
+          "enum": [
+            "V0",
+            "V1",
+            "V2"
+          ]
+        },
+        "caseRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerContentIdSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "runnerKind",
+        "runnerImage",
+        "os",
+        "arch",
+        "networkClass"
+      ],
+      "properties": {
+        "runnerKind": {
+          "type": "string",
+          "const": "GITHUB_HOSTED"
+        },
+        "runnerImage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "os": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "networkClass": {
+          "type": "string",
+          "const": "PUBLIC_EGRESS_REDACTED"
+        }
+      },
+      "additionalProperties": false
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "revision",
+          "role",
+          "productionDependency"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "YT_DLP",
+              "YOUTUBE_JS",
+              "BGUTILS",
+              "NEWPIPE_EXTRACTOR",
+              "INVIDIOUS"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "REFERENCE_ORACLE",
+              "TOKEN_CHALLENGE_REFERENCE",
+              "COMPARISON_ONLY"
+            ]
+          },
+          "productionDependency": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "metadataRequestLimit",
+        "metadataRequestsUsed",
+        "mediaProbeByteLimit",
+        "mediaProbes"
+      ],
+      "properties": {
+        "metadataRequestLimit": {
+          "type": "integer",
+          "const": 32
+        },
+        "metadataRequestsUsed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "mediaProbeByteLimit": {
+          "type": "integer",
+          "const": 1048576
+        },
+        "mediaProbes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "probeId",
+              "purpose",
+              "byteLimit",
+              "bytesRead"
+            ],
+            "properties": {
+              "probeId": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]*$"
+              },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "STARTUP",
+                  "VIDEO",
+                  "AUDIO",
+                  "RANGE",
+                  "CONTINUATION",
+                  "SEEK",
+                  "SUSTAINED_PLAYBACK",
+                  "CONTROL"
+                ]
+              },
+              "byteLimit": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "bytesRead": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "capabilities": {
+      "type": "object",
+      "required": [
+        "https",
+        "dash",
+        "hls",
+        "sabr",
+        "drm"
+      ],
+      "properties": {
+        "https": {
+          "$ref": "#/$defs/observation"
+        },
+        "dash": {
+          "$ref": "#/$defs/observation"
+        },
+        "hls": {
+          "$ref": "#/$defs/observation"
+        },
+        "sabr": {
+          "$ref": "#/$defs/observation"
+        },
+        "drm": {
+          "$ref": "#/$defs/observation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "requirements": {
+      "type": "object",
+      "required": [
+        "gvsPoToken",
+        "playerPoToken",
+        "challengeRuntime",
+        "sessionContext"
+      ],
+      "properties": {
+        "gvsPoToken": {
+          "$ref": "#/$defs/requirement"
+        },
+        "playerPoToken": {
+          "$ref": "#/$defs/requirement"
+        },
+        "challengeRuntime": {
+          "$ref": "#/$defs/requirement"
+        },
+        "sessionContext": {
+          "$ref": "#/$defs/requirement"
+        }
+      },
+      "additionalProperties": false
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "mediaLayout",
+        "range",
+        "continuation",
+        "descriptorExpiry",
+        "descriptorLifetimeSeconds",
+        "descriptorRefresh",
+        "startup",
+        "seek",
+        "sustainedPlayback"
+      ],
+      "properties": {
+        "mediaLayout": {
+          "type": "string",
+          "enum": [
+            "SPLIT_AV",
+            "MUXED",
+            "INTERLEAVED",
+            "MULTIPLE",
+            "UNKNOWN"
+          ]
+        },
+        "range": {
+          "$ref": "#/$defs/observation"
+        },
+        "continuation": {
+          "$ref": "#/$defs/observation"
+        },
+        "descriptorExpiry": {
+          "$ref": "#/$defs/observation"
+        },
+        "startup": {
+          "$ref": "#/$defs/observation"
+        },
+        "seek": {
+          "$ref": "#/$defs/observation"
+        },
+        "sustainedPlayback": {
+          "$ref": "#/$defs/observation"
+        },
+        "descriptorLifetimeSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "descriptorRefresh": {
+          "$ref": "#/$defs/observation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "classification",
+        "httpStatusClass"
+      ],
+      "properties": {
+        "classification": {
+          "type": "string",
+          "enum": [
+            "VIABLE_ANONYMOUS",
+            "TOKEN_GATED",
+            "CHALLENGE_GATED",
+            "SABR_ONLY",
+            "DRM_GATED",
+            "PROVIDER_REJECTED",
+            "PROVIDER_RATE_LIMITED",
+            "UNSUPPORTED_DELIVERY",
+            "INCONCLUSIVE"
+          ]
+        },
+        "httpStatusClass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "guardrails": {
+      "type": "object",
+      "required": [
+        "accountCredentialsUsed",
+        "ipRotationOrProxyEvasionUsed",
+        "antiBotBypassImplemented",
+        "requestRateCamouflageUsed",
+        "fullDownloadAttempted"
+      ],
+      "properties": {
+        "accountCredentialsUsed": {
+          "type": "boolean",
+          "const": false
+        },
+        "ipRotationOrProxyEvasionUsed": {
+          "type": "boolean",
+          "const": false
+        },
+        "antiBotBypassImplemented": {
+          "type": "boolean",
+          "const": false
+        },
+        "requestRateCamouflageUsed": {
+          "type": "boolean",
+          "const": false
+        },
+        "fullDownloadAttempted": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "providerSignals": {
+      "type": "object",
+      "required": [
+        "rejection",
+        "throttling",
+        "retryAfter"
+      ],
+      "properties": {
+        "rejection": {
+          "$ref": "#/$defs/observation"
+        },
+        "throttling": {
+          "$ref": "#/$defs/observation"
+        },
+        "retryAfter": {
+          "$ref": "#/$defs/observation"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "observation": {
+      "type": "string",
+      "enum": [
+        "PRESENT",
+        "ABSENT",
+        "UNKNOWN"
+      ]
+    },
+    "requirement": {
+      "type": "string",
+      "enum": [
+        "REQUIRED",
+        "NOT_REQUIRED",
+        "UNKNOWN",
+        "NOT_APPLICABLE"
+      ]
+    }
+  }
+}

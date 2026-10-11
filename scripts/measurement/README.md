@@ -1,5 +1,23 @@
 # Measurement and evidence kernels
 
+## M3-A feasibility contract validator
+
+`m3_contracts.py` is the fail-closed host validator for the M3-A research
+contract in `.work/milestones/M3.md`. It validates `m3-a-probe-v1` schema
+shape plus cross-field claim strength, the 32-request metadata budget, at most
+8 media probes with at most 1 MiB read per probe, frozen reference-oracle roles,
+GitHub-hosted provenance and the inherited M2 privacy scanner. It does not
+extract YouTube media or implement any production provider behavior.
+
+Validate one portable artifact with:
+
+```bash
+python3 scripts/measurement/m3_contracts.py validate \
+  --input .work/schemas/examples/m3/m3-a-probe-v1.example.json
+```
+
+Its falsification suite is `tests/test_m3_contracts.py`, run by `Verify`.
+
 ## M2 contract verifier
 
 `m2_contracts.py` is the host reference oracle for the FROZEN M2-A contracts in

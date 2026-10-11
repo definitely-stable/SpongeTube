@@ -1,7 +1,7 @@
 # SpongeTube Roadmap v0.1
 
 Status: **Normative sequencing**
-Date: **2026-09-23**
+Date: **2026-10-11**
 
 The roadmap is ordered to prove the risky assumptions before building a large YouTube UI.
 
@@ -36,6 +36,8 @@ Exit:
 - emulator timing/resource observations are diagnostic only and cannot validate a product performance claim.
 
 ## M1 — Persistent Playback Core
+
+Status: **Complete — 2026-09-25; canonical acceptance 16/16 PASS**
 
 Goal: prove one-owner fetch → crash-consistent durable extent → published playable coverage → Media3 playback, without YouTube dependency.
 
@@ -124,11 +126,15 @@ Exit:
 
 ## M3 — YouTube Adapter
 
+Status: **Active — M3-A0 protocol/foundation (#140)**
+
+Canonical milestone specification: `.work/milestones/M3.md`.
+
 M3 has two deliberately different tracks. Feasibility starts early; production coupling remains later.
 
 ### M3-A — YouTube Delivery Feasibility Probe
 
-Status: **parallel risk track — may run during M1**
+Status: **Active — M3-A0 protocol/foundation; production coupling not started**
 
 Goal: determine the smallest viable anonymous long-form YouTube VOD delivery path and identify provider assumptions that Sponge Core must not accidentally freeze.
 
