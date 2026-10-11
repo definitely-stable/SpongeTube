@@ -57,8 +57,10 @@ It is designed for `.github/workflows/m3-a2-matrix.yml`, which is manual
 
 One run:
 
-- verifies V0/V1/V2 raw inputs against predeclared SHA-256 fingerprints before
-  provider access;
+- fetches the exact pinned yt-dlp case-selection source;
+- derives V0/V1/V2 raw IDs only in memory by matching provider-shaped source
+  IDs to the predeclared SHA-256 fingerprints;
+- fails unless each fingerprint has exactly one source match;
 - uses one exact git commit, one GitHub-hosted runner and one pinned yt-dlp
   installation;
 - runs the predeclared V1/WEB_EMBEDDED qualification first;
@@ -70,7 +72,9 @@ One run:
 - emits no M3-A3 architecture decision.
 
 The batch output is a redacted portable bundle under
-`build/m3-a2/evidence/`. If V1 qualification fails, the workflow stops after
+`build/m3-a2/evidence/`. The ephemeral pinned source lives outside that
+directory, and the batch rejects the result if any derived raw provider ID
+appears in a retained evidence file. If V1 qualification fails, the workflow stops after
 one provider probe and retains the qualification artifact plus
 `batch-summary-v1.json`; it does not spend requests on an experiment that can
 no longer satisfy the frozen plan.
