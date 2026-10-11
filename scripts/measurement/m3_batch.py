@@ -198,8 +198,13 @@ def execute_batch(
     aggregate_dir = output_dir / "aggregate"
     staging_root = output_dir / ".staging-root"
 
-    if staging_root.exists():
-        shutil.rmtree(staging_root)
+    for managed in (probes_dir, qualification_dir, aggregate_dir, staging_root):
+        if managed.exists():
+            shutil.rmtree(managed)
+    summary_path = output_dir / "batch-summary-v1.json"
+    if summary_path.exists():
+        summary_path.unlink()
+
     probes_dir.mkdir(parents=True, exist_ok=True)
     qualification_dir.mkdir(parents=True, exist_ok=True)
     aggregate_dir.mkdir(parents=True, exist_ok=True)
@@ -245,7 +250,7 @@ def execute_batch(
             "remainingCellsExecuted": 0,
             "reason": str(exc),
         }
-        _write_json(output_dir / "batch-summary-v1.json", summary)
+        _write_json(summary_path, summary)
         if staging_root.exists():
             shutil.rmtree(staging_root)
         raise M3BatchError(
@@ -329,7 +334,7 @@ def execute_batch(
         "executionOrder": execution_order,
         "globalDecision": report["globalDecision"],
     }
-    _write_json(output_dir / "batch-summary-v1.json", summary)
+    _write_json(summary_path, summary)
     if staging_root.exists():
         shutil.rmtree(staging_root)
     return summary
