@@ -289,9 +289,7 @@ def _bounded_http_probe(
             result.status = int(getattr(response, "status", 200))
             content_range = response.headers.get("Content-Range")
             result.range_honored = result.status == 206 and bool(content_range)
-            payload = response.read(byte_limit + 1)
-            if len(payload) > byte_limit:
-                raise ProbeRuntimeError("media reader crossed declared byte limit")
+            payload = response.read(byte_limit)
             result.bytes_read = len(payload)
             result.retry_after_present = bool(response.headers.get("Retry-After"))
     except urllib.error.HTTPError as exc:
@@ -461,10 +459,12 @@ def _summary_from_extraction(
     throttling = extraction.signals.saw_throttling or any(item.throttling for item in media_probes)
     retry_after = any(item.retry_after_present for item in media_probes)
 
-    if has_missing_pot:
-        gvs_requirement = "REQUIRED"
-    elif any_success:
+    # Requirement fields describe the actually selected bounded path. Other
+    # formats may still be token-gated without making the successful path so.
+    if any_success:
         gvs_requirement = "NOT_REQUIRED"
+    elif has_missing_pot:
+        gvs_requirement = "REQUIRED"
     else:
         gvs_requirement = "UNKNOWN"
 
@@ -472,10 +472,10 @@ def _summary_from_extraction(
     # media read is direct evidence that this exact path did not require one.
     player_requirement = "NOT_REQUIRED" if extraction.extraction_completed and any_success else "UNKNOWN"
 
-    if extraction.signals.saw_js_runtime_requirement:
-        challenge_requirement = "REQUIRED"
-    elif extraction.extraction_completed and any_success:
+    if extraction.extraction_completed and any_success:
         challenge_requirement = "NOT_REQUIRED"
+    elif extraction.signals.saw_js_runtime_requirement:
+        challenge_requirement = "REQUIRED"
     else:
         challenge_requirement = "UNKNOWN"
 
