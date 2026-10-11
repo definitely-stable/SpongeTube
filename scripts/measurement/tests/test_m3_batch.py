@@ -69,7 +69,7 @@ def base_artifact(registry, *, case_class, lane, layout="UNKNOWN", outcome="INCO
         "productionDependency": False,
     }]
     artifact["delivery"]["mediaLayout"] = layout
-    if case_class == "V1" and lane == "WEB_EMBEDDED" and layout in ("SPLIT_AV", "MULTIPLE"):
+    if case_class == "V1" and layout in ("SPLIT_AV", "MULTIPLE"):
         artifact["capabilities"]["https"] = "PRESENT"
         artifact["budget"]["mediaProbes"] = [
             {
@@ -92,8 +92,16 @@ def base_artifact(registry, *, case_class, lane, layout="UNKNOWN", outcome="INCO
 
 
 class FakeRunner:
-    def __init__(self, registry, *, qualification_layout="SPLIT_AV", rejected_cell=None):
+    def __init__(
+        self,
+        registry,
+        *,
+        qualification_lane="WEB_EMBEDDED",
+        qualification_layout="SPLIT_AV",
+        rejected_cell=None,
+    ):
         self.registry = registry
+        self.qualification_lane = qualification_lane
         self.qualification_layout = qualification_layout
         self.rejected_cell = rejected_cell
         self.calls = []
@@ -120,7 +128,7 @@ class FakeRunner:
         })
         self.assertions(video_id, case_class, git_commit, runner_image, media_probe_mode)
         layout = "UNKNOWN"
-        if case_class == "V1" and lane == "WEB_EMBEDDED":
+        if case_class == "V1" and lane == self.qualification_lane:
             layout = self.qualification_layout
         outcome = (
             "PROVIDER_REJECTED"
@@ -144,7 +152,6 @@ class FakeRunner:
             raise AssertionError("wrong runner image")
         if media_probe_mode != "range-set":
             raise AssertionError("non-canonical media probe mode")
-
 
 def inputs():
     return BatchInputs(
@@ -198,10 +205,10 @@ class M3A2SourceDerivationTest(unittest.TestCase):
 
 
 class M3A2BatchExecutionTest(unittest.TestCase):
-    def test_success_executes_exactly_eighteen_unique_cells_and_reuses_qualification(self):
+    def test_success_executes_exactly_eighteen_unique_cells_and_reuses_sweep_attempts(self):
         reg = synthetic_registry()
         plan = build_plan(reg)
-        runner = FakeRunner(reg)
+        runner = FakeRunner(reg, qualification_lane="ANDROID_VR")
 
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -216,23 +223,42 @@ class M3A2BatchExecutionTest(unittest.TestCase):
             self.assertEqual("COMPLETE", summary["status"])
             self.assertEqual(18, summary["executedProviderProbeCount"])
             self.assertEqual(18, summary["matrixCellCount"])
+            self.assertEqual("ANDROID_VR", summary["qualificationCell"]["lane"])
             self.assertEqual("NOT_MADE_M3_A2", summary["globalDecision"])
 
             cells = [(call["case_class"], call["lane"]) for call in runner.calls]
             self.assertEqual(18, len(cells))
             self.assertEqual(18, len(set(cells)))
-            self.assertEqual(("V1", "WEB_EMBEDDED"), cells[0])
-            self.assertEqual(1, cells.count(("V1", "WEB_EMBEDDED")))
+            self.assertEqual(
+                [
+                    ("V1", "WEB_EMBEDDED"),
+                    ("V1", "TV"),
+                    ("V1", "ANDROID_VR"),
+                ],
+                cells[:3],
+            )
+            for cell in cells[:3]:
+                self.assertEqual(1, cells.count(cell))
+
+            attempts = summary["qualificationAttempts"]
+            self.assertEqual(3, len(attempts))
+            self.assertFalse(attempts[0]["qualified"])
+            self.assertFalse(attempts[1]["qualified"])
+            self.assertTrue(attempts[2]["qualified"])
 
             probes = sorted((root / "probes").glob("*.json"))
             self.assertEqual(18, len(probes))
+            self.assertTrue((root / "qualification" / "v1-web_embedded.json").is_file())
+            self.assertTrue((root / "qualification" / "v1-tv.json").is_file())
+            self.assertTrue((root / "qualification" / "v1-android_vr.json").is_file())
+            self.assertTrue((root / "qualification" / "v1-qualified.json").is_file())
             report = json.loads((root / "aggregate" / "matrix-v1.json").read_text(encoding="utf-8"))
             self.assertTrue(report["complete"])
             self.assertEqual(18, report["observedCellCount"])
 
-    def test_failed_qualification_stops_before_remaining_provider_requests(self):
+    def test_all_failed_qualification_lanes_stop_before_v0_v2_requests(self):
         reg = synthetic_registry()
-        runner = FakeRunner(reg, qualification_layout="MUXED")
+        runner = FakeRunner(reg, qualification_lane=None)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -245,13 +271,19 @@ class M3A2BatchExecutionTest(unittest.TestCase):
                     probe_runner=runner,
                 )
 
-            self.assertEqual(1, len(runner.calls))
-            self.assertEqual("V1", runner.calls[0]["case_class"])
-            self.assertEqual("WEB_EMBEDDED", runner.calls[0]["lane"])
+            self.assertEqual(6, len(runner.calls))
+            self.assertEqual(
+                [("V1", lane) for lane in reg["primaryLanes"]],
+                [(call["case_class"], call["lane"]) for call in runner.calls],
+            )
             summary = json.loads((root / "batch-summary-v1.json").read_text(encoding="utf-8"))
             self.assertEqual("QUALIFICATION_NOT_MET", summary["status"])
-            self.assertEqual(0, summary["remainingCellsExecuted"])
-            self.assertTrue((root / "qualification" / "v1-web-embedded.json").is_file())
+            self.assertEqual(6, summary["executedProviderProbeCount"])
+            self.assertEqual(6, summary["matrixCellsExecuted"])
+            self.assertEqual(12, summary["remainingCellsExecuted"])
+            self.assertEqual(6, len(summary["qualificationAttempts"]))
+            self.assertTrue(all(not item["qualified"] for item in summary["qualificationAttempts"]))
+            self.assertEqual(6, len(list((root / "qualification").glob("v1-*.json"))))
             self.assertFalse((root / "aggregate" / "matrix-v1.json").exists())
 
     def test_provider_rejection_is_retained_as_evidence_and_does_not_abort_batch(self):
