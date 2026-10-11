@@ -450,6 +450,8 @@ def _summary_from_extraction(
     has_missing_pot = any(_is_missing_pot(fmt) for fmt in formats)
 
     any_success = any(item.bytes_read > 0 and item.status in (200, 206) for item in media_probes)
+    startup = next((item for item in media_probes if item.purpose == "STARTUP"), None)
+    startup_success = bool(startup and startup.bytes_read > 0 and startup.status in (200, 206))
     any_range = any(item.range_honored is True for item in media_probes)
     attempted_range = bool(media_probes)
     continuation = next((item for item in media_probes if item.purpose == "CONTINUATION"), None)
@@ -461,7 +463,7 @@ def _summary_from_extraction(
 
     # Requirement fields describe the actually selected bounded path. Other
     # formats may still be token-gated without making the successful path so.
-    if any_success:
+    if startup_success:
         gvs_requirement = "NOT_REQUIRED"
     elif has_missing_pot:
         gvs_requirement = "REQUIRED"
@@ -470,9 +472,9 @@ def _summary_from_extraction(
 
     # No Player PO token is supplied. Successful extraction + a successful
     # media read is direct evidence that this exact path did not require one.
-    player_requirement = "NOT_REQUIRED" if extraction.extraction_completed and any_success else "UNKNOWN"
+    player_requirement = "NOT_REQUIRED" if extraction.extraction_completed and startup_success else "UNKNOWN"
 
-    if extraction.extraction_completed and any_success:
+    if extraction.extraction_completed and startup_success:
         challenge_requirement = "NOT_REQUIRED"
     elif extraction.signals.saw_js_runtime_requirement:
         challenge_requirement = "REQUIRED"
@@ -505,13 +507,13 @@ def _summary_from_extraction(
         "descriptorExpiry": "UNKNOWN",
         "descriptorLifetimeSeconds": None,
         "descriptorRefresh": "UNKNOWN",
-        "startup": "PRESENT" if any_success else "UNKNOWN",
+        "startup": "PRESENT" if startup_success else "UNKNOWN",
         "seek": "PRESENT" if seek and seek.range_honored and seek.bytes_read > 0 else "UNKNOWN",
         "sustainedPlayback": "UNKNOWN",
     }
 
     viable_selected_path = (
-        any_success
+        startup_success
         and capabilities["https"] == "PRESENT"
         and gvs_requirement == "NOT_REQUIRED"
         and player_requirement == "NOT_REQUIRED"
@@ -533,7 +535,12 @@ def _summary_from_extraction(
         classification = "INCONCLUSIVE"
 
     statuses = [item.status for item in media_probes if isinstance(item.status, int)]
-    http_status_class = statuses[-1] // 100 if statuses else None
+    primary_status = startup.status if startup and isinstance(startup.status, int) else (statuses[-1] if statuses else None)
+    if classification == "PROVIDER_RATE_LIMITED":
+        primary_status = next((status for status in statuses if status == 429), primary_status)
+    elif classification == "PROVIDER_REJECTED":
+        primary_status = next((status for status in statuses if status == 403), primary_status)
+    http_status_class = primary_status // 100 if isinstance(primary_status, int) else None
     limitations = [
         "Live-provider compatibility observation; not a deterministic acceptance or performance result.",
         "No account credentials, PO-token provider, remote component or JavaScript runtime was configured.",
