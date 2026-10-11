@@ -83,6 +83,10 @@ jobs:
           set -euo pipefail
           python3 scripts/measurement/m3_contracts.py validate \
             --input build/m3-a2/evidence/qualification/v1-web-embedded.json
+          mkdir -p .work/evidence/m3-a2/qualification
+          cp \
+            build/m3-a2/evidence/qualification/v1-web-embedded.json \
+            .work/evidence/m3-a2/qualification/v1-copyrightx-r1.json
           python3 scripts/measurement/m3_matrix.py aggregate \
             --registry .work/m3-a2/case-registry-v1.json \
             --input-dir build/m3-a2/evidence/probes \
