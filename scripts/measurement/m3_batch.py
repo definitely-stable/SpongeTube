@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import pathlib
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -43,6 +45,8 @@ class M3BatchError(RuntimeError):
 
 ProbeRunner = Callable[..., dict[str, Any]]
 
+_SOURCE_PROVIDER_ID = re.compile(r"""(?P<quote>['"])(?P<id>[0-9A-Za-z_-]{11})(?P=quote)""")
+
 
 @dataclass(frozen=True)
 class BatchInputs:
@@ -68,6 +72,47 @@ class BatchInputs:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise M3BatchError(message)
+
+
+def derive_case_inputs_from_source(
+    registry: Mapping[str, Any],
+    source_text: str,
+) -> dict[str, str]:
+    candidates = {match.group("id") for match in _SOURCE_PROVIDER_ID.finditer(source_text)}
+    _require(candidates, "pinned source contains no provider-ID candidates")
+
+    by_digest: dict[str, list[str]] = {}
+    for candidate in candidates:
+        digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+        by_digest.setdefault(digest, []).append(candidate)
+
+    result: dict[str, str] = {}
+    for case in registry["cases"]:
+        case_class = str(case["caseClass"])
+        digest = str(case["providerContentIdSha256"])
+        matches = sorted(set(by_digest.get(digest, [])))
+        _require(
+            len(matches) == 1,
+            f"{case_class}: pinned source must contain exactly one provider ID matching frozen fingerprint",
+        )
+        result[case_class] = matches[0]
+
+    _require(set(result) == {"V0", "V1", "V2"}, "source derivation must resolve exactly V0/V1/V2")
+    return result
+
+
+def _scan_bundle_for_raw_ids(output_dir: pathlib.Path, inputs: BatchInputs) -> None:
+    forbidden = (
+        inputs.v0_video_id,
+        inputs.v1_video_id,
+        inputs.v2_video_id,
+    )
+    for path in output_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for raw_id in forbidden:
+            _require(raw_id not in text, f"raw provider ID leaked into retained evidence file {path}")
 
 
 def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
@@ -253,6 +298,7 @@ def execute_batch(
         _write_json(summary_path, summary)
         if staging_root.exists():
             shutil.rmtree(staging_root)
+        _scan_bundle_for_raw_ids(output_dir, inputs)
         raise M3BatchError(
             "V1/WEB_EMBEDDED qualification did not establish SPLIT_AV or MULTIPLE; "
             "remaining matrix cells were not executed"
@@ -337,6 +383,7 @@ def execute_batch(
     _write_json(summary_path, summary)
     if staging_root.exists():
         shutil.rmtree(staging_root)
+    _scan_bundle_for_raw_ids(output_dir, inputs)
     return summary
 
 
@@ -353,9 +400,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", required=True)
     parser.add_argument("--plan", required=True)
-    parser.add_argument("--v0-video-id", required=True)
-    parser.add_argument("--v1-video-id", required=True)
-    parser.add_argument("--v2-video-id", required=True)
+    parser.add_argument("--v0-video-id")
+    parser.add_argument("--v1-video-id")
+    parser.add_argument("--v2-video-id")
+    parser.add_argument(
+        "--source-file",
+        help="Pinned yt-dlp source file used to derive V0/V1/V2 raw IDs from frozen SHA-256 fingerprints",
+    )
     parser.add_argument("--git-commit", required=True)
     parser.add_argument("--runner-image", required=True)
     parser.add_argument("--media-probe-mode", default="range-set", choices=("range-set",))
@@ -368,13 +419,38 @@ def main() -> int:
     try:
         registry = load_registry(pathlib.Path(args.registry))
         plan = _load_plan(pathlib.Path(args.plan))
+
+        explicit_ids = (args.v0_video_id, args.v1_video_id, args.v2_video_id)
+        if args.source_file:
+            _require(
+                not any(explicit_ids),
+                "--source-file cannot be combined with explicit provider IDs",
+            )
+            source_path = pathlib.Path(args.source_file)
+            try:
+                source_text = source_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise M3BatchError(f"{source_path}: cannot read pinned source: {exc}") from exc
+            derived = derive_case_inputs_from_source(registry, source_text)
+            v0_video_id = derived["V0"]
+            v1_video_id = derived["V1"]
+            v2_video_id = derived["V2"]
+        else:
+            _require(
+                all(explicit_ids),
+                "provide --source-file or all three explicit provider IDs",
+            )
+            v0_video_id = str(args.v0_video_id)
+            v1_video_id = str(args.v1_video_id)
+            v2_video_id = str(args.v2_video_id)
+
         summary = execute_batch(
             registry=registry,
             plan=plan,
             inputs=BatchInputs(
-                v0_video_id=args.v0_video_id,
-                v1_video_id=args.v1_video_id,
-                v2_video_id=args.v2_video_id,
+                v0_video_id=v0_video_id,
+                v1_video_id=v1_video_id,
+                v2_video_id=v2_video_id,
                 git_commit=args.git_commit,
                 runner_image=args.runner_image,
                 media_probe_mode=args.media_probe_mode,

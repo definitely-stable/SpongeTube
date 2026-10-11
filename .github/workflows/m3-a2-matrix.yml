@@ -2,19 +2,11 @@ name: M3-A2 Canonical Matrix
 
 on:
   workflow_dispatch:
-    inputs:
-      v0_video_id:
-        description: Raw public provider ID for frozen V0 fingerprint
-        required: true
-        type: string
-      v1_video_id:
-        description: Raw public provider ID for frozen V1 fingerprint
-        required: true
-        type: string
-      v2_video_id:
-        description: Raw public provider ID for frozen V2 fingerprint
-        required: true
-        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - .work/m3-a2/canonical-run-v1.trigger
 
 permissions:
   contents: read
@@ -28,13 +20,9 @@ jobs:
     name: canonical bounded matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    env:
-      M3_V0_VIDEO_ID: ${{ inputs.v0_video_id }}
-      M3_V1_VIDEO_ID: ${{ inputs.v1_video_id }}
-      M3_V2_VIDEO_ID: ${{ inputs.v2_video_id }}
 
     steps:
-      - name: Checkout exact dispatch revision
+      - name: Checkout exact trigger revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -48,6 +36,37 @@ jobs:
           python3 scripts/measurement/m3_matrix.py validate-plan \
             --registry .work/m3-a2/case-registry-v1.json \
             --plan .work/m3-a2/matrix-plan-v1.json
+
+      - name: Fetch pinned case-selection source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/m3-a2/source
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import urllib.request
+
+          registry = json.loads(
+              pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text(encoding="utf-8")
+          )
+          selections = [case["selectionEvidence"] for case in registry["cases"]]
+          repositories = {item["sourceRepository"] for item in selections}
+          revisions = {item["sourceRevision"] for item in selections}
+          paths = {item["sourcePath"] for item in selections}
+          if repositories != {"yt-dlp/yt-dlp"} or len(revisions) != 1 or len(paths) != 1:
+              raise SystemExit("M3-A2 source provenance is not singular and pinned")
+          revision = next(iter(revisions))
+          source_path = next(iter(paths))
+          url = f"https://raw.githubusercontent.com/yt-dlp/yt-dlp/{revision}/{source_path}"
+          target = pathlib.Path("build/m3-a2/source/_video.py")
+          with urllib.request.urlopen(url, timeout=30) as response:
+              payload = response.read()
+          if not payload:
+              raise SystemExit("Pinned yt-dlp source fetch returned empty content")
+          target.write_bytes(payload)
+          print("Pinned M3-A2 case-selection source fetched")
+          PY
 
       - name: Create isolated reference-oracle environment
         shell: bash
@@ -68,9 +87,7 @@ jobs:
           build/m3-a2/venv/bin/python scripts/measurement/m3_batch.py \
             --registry .work/m3-a2/case-registry-v1.json \
             --plan .work/m3-a2/matrix-plan-v1.json \
-            --v0-video-id "$M3_V0_VIDEO_ID" \
-            --v1-video-id "$M3_V1_VIDEO_ID" \
-            --v2-video-id "$M3_V2_VIDEO_ID" \
+            --source-file build/m3-a2/source/_video.py \
             --git-commit "$GITHUB_SHA" \
             --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
             --media-probe-mode range-set \
@@ -97,36 +114,12 @@ jobs:
             build/m3-a2/evidence/aggregate/matrix-v1.json \
             build/m3-a2/recheck/matrix-v1.json
 
-      - name: Scan evidence bundle for raw provider IDs
+      - name: Remove ephemeral pinned source
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test -d build/m3-a2/evidence || exit 0
-          python3 - <<'PY'
-          import pathlib
-          import sys
-
-          root = pathlib.Path("build/m3-a2/evidence")
-          forbidden = [
-              value
-              for value in (
-                  __import__("os").environ.get("M3_V0_VIDEO_ID"),
-                  __import__("os").environ.get("M3_V1_VIDEO_ID"),
-                  __import__("os").environ.get("M3_V2_VIDEO_ID"),
-              )
-              if value
-          ]
-          for path in root.rglob("*"):
-              if not path.is_file():
-                  continue
-              text = path.read_text(encoding="utf-8")
-              for raw_id in forbidden:
-                  if raw_id in text:
-                      print(f"raw provider ID leaked into {path}", file=sys.stderr)
-                      raise SystemExit(2)
-          print("M3-A2 raw-ID bundle scan passed")
-          PY
+          rm -rf build/m3-a2/source
 
       - name: Upload redacted canonical evidence bundle
         if: always()
