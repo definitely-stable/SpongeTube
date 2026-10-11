@@ -1,8 +1,8 @@
 {
   "planVersion": 1,
-  "planId": "m3-a2-cases-2026-10-11-r1:plan-v1",
-  "registryId": "m3-a2-cases-2026-10-11-r1",
-  "registryDigestSha256": "df42ebb42d03cffae88cfc34aa8db3f536b5bfc9004e39427568d93026018c5e",
+  "planId": "m3-a2-cases-2026-10-11-r2:plan-v1",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "registryDigestSha256": "3569211841f63fb20e7885349b792067fafe9987131f15c8c91a38d48361e0e4",
   "primaryLanes": [
     "WEB_EMBEDDED",
     "TV",
@@ -72,8 +72,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "lane": "WEB_EMBEDDED",
       "profileId": "yt-dlp:web_embedded",
       "purpose": "matrix",
@@ -81,8 +81,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "lane": "TV",
       "profileId": "yt-dlp:tv",
       "purpose": "matrix",
@@ -90,8 +90,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "lane": "ANDROID_VR",
       "profileId": "yt-dlp:android_vr",
       "purpose": "matrix",
@@ -99,8 +99,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "lane": "MWEB",
       "profileId": "yt-dlp:mweb",
       "purpose": "matrix",
@@ -108,8 +108,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "lane": "WEB",
       "profileId": "yt-dlp:web",
       "purpose": "matrix",
@@ -117,8 +117,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "lane": "WEB_SAFARI",
       "profileId": "yt-dlp:web_safari",
       "purpose": "matrix",
@@ -181,7 +181,7 @@
   ],
   "qualificationGates": {
     "V1": {
-      "evidencePath": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json",
+      "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json",
       "lane": "WEB_EMBEDDED",
       "requiredMediaLayouts": [
         "SPLIT_AV",

@@ -161,6 +161,38 @@ class M3A1MetadataBudgetTest(unittest.TestCase):
         self.assertFalse(result.extraction_completed)
 
 
+    def test_extraction_exception_is_reduced_to_provider_signal(self):
+        class FakeYoutubeDL:
+            def __init__(self, params):
+                self.params = params
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def extract_info(self, url, download=False):
+                raise RuntimeError("HTTP Error 403: Forbidden for signed provider URL")
+
+        fake_module = types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)
+        with mock.patch.object(
+            m3_probe,
+            "_load_yt_dlp",
+            return_value=(
+                fake_module,
+                m3_probe.EXPECTED_YTDLP_VERSION,
+                YTDLP_REVISION,
+            ),
+        ):
+            result = _extract_with_yt_dlp("public-id", "WEB_EMBEDDED")
+
+        self.assertFalse(result.extraction_completed)
+        self.assertTrue(result.signals.saw_rejection)
+        summary = _summary_from_extraction(result, [])
+        self.assertEqual("PRESENT", summary.provider_signals["rejection"])
+        self.assertEqual("PROVIDER_REJECTED", summary.outcome["classification"])
+
     def test_metadata_http_failure_is_reduced_without_retaining_response(self):
         class FakeResponse:
             headers = {"Retry-After": "7"}

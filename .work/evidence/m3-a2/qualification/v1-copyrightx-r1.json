@@ -1,0 +1,91 @@
+{
+  "budget": {
+    "mediaProbeByteLimit": 1048576,
+    "mediaProbes": [],
+    "metadataRequestLimit": 32,
+    "metadataRequestsUsed": 4
+  },
+  "capabilities": {
+    "dash": "UNKNOWN",
+    "drm": "UNKNOWN",
+    "hls": "UNKNOWN",
+    "https": "UNKNOWN",
+    "sabr": "UNKNOWN"
+  },
+  "client": {
+    "lane": "WEB_EMBEDDED",
+    "profileId": "yt-dlp:web_embedded",
+    "profileVersion": "2026.08.19"
+  },
+  "createdAtUtc": "2026-10-11T15:44:44Z",
+  "delivery": {
+    "continuation": "UNKNOWN",
+    "descriptorExpiry": "UNKNOWN",
+    "descriptorLifetimeSeconds": null,
+    "descriptorRefresh": "UNKNOWN",
+    "mediaLayout": "UNKNOWN",
+    "range": "UNKNOWN",
+    "seek": "UNKNOWN",
+    "startup": "UNKNOWN",
+    "sustainedPlayback": "UNKNOWN"
+  },
+  "environment": {
+    "arch": "x86_64",
+    "networkClass": "PUBLIC_EGRESS_REDACTED",
+    "os": "linux",
+    "runnerImage": "ubuntu24@20261004.327.1",
+    "runnerKind": "GITHUB_HOSTED"
+  },
+  "gitCommit": "69adf8ee1035d3cef61b0a311dcd393c6ac2b7ae",
+  "guardrails": {
+    "accountCredentialsUsed": false,
+    "antiBotBypassImplemented": false,
+    "fullDownloadAttempted": false,
+    "ipRotationOrProxyEvasionUsed": false,
+    "requestRateCamouflageUsed": false
+  },
+  "limitations": [
+    "Live-provider compatibility observation; not a deterministic acceptance or performance result.",
+    "No account credentials, PO-token provider, remote component or JavaScript runtime was configured.",
+    "Capability absence remains UNKNOWN unless the bounded probe directly established absence.",
+    "Descriptor expiry/refresh and sustained playback require later dedicated M3-A2 observations.",
+    "Reference-oracle metadata extraction did not complete.",
+    "No direct media probe was executed for this lane/case."
+  ],
+  "outcome": {
+    "classification": "INCONCLUSIVE",
+    "httpStatusClass": null
+  },
+  "probeId": "m3-a1:v1:web_embedded:69adf8ee1035",
+  "producer": {
+    "revision": "69adf8ee1035d3cef61b0a311dcd393c6ac2b7ae",
+    "toolId": "spongetube.m3-bounded-probe",
+    "version": "1"
+  },
+  "providerSignals": {
+    "rejection": "UNKNOWN",
+    "retryAfter": "UNKNOWN",
+    "throttling": "UNKNOWN"
+  },
+  "references": [
+    {
+      "id": "YT_DLP",
+      "productionDependency": false,
+      "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+      "role": "REFERENCE_ORACLE",
+      "version": "2026.08.19"
+    }
+  ],
+  "requirements": {
+    "challengeRuntime": "UNKNOWN",
+    "gvsPoToken": "UNKNOWN",
+    "playerPoToken": "UNKNOWN",
+    "sessionContext": "UNKNOWN"
+  },
+  "schemaVersion": 1,
+  "videoCase": {
+    "caseClass": "V1",
+    "caseRevision": "v1-copyrightx-r1",
+    "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8"
+  }
+}

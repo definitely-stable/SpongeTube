@@ -391,10 +391,11 @@ def _extract_with_yt_dlp(video_id: str, lane: str) -> ExtractionResult:
             if isinstance(extracted, Mapping):
                 info = extracted
                 completed = True
-    except Exception:
-        # Never persist or print the exception: provider IDs, signed URLs or
-        # request details may be embedded in diagnostic strings.
-        pass
+    except Exception as exc:
+        # Reduce the exception to typed booleans before discarding it. Never
+        # persist or print the exception: provider IDs, signed URLs or request
+        # details may be embedded in diagnostic strings.
+        logger._observe(exc)
 
     return ExtractionResult(
         info=info,

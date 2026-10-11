@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "status": "QUALIFICATION_NOT_MET",
+  "gitCommit": "69adf8ee1035d3cef61b0a311dcd393c6ac2b7ae",
+  "workflowRunId": 38152263390,
+  "workflowArtifactId": 11707212208,
+  "workflowArtifactDigest": "sha256:1422353c9985d1629c920dfb13ff72168ce51b425db56cad8967a40af010ba91",
+  "qualificationCell": {
+    "caseClass": "V1",
+    "lane": "WEB_EMBEDDED",
+    "mediaLayout": "UNKNOWN",
+    "outcome": "INCONCLUSIVE",
+    "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8"
+  },
+  "metadataRequestsUsed": 4,
+  "mediaProbeCount": 0,
+  "remainingCellsExecuted": 0,
+  "reason": "V1 qualification did not establish SPLIT_AV/MULTIPLE; reference-oracle metadata extraction did not complete.",
+  "nextAction": "Advance to the next deterministic pinned-source V1 fallback candidate; do not weaken qualification."
+}

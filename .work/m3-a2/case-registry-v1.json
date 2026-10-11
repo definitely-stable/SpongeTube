@@ -1,7 +1,7 @@
 {
   "registryVersion": 1,
-  "registryId": "m3-a2-cases-2026-10-11-r1",
-  "frozenAtGitCommit": "a9a88194e417cd69bc181f8b9fd24f66738d699e",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "frozenAtGitCommit": "69adf8ee1035d3cef61b0a311dcd393c6ac2b7ae",
   "producer": {
     "toolId": "spongetube.m3-bounded-probe",
     "version": "1",
@@ -48,8 +48,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-copyrightx-r1",
-      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "role": "PUBLIC_ANONYMOUS_LONG_FORM_SPLIT_AV_REFERENCE",
       "selectionEvidence": {
         "sourceRepository": "yt-dlp/yt-dlp",
@@ -58,7 +58,7 @@
         "facts": [
           "availability=public",
           "playable_in_embed=true",
-          "duration_seconds=721",
+          "duration_seconds=4060",
           "age_limit=0"
         ]
       },
@@ -68,7 +68,7 @@
           "SPLIT_AV",
           "MULTIPLE"
         ],
-        "evidencePath": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json"
+        "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json"
       }
     },
     {
