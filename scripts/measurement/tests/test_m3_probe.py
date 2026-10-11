@@ -268,6 +268,15 @@ class M3A1ClassificationTest(unittest.TestCase):
         self.assertEqual("NOT_REQUIRED", summary.requirements["gvsPoToken"])
         self.assertEqual("VIABLE_ANONYMOUS", summary.outcome["classification"])
 
+    def test_non_startup_success_cannot_manufacture_viability(self):
+        ext = extraction([direct_muxed(), direct_video()])
+        video = successful_media("VIDEO", "p1")
+        summary = _summary_from_extraction(ext, [video])
+
+        self.assertEqual("UNKNOWN", summary.delivery["startup"])
+        self.assertEqual("UNKNOWN", summary.requirements["gvsPoToken"])
+        self.assertEqual("INCONCLUSIVE", summary.outcome["classification"])
+
     def test_sibling_rejection_does_not_erase_working_anonymous_path(self):
         ext = extraction([direct_muxed(), direct_video()])
         good = successful_media("STARTUP", "p0")
