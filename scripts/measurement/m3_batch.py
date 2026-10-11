@@ -22,6 +22,7 @@ from typing import Any, Callable, Mapping, Sequence
 from m3_contracts import validate_probe_document
 from m3_matrix import (
     M3MatrixError,
+    V1_QUALIFICATION_LANE,
     aggregate_probes,
     load_registry,
     validate_case_input,
@@ -33,7 +34,7 @@ from m3_probe import ProbeRuntimeError, run_live_probe
 
 
 QUALIFICATION_CASE = "V1"
-QUALIFICATION_LANE = "WEB_EMBEDDED"
+QUALIFICATION_LANE = V1_QUALIFICATION_LANE
 
 
 class M3BatchError(RuntimeError):
@@ -143,6 +144,14 @@ def _run_cell(
         media_probe_mode=inputs.media_probe_mode,
     )
     validate_probe_against_registry(artifact, registry)
+    _require(
+        artifact["gitCommit"] == inputs.git_commit,
+        f"{case_class}/{lane}: artifact gitCommit drift",
+    )
+    _require(
+        artifact["environment"]["runnerImage"] == inputs.runner_image,
+        f"{case_class}/{lane}: runner image drift",
+    )
     _require(
         artifact["videoCase"]["providerContentIdSha256"]
         == cell["providerContentIdSha256"],
