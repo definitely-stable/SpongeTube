@@ -1,5 +1,32 @@
 # Measurement and evidence kernels
 
+## M3-A bounded live-provider producer
+
+`m3_probe.py` is the M3-A1 laboratory producer. It imports the pinned yt-dlp
+reference only in the manual GitHub-hosted probe workflow, enforces the frozen
+32-request metadata budget at `YoutubeDL.urlopen`, reduces extractor output to
+typed observations in memory, performs optional bounded Range probes, and
+validates the final redacted artifact before writing it.
+
+The deterministic test suite `tests/test_m3_probe.py` uses fake oracle/media
+surfaces and never contacts a provider. Live execution is intentionally
+`workflow_dispatch` only:
+
+```bash
+python3 scripts/measurement/m3_probe.py live \
+  --video-id "<public-id>" \
+  --case-class V0 \
+  --case-revision "<revision>" \
+  --lane WEB_EMBEDDED \
+  --git-commit "<40-char-sha>" \
+  --media-probe-mode range-set \
+  --output build/m3-a1/m3-a-probe-v1.json
+```
+
+The raw provider ID, reference diagnostics and media URLs are inputs/in-memory
+material only; the portable artifact retains the provider-ID SHA-256 and typed
+observations.
+
 ## M3-A feasibility contract validator
 
 `m3_contracts.py` is the fail-closed host validator for the M3-A research
