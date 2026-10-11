@@ -53,6 +53,11 @@
     "challengeRuntime": "UNKNOWN",
     "sessionContext": "UNKNOWN"
   },
+  "providerSignals": {
+    "rejection": "UNKNOWN",
+    "throttling": "UNKNOWN",
+    "retryAfter": "UNKNOWN"
+  },
   "delivery": {
     "mediaLayout": "UNKNOWN",
     "range": "UNKNOWN",
@@ -60,7 +65,9 @@
     "descriptorExpiry": "UNKNOWN",
     "startup": "UNKNOWN",
     "seek": "UNKNOWN",
-    "sustainedPlayback": "UNKNOWN"
+    "sustainedPlayback": "UNKNOWN",
+    "descriptorLifetimeSeconds": null,
+    "descriptorRefresh": "UNKNOWN"
   },
   "outcome": {
     "classification": "INCONCLUSIVE",
