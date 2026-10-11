@@ -1,0 +1,138 @@
+name: M3-A2 Canonical Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      v0_video_id:
+        description: Raw public provider ID for frozen V0 fingerprint
+        required: true
+        type: string
+      v1_video_id:
+        description: Raw public provider ID for frozen V1 fingerprint
+        required: true
+        type: string
+      v2_video_id:
+        description: Raw public provider ID for frozen V2 fingerprint
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-a2-canonical-matrix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    name: canonical bounded matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      M3_V0_VIDEO_ID: ${{ inputs.v0_video_id }}
+      M3_V1_VIDEO_ID: ${{ inputs.v1_video_id }}
+      M3_V2_VIDEO_ID: ${{ inputs.v2_video_id }}
+
+    steps:
+      - name: Checkout exact dispatch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate frozen registry and plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_matrix.py validate-registry \
+            --registry .work/m3-a2/case-registry-v1.json
+          python3 scripts/measurement/m3_matrix.py validate-plan \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --plan .work/m3-a2/matrix-plan-v1.json
+
+      - name: Create isolated reference-oracle environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-a2/venv
+          build/m3-a2/venv/bin/python -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            "yt-dlp==2026.8.19"
+          test "$(build/m3-a2/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.08.19"
+          test "$(build/m3-a2/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+
+      - name: Execute qualification-first canonical batch
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/m3-a2/venv/bin/python scripts/measurement/m3_batch.py \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --plan .work/m3-a2/matrix-plan-v1.json \
+            --v0-video-id "$M3_V0_VIDEO_ID" \
+            --v1-video-id "$M3_V1_VIDEO_ID" \
+            --v2-video-id "$M3_V2_VIDEO_ID" \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --media-probe-mode range-set \
+            --output-dir build/m3-a2/evidence
+
+      - name: Revalidate complete aggregate
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_contracts.py validate \
+            --input build/m3-a2/evidence/qualification/v1-web-embedded.json
+          mkdir -p .work/evidence/m3-a2/qualification
+          cp \
+            build/m3-a2/evidence/qualification/v1-web-embedded.json \
+            .work/evidence/m3-a2/qualification/v1-copyrightx-r1.json
+          python3 scripts/measurement/m3_matrix.py aggregate \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --input-dir build/m3-a2/evidence/probes \
+            --output build/m3-a2/recheck/matrix-v1.json \
+            --markdown build/m3-a2/recheck/matrix-v1.md \
+            --require-complete
+          cmp \
+            build/m3-a2/evidence/aggregate/matrix-v1.json \
+            build/m3-a2/recheck/matrix-v1.json
+
+      - name: Scan evidence bundle for raw provider IDs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build/m3-a2/evidence || exit 0
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          root = pathlib.Path("build/m3-a2/evidence")
+          forbidden = [
+              value
+              for value in (
+                  __import__("os").environ.get("M3_V0_VIDEO_ID"),
+                  __import__("os").environ.get("M3_V1_VIDEO_ID"),
+                  __import__("os").environ.get("M3_V2_VIDEO_ID"),
+              )
+              if value
+          ]
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              text = path.read_text(encoding="utf-8")
+              for raw_id in forbidden:
+                  if raw_id in text:
+                      print(f"raw provider ID leaked into {path}", file=sys.stderr)
+                      raise SystemExit(2)
+          print("M3-A2 raw-ID bundle scan passed")
+          PY
+
+      - name: Upload redacted canonical evidence bundle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m3-a2-canonical-matrix
+          path: build/m3-a2/evidence/
+          if-no-files-found: warn
+          retention-days: 30

@@ -49,6 +49,35 @@ python3 scripts/measurement/m3_matrix.py aggregate \
 The report deliberately leaves `globalDecision=NOT_MADE_M3_A2`; architecture
 selection belongs to M3-A3.
 
+## M3-A2 one-run canonical matrix
+
+`m3_batch.py` is the canonical collection driver for the frozen M3-A2 plan.
+It is designed for `.github/workflows/m3-a2-matrix.yml`, which is manual
+`workflow_dispatch` only.
+
+One run:
+
+- verifies V0/V1/V2 raw inputs against predeclared SHA-256 fingerprints before
+  provider access;
+- uses one exact git commit, one GitHub-hosted runner and one pinned yt-dlp
+  installation;
+- runs the predeclared V1/WEB_EMBEDDED qualification first;
+- requires SPLIT_AV/MULTIPLE plus observed HTTPS and successful bounded VIDEO
+  and AUDIO reads;
+- reuses that same artifact as its matrix cell;
+- executes only the remaining 17 cells after qualification succeeds;
+- aggregates exactly 18 unique cells;
+- emits no M3-A3 architecture decision.
+
+The batch output is a redacted portable bundle under
+`build/m3-a2/evidence/`. If V1 qualification fails, the workflow stops after
+one provider probe and retains the qualification artifact plus
+`batch-summary-v1.json`; it does not spend requests on an experiment that can
+no longer satisfy the frozen plan.
+
+Normal repository `Verify` runs deterministic `test_m3_batch.py` with a fake
+provider runner. It never installs yt-dlp or contacts YouTube.
+
 ## M3-A bounded live-provider producer
 
 `m3_probe.py` is the M3-A1 laboratory producer. It imports the pinned yt-dlp
