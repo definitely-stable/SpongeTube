@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "probeId": "m3-a0-contract-example",
+  "createdAtUtc": "2026-10-11T10:00:00Z",
+  "gitCommit": "e6d1b82dd5c8dcee6923ac09539039e60c856487",
+  "producer": {
+    "toolId": "spongetube.m3-probe",
+    "version": "contract-example",
+    "revision": "m3-a0"
+  },
+  "client": {
+    "lane": "WEB_EMBEDDED",
+    "profileId": "example-profile",
+    "profileVersion": "contract-example"
+  },
+  "videoCase": {
+    "caseClass": "V0",
+    "caseRevision": "contract-example-v1",
+    "providerContentIdSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "environment": {
+    "runnerKind": "GITHUB_HOSTED",
+    "runnerImage": "ubuntu-24.04",
+    "os": "linux",
+    "arch": "x86_64",
+    "networkClass": "PUBLIC_EGRESS_REDACTED"
+  },
+  "references": [
+    {
+      "id": "YT_DLP",
+      "version": "pinned-by-producer",
+      "revision": "example-reference-revision",
+      "role": "REFERENCE_ORACLE",
+      "productionDependency": false
+    }
+  ],
+  "budget": {
+    "metadataRequestLimit": 32,
+    "metadataRequestsUsed": 0,
+    "mediaProbeByteLimit": 1048576,
+    "mediaProbes": []
+  },
+  "capabilities": {
+    "https": "UNKNOWN",
+    "dash": "UNKNOWN",
+    "hls": "UNKNOWN",
+    "sabr": "UNKNOWN",
+    "drm": "UNKNOWN"
+  },
+  "requirements": {
+    "gvsPoToken": "UNKNOWN",
+    "playerPoToken": "UNKNOWN",
+    "challengeRuntime": "UNKNOWN",
+    "sessionContext": "UNKNOWN"
+  },
+  "delivery": {
+    "mediaLayout": "UNKNOWN",
+    "range": "UNKNOWN",
+    "continuation": "UNKNOWN",
+    "descriptorExpiry": "UNKNOWN",
+    "startup": "UNKNOWN",
+    "seek": "UNKNOWN",
+    "sustainedPlayback": "UNKNOWN"
+  },
+  "outcome": {
+    "classification": "INCONCLUSIVE",
+    "httpStatusClass": null
+  },
+  "guardrails": {
+    "accountCredentialsUsed": false,
+    "ipRotationOrProxyEvasionUsed": false,
+    "antiBotBypassImplemented": false,
+    "requestRateCamouflageUsed": false,
+    "fullDownloadAttempted": false
+  },
+  "limitations": [
+    "Contract example only; contains no live-provider observation."
+  ]
+}
