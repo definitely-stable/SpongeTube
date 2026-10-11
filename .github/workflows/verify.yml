@@ -62,6 +62,7 @@ jobs:
           test -s gradle/verification-metadata.xml
           test -n "$(grep '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties | cut -d= -f2)"
           python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py' -v
+          python3 scripts/measurement/m3_contracts.py validate --input .work/schemas/examples/m3/m3-a-probe-v1.example.json
 
       - name: Verify build and configuration cache
         shell: bash
