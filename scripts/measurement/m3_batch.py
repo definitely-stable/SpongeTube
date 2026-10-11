@@ -237,6 +237,8 @@ def execute_batch(
             "reason": str(exc),
         }
         _write_json(output_dir / "batch-summary-v1.json", summary)
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
         raise M3BatchError(
             "V1/WEB_EMBEDDED qualification did not establish SPLIT_AV or MULTIPLE; "
             "remaining matrix cells were not executed"
@@ -319,6 +321,8 @@ def execute_batch(
         "globalDecision": report["globalDecision"],
     }
     _write_json(output_dir / "batch-summary-v1.json", summary)
+    if staging_root.exists():
+        shutil.rmtree(staging_root)
     return summary
 
 
