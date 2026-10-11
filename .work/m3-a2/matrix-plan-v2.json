@@ -1,0 +1,205 @@
+{
+  "planVersion": 2,
+  "planId": "m3-a2-cases-2026-10-11-r2:plan-v2",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "registryDigestSha256": "3569211841f63fb20e7885349b792067fafe9987131f15c8c91a38d48361e0e4",
+  "primaryLanes": [
+    "WEB_EMBEDDED",
+    "TV",
+    "ANDROID_VR",
+    "MWEB",
+    "WEB",
+    "WEB_SAFARI"
+  ],
+  "deferredLanes": [
+    "ANDROID",
+    "IOS"
+  ],
+  "cells": [
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "WEB_EMBEDDED",
+      "profileId": "yt-dlp:web_embedded",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "TV",
+      "profileId": "yt-dlp:tv",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "ANDROID_VR",
+      "profileId": "yt-dlp:android_vr",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "MWEB",
+      "profileId": "yt-dlp:mweb",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "WEB",
+      "profileId": "yt-dlp:web",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "WEB_SAFARI",
+      "profileId": "yt-dlp:web_safari",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "lane": "WEB_EMBEDDED",
+      "profileId": "yt-dlp:web_embedded",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "lane": "TV",
+      "profileId": "yt-dlp:tv",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "lane": "ANDROID_VR",
+      "profileId": "yt-dlp:android_vr",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "lane": "MWEB",
+      "profileId": "yt-dlp:mweb",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "lane": "WEB",
+      "profileId": "yt-dlp:web",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-cc-longform-r2",
+      "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
+      "lane": "WEB_SAFARI",
+      "profileId": "yt-dlp:web_safari",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "WEB_EMBEDDED",
+      "profileId": "yt-dlp:web_embedded",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "TV",
+      "profileId": "yt-dlp:tv",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "ANDROID_VR",
+      "profileId": "yt-dlp:android_vr",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "MWEB",
+      "profileId": "yt-dlp:mweb",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "WEB",
+      "profileId": "yt-dlp:web",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "WEB_SAFARI",
+      "profileId": "yt-dlp:web_safari",
+      "purpose": "matrix",
+      "mediaProbeMode": "range-set"
+    }
+  ],
+  "qualificationGates": {
+    "V1": {
+      "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json",
+      "orderedLanes": [
+        "WEB_EMBEDDED",
+        "TV",
+        "ANDROID_VR",
+        "MWEB",
+        "WEB",
+        "WEB_SAFARI"
+      ],
+      "requiredMediaLayouts": [
+        "SPLIT_AV",
+        "MULTIPLE"
+      ],
+      "requiredSuccessfulProbePurposes": [
+        "VIDEO",
+        "AUDIO"
+      ],
+      "requireHttps": true,
+      "reuseQualificationAttemptsAsMatrixCells": true
+    }
+  }
+}
