@@ -92,5 +92,15 @@
         "requiredMediaLayouts": []
       }
     }
-  ]
+  ],
+  "laneProfiles": {
+    "WEB_EMBEDDED": "yt-dlp:web_embedded",
+    "TV": "yt-dlp:tv",
+    "ANDROID_VR": "yt-dlp:android_vr",
+    "MWEB": "yt-dlp:mweb",
+    "WEB": "yt-dlp:web",
+    "WEB_SAFARI": "yt-dlp:web_safari",
+    "ANDROID": "yt-dlp:android",
+    "IOS": "yt-dlp:ios"
+  }
 }
