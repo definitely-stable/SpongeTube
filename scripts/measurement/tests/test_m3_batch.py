@@ -13,7 +13,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import m3_batch
 import m3_matrix
-from m3_batch import BatchInputs, M3BatchError, execute_batch
+from m3_batch import BatchInputs, M3BatchError, derive_case_inputs_from_source, execute_batch
 from m3_matrix import M3MatrixError, build_plan, validate_registry
 
 
@@ -154,6 +154,47 @@ def inputs():
         git_commit=GIT_SHA,
         runner_image=RUNNER_IMAGE,
     )
+
+
+class M3A2SourceDerivationTest(unittest.TestCase):
+    def test_derives_exact_case_ids_from_pinned_source_text(self):
+        reg = synthetic_registry()
+        source = "\n".join(
+            f"{{'id': '{RAW_IDS[case_class]}'}}"
+            for case_class in ("V0", "V1", "V2")
+        )
+        derived = derive_case_inputs_from_source(reg, source)
+        self.assertEqual(RAW_IDS, derived)
+
+    def test_duplicate_occurrences_of_same_id_are_deduplicated(self):
+        reg = synthetic_registry()
+        source = (
+            f"'id': '{RAW_IDS['V0']}'\n"
+            f"'again': '{RAW_IDS['V0']}'\n"
+            f"'id': '{RAW_IDS['V1']}'\n"
+            f"'id': '{RAW_IDS['V2']}'\n"
+        )
+        derived = derive_case_inputs_from_source(reg, source)
+        self.assertEqual(RAW_IDS, derived)
+
+    def test_missing_fingerprint_match_fails_closed(self):
+        reg = synthetic_registry()
+        source = (
+            f"'id': '{RAW_IDS['V0']}'\n"
+            f"'id': '{RAW_IDS['V2']}'\n"
+        )
+        with self.assertRaises(M3BatchError):
+            derive_case_inputs_from_source(reg, source)
+
+    def test_non_provider_like_strings_do_not_match(self):
+        reg = synthetic_registry()
+        source = (
+            f"'id': '{RAW_IDS['V0']}'\n"
+            f"'text': '{RAW_IDS['V1']}extra'\n"
+            f"'id': '{RAW_IDS['V2']}'\n"
+        )
+        with self.assertRaises(M3BatchError):
+            derive_case_inputs_from_source(reg, source)
 
 
 class M3A2BatchExecutionTest(unittest.TestCase):
