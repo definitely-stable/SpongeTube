@@ -22,9 +22,9 @@ EXAMPLE_PATH = REPO_ROOT / ".work" / "schemas" / "examples" / "m3" / "m3-a-probe
 GIT_SHA = "c" * 40
 RUNNER_IMAGE = "ubuntu24@20261001.1"
 RAW_IDS = {
-    "V0": "synthetic-v0-id",
-    "V1": "synthetic-v1-id",
-    "V2": "synthetic-v2-id",
+    "V0": "AAAAAAAAAAA",
+    "V1": "BBBBBBBBBBB",
+    "V2": "CCCCCCCCCCC",
 }
 
 
