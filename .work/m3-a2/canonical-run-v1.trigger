@@ -1,7 +1,8 @@
 M3-A2 canonical matrix one-shot trigger.
 
-Attempt: 2
+Attempt: 3
 Active registry: m3-a2-cases-2026-10-11-r2
-Reason: V1 r1 qualification retained as QUALIFICATION_NOT_MET; advance to the next eligible pinned-source candidate in frozen source order.
+Active plan: m3-a2-cases-2026-10-11-r2:plan-v2
+Reason: two distinct V1 candidates produced identical WEB_EMBEDDED extraction-incomplete results; plan v2 sweeps all already-planned primary lanes while reusing every attempt as a matrix cell.
 
 This file contains no provider IDs and carries no product/runtime semantics.
