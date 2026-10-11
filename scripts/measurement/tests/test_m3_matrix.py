@@ -80,7 +80,7 @@ def qualification_probe():
 
 
 def write_qualification(root, document=None):
-    path = root / ".work" / "evidence" / "m3-a2" / "qualification" / "v1-apollo14-r1.json"
+    path = root / ".work" / "evidence" / "m3-a2" / "qualification" / "v1-copyrightx-r1.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(document or qualification_probe()), encoding="utf-8")
     return path
