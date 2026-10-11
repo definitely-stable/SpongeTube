@@ -510,24 +510,25 @@ def _summary_from_extraction(
         "sustainedPlayback": "UNKNOWN",
     }
 
-    if throttling:
-        classification = "PROVIDER_RATE_LIMITED"
-    elif rejection and has_missing_pot:
-        classification = "TOKEN_GATED"
-    elif rejection:
-        classification = "PROVIDER_REJECTED"
-    elif challenge_requirement == "REQUIRED":
-        classification = "CHALLENGE_GATED"
-    elif (
+    viable_selected_path = (
         any_success
         and capabilities["https"] == "PRESENT"
         and gvs_requirement == "NOT_REQUIRED"
         and player_requirement == "NOT_REQUIRED"
         and challenge_requirement == "NOT_REQUIRED"
-    ):
+    )
+    if viable_selected_path:
+        # Sibling formats may still reject, throttle or require POT. Those facts
+        # stay in providerSignals; they do not erase an observed working path.
         classification = "VIABLE_ANONYMOUS"
+    elif throttling:
+        classification = "PROVIDER_RATE_LIMITED"
     elif has_missing_pot:
         classification = "TOKEN_GATED"
+    elif challenge_requirement == "REQUIRED":
+        classification = "CHALLENGE_GATED"
+    elif rejection:
+        classification = "PROVIDER_REJECTED"
     else:
         classification = "INCONCLUSIVE"
 
