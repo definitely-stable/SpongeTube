@@ -3,6 +3,14 @@ name: M3-A Bounded Provider Probe
 on:
   workflow_dispatch:
     inputs:
+      purpose:
+        description: Qualification probe or one planned M3-A2 matrix cell
+        required: true
+        default: matrix
+        type: choice
+        options:
+          - matrix
+          - qualification
       lane:
         description: Frozen M3-A client lane
         required: true
@@ -25,11 +33,11 @@ on:
           - V1
           - V2
       case_revision:
-        description: Versioned case revision (non-secret)
+        description: Exact case revision from .work/m3-a2/case-registry-v1.json
         required: true
         type: string
       video_id:
-        description: Public provider content ID; retained only in workflow dispatch metadata, never in portable artifact
+        description: Public provider content ID; used only for preflight/live requests, never retained in portable artifact
         required: true
         type: string
       media_probe_mode:
@@ -46,7 +54,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: m3-a-probe-${{ github.ref }}
+  group: m3-a-probe-${{ github.ref }}-${{ inputs.case_class }}-${{ inputs.lane }}
   cancel-in-progress: false
 
 jobs:
@@ -55,6 +63,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
+      M3_PURPOSE: ${{ inputs.purpose }}
       M3_LANE: ${{ inputs.lane }}
       M3_CASE_CLASS: ${{ inputs.case_class }}
       M3_CASE_REVISION: ${{ inputs.case_revision }}
@@ -67,32 +76,67 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate frozen M3-A2 case input
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_matrix.py preflight \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --case-class "$M3_CASE_CLASS" \
+            --case-revision "$M3_CASE_REVISION" \
+            --lane "$M3_LANE" \
+            --video-id "$M3_VIDEO_ID" \
+            --purpose "$M3_PURPOSE"
+
       - name: Create isolated reference-oracle environment
         shell: bash
         run: |
           set -euo pipefail
           python3 -m venv build/m3-a1/venv
-          build/m3-a1/venv/bin/python -m pip install             --disable-pip-version-check             --no-input             "yt-dlp==2026.8.19"
+          build/m3-a1/venv/bin/python -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            "yt-dlp==2026.8.19"
           test "$(build/m3-a1/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.08.19"
+          test "$(build/m3-a1/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
 
       - name: Run bounded anonymous probe
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/m3-a1/artifact
-          build/m3-a1/venv/bin/python scripts/measurement/m3_probe.py live             --video-id "$M3_VIDEO_ID"             --case-class "$M3_CASE_CLASS"             --case-revision "$M3_CASE_REVISION"             --lane "$M3_LANE"             --git-commit "$GITHUB_SHA"             --runner-image "${ImageOS:-ubuntu-24.04}"             --media-probe-mode "$M3_MEDIA_PROBE_MODE"             --output build/m3-a1/artifact/m3-a-probe-v1.json
+          build/m3-a1/venv/bin/python scripts/measurement/m3_probe.py live \
+            --video-id "$M3_VIDEO_ID" \
+            --case-class "$M3_CASE_CLASS" \
+            --case-revision "$M3_CASE_REVISION" \
+            --lane "$M3_LANE" \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}" \
+            --media-probe-mode "$M3_MEDIA_PROBE_MODE" \
+            --output build/m3-a1/artifact/m3-a-probe-v1.json
 
       - name: Independently validate portable artifact
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/measurement/m3_contracts.py validate             --input build/m3-a1/artifact/m3-a-probe-v1.json
+          python3 scripts/measurement/m3_contracts.py validate \
+            --input build/m3-a1/artifact/m3-a-probe-v1.json
+
+      - name: Validate qualification semantics
+        if: ${{ inputs.purpose == 'qualification' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_matrix.py validate-qualification \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --case-class "$M3_CASE_CLASS" \
+            --input build/m3-a1/artifact/m3-a-probe-v1.json
 
       - name: Upload redacted probe artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: m3-a-bounded-probe
+          name: m3-a-${{ inputs.purpose }}-${{ inputs.case_class }}-${{ inputs.lane }}
           path: build/m3-a1/artifact/
           if-no-files-found: warn
           retention-days: 14
