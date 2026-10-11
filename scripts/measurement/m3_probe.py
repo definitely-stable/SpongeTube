@@ -79,6 +79,7 @@ class OracleSignals:
     saw_js_runtime_requirement: bool = False
     saw_rejection: bool = False
     saw_throttling: bool = False
+    saw_retry_after: bool = False
 
 
 class _SignalLogger:
@@ -342,7 +343,24 @@ def _extract_with_yt_dlp(video_id: str, lane: str) -> ExtractionResult:
                     f"metadata request budget {MAX_METADATA_REQUESTS} exhausted"
                 )
             state["count"] += 1
-            return super().urlopen(req)
+            try:
+                return super().urlopen(req)
+            except Exception as exc:
+                # Reduce HTTP failures to typed booleans at the network
+                # boundary; never retain response URLs or raw headers.
+                status = getattr(exc, "status", None)
+                response = getattr(exc, "response", None)
+                headers = getattr(response, "headers", None)
+                if status == 403:
+                    signals.saw_rejection = True
+                elif status == 429:
+                    signals.saw_throttling = True
+                if headers is not None:
+                    try:
+                        signals.saw_retry_after = bool(headers.get("Retry-After"))
+                    except Exception:
+                        pass
+                raise
 
     params = {
         "logger": logger,
@@ -459,7 +477,7 @@ def _summary_from_extraction(
 
     rejection = extraction.signals.saw_rejection or any(item.rejection for item in media_probes)
     throttling = extraction.signals.saw_throttling or any(item.throttling for item in media_probes)
-    retry_after = any(item.retry_after_present for item in media_probes)
+    retry_after = extraction.signals.saw_retry_after or any(item.retry_after_present for item in media_probes)
 
     # Requirement fields describe the actually selected bounded path. Other
     # formats may still be token-gated without making the successful path so.
