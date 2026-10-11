@@ -37,6 +37,8 @@ EXPECTED_PRIMARY_LANES = (
 )
 EXPECTED_DEFERRED_LANES = ("ANDROID", "IOS")
 V1_QUALIFICATION_LANE = "WEB_EMBEDDED"
+V1_QUALIFICATION_SUCCESSFUL_PURPOSES = ("VIDEO", "AUDIO")
+V1_QUALIFICATION_REQUIRE_HTTPS = True
 EXPECTED_LANE_PROFILES = {
     "WEB_EMBEDDED": "yt-dlp:web_embedded",
     "TV": "yt-dlp:tv",
@@ -314,7 +316,14 @@ def build_plan(registry: Mapping[str, Any]) -> dict[str, Any]:
         "deferredLanes": list(registry["deferredLanes"]),
         "cells": cells,
         "qualificationGates": {
-            case["caseClass"]: case["qualification"].get("evidencePath")
+            case["caseClass"]: {
+                "evidencePath": case["qualification"].get("evidencePath"),
+                "lane": V1_QUALIFICATION_LANE,
+                "requiredMediaLayouts": list(case["qualification"]["requiredMediaLayouts"]),
+                "requiredSuccessfulProbePurposes": list(V1_QUALIFICATION_SUCCESSFUL_PURPOSES),
+                "requireHttps": V1_QUALIFICATION_REQUIRE_HTTPS,
+                "reuseAsMatrixCell": True,
+            }
             for case in registry["cases"]
             if case["qualification"]["mode"] == "PROBE_EVIDENCE"
         },
@@ -454,18 +463,24 @@ def validate_qualification_document(
         document["delivery"]["mediaLayout"] in allowed_layouts,
         f"{case_class}: qualification requires mediaLayout in {sorted(allowed_layouts)}",
     )
-    _require(
-        document["capabilities"]["https"] == "PRESENT",
-        f"{case_class}: qualification requires observed HTTPS delivery",
-    )
+    if V1_QUALIFICATION_REQUIRE_HTTPS:
+        _require(
+            document["capabilities"]["https"] == "PRESENT",
+            f"{case_class}: qualification requires observed HTTPS delivery",
+        )
     successful_purposes = {
         item["purpose"]
         for item in document["budget"]["mediaProbes"]
         if isinstance(item, Mapping) and int(item.get("bytesRead") or 0) > 0
     }
+    missing_purposes = [
+        purpose
+        for purpose in V1_QUALIFICATION_SUCCESSFUL_PURPOSES
+        if purpose not in successful_purposes
+    ]
     _require(
-        "VIDEO" in successful_purposes and "AUDIO" in successful_purposes,
-        f"{case_class}: qualification requires successful bounded VIDEO and AUDIO reads",
+        not missing_purposes,
+        f"{case_class}: qualification is missing successful bounded probes {missing_purposes}",
     )
 
 
