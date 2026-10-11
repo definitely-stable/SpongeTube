@@ -1,0 +1,96 @@
+{
+  "registryVersion": 1,
+  "registryId": "m3-a2-cases-2026-10-11-r1",
+  "frozenAtGitCommit": "a9a88194e417cd69bc181f8b9fd24f66738d699e",
+  "producer": {
+    "toolId": "spongetube.m3-bounded-probe",
+    "version": "1",
+    "requireSingleGitCommit": true
+  },
+  "referenceOracle": {
+    "id": "YT_DLP",
+    "version": "2026.08.19",
+    "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+  },
+  "primaryLanes": [
+    "WEB_EMBEDDED",
+    "TV",
+    "ANDROID_VR",
+    "MWEB",
+    "WEB",
+    "WEB_SAFARI"
+  ],
+  "deferredLanes": [
+    "ANDROID",
+    "IOS"
+  ],
+  "cases": [
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "role": "PUBLIC_ANONYMOUS_EMBEDDABLE_LONG_FORM",
+      "selectionEvidence": {
+        "sourceRepository": "yt-dlp/yt-dlp",
+        "sourceRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+        "sourcePath": "yt_dlp/extractor/youtube/_video.py",
+        "facts": [
+          "availability=public",
+          "playable_in_embed=true",
+          "duration_seconds=597",
+          "age_limit=0"
+        ]
+      },
+      "qualification": {
+        "mode": "REFERENCE_FIXTURE",
+        "requiredMediaLayouts": []
+      }
+    },
+    {
+      "caseClass": "V1",
+      "caseRevision": "v1-apollo14-r1",
+      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "role": "PUBLIC_ANONYMOUS_LONG_FORM_SPLIT_AV_REFERENCE",
+      "selectionEvidence": {
+        "sourceRepository": "yt-dlp/yt-dlp",
+        "sourceRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+        "sourcePath": "yt_dlp/extractor/youtube/_video.py",
+        "facts": [
+          "availability=public",
+          "playable_in_embed=true",
+          "duration_seconds=682",
+          "age_limit=0"
+        ]
+      },
+      "qualification": {
+        "mode": "PROBE_EVIDENCE",
+        "requiredMediaLayouts": [
+          "SPLIT_AV",
+          "MULTIPLE"
+        ],
+        "evidencePath": ".work/evidence/m3-a2/qualification/v1-apollo14-r1.json"
+      }
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "role": "PUBLIC_ANONYMOUS_NON_EMBEDDABLE_NEGATIVE",
+      "selectionEvidence": {
+        "sourceRepository": "yt-dlp/yt-dlp",
+        "sourceRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+        "sourcePath": "yt_dlp/extractor/youtube/_video.py",
+        "facts": [
+          "availability=public",
+          "playable_in_embed=false",
+          "duration_seconds=210",
+          "age_limit=0"
+        ]
+      },
+      "qualification": {
+        "mode": "REFERENCE_FIXTURE",
+        "requiredMediaLayouts": []
+      }
+    }
+  ]
+}
