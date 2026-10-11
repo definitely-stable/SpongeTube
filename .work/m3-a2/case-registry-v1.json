@@ -48,8 +48,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "role": "PUBLIC_ANONYMOUS_LONG_FORM_SPLIT_AV_REFERENCE",
       "selectionEvidence": {
         "sourceRepository": "yt-dlp/yt-dlp",
@@ -58,7 +58,7 @@
         "facts": [
           "availability=public",
           "playable_in_embed=true",
-          "duration_seconds=682",
+          "duration_seconds=721",
           "age_limit=0"
         ]
       },
@@ -68,7 +68,7 @@
           "SPLIT_AV",
           "MULTIPLE"
         ],
-        "evidencePath": ".work/evidence/m3-a2/qualification/v1-apollo14-r1.json"
+        "evidencePath": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json"
       }
     },
     {
