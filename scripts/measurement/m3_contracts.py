@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 from typing import Any, Mapping
 
 from m2_contracts import M2ContractError, scan_evidence_privacy
@@ -67,6 +68,8 @@ REFERENCE_ROLES = {
     "INVIDIOUS": "COMPARISON_ONLY",
 }
 
+_ANY_URL = re.compile(r"\\b[a-zA-Z][a-zA-Z0-9+.-]*://\\S+")
+
 
 def _repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parents[2]
@@ -94,11 +97,26 @@ def _validate_schema_and_instance(
         raise M3ContractError(str(exc)) from exc
 
 
-def _scan_privacy(document: Any) -> None:
+def _scan_privacy(document: Any, path: str = "$") -> None:
     try:
         scan_evidence_privacy(document)
     except M2ContractError as exc:
         raise M3ContractError(str(exc)) from exc
+
+    def reject_urls(value: Any, value_path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                reject_urls(item, f"{value_path}.{key}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                reject_urls(item, f"{value_path}[{index}]")
+        elif isinstance(value, str):
+            _require(
+                _ANY_URL.search(value) is None,
+                f"{value_path}: URLs are not retained in portable M3-A evidence",
+            )
+
+    reject_urls(document, path)
 
 
 def _state(value: Any, field: str) -> str:
@@ -193,6 +211,7 @@ def validate_budget(budget: Any) -> None:
 def _validate_outcome_claim(document: Mapping[str, Any]) -> None:
     capabilities = document.get("capabilities") or {}
     requirements = document.get("requirements") or {}
+    provider_signals = document.get("providerSignals") or {}
     delivery = document.get("delivery") or {}
     outcome = (document.get("outcome") or {}).get("classification")
 
@@ -211,6 +230,25 @@ def _validate_outcome_claim(document: Mapping[str, Any]) -> None:
         _state(delivery.get(name), f"delivery.{name}")
     for name in ("gvsPoToken", "playerPoToken", "challengeRuntime", "sessionContext"):
         _requirement(requirements.get(name), f"requirements.{name}")
+    for name in ("rejection", "throttling", "retryAfter"):
+        _state(provider_signals.get(name), f"providerSignals.{name}")
+
+    lifetime = delivery.get("descriptorLifetimeSeconds")
+    _require(
+        lifetime is None
+        or (
+            isinstance(lifetime, int)
+            and not isinstance(lifetime, bool)
+            and lifetime >= 0
+        ),
+        "delivery.descriptorLifetimeSeconds must be null or a non-negative integer",
+    )
+    _state(delivery.get("descriptorRefresh"), "delivery.descriptorRefresh")
+    if lifetime is not None:
+        _require(
+            delivery.get("descriptorExpiry") == "PRESENT",
+            "descriptorLifetimeSeconds requires descriptorExpiry=PRESENT",
+        )
 
     layout = delivery.get("mediaLayout")
     _require(layout in MEDIA_LAYOUTS, f"delivery.mediaLayout: invalid {layout!r}")
@@ -257,6 +295,16 @@ def _validate_outcome_claim(document: Mapping[str, Any]) -> None:
         _require(
             capabilities.get("drm") == "PRESENT",
             "DRM_GATED requires drm=PRESENT",
+        )
+    elif outcome == "PROVIDER_REJECTED":
+        _require(
+            provider_signals.get("rejection") == "PRESENT",
+            "PROVIDER_REJECTED requires providerSignals.rejection=PRESENT",
+        )
+    elif outcome == "PROVIDER_RATE_LIMITED":
+        _require(
+            provider_signals.get("throttling") == "PRESENT",
+            "PROVIDER_RATE_LIMITED requires providerSignals.throttling=PRESENT",
         )
 
 
