@@ -63,6 +63,8 @@ jobs:
           test -n "$(grep '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties | cut -d= -f2)"
           python3 -m unittest discover -s scripts/measurement/tests -p 'test_*.py' -v
           python3 scripts/measurement/m3_contracts.py validate --input .work/schemas/examples/m3/m3-a-probe-v1.example.json
+          python3 scripts/measurement/m3_matrix.py validate-registry --registry .work/m3-a2/case-registry-v1.json
+          python3 scripts/measurement/m3_matrix.py validate-plan --registry .work/m3-a2/case-registry-v1.json --plan .work/m3-a2/matrix-plan-v1.json
 
       - name: Verify build and configuration cache
         shell: bash
