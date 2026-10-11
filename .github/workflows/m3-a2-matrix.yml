@@ -35,7 +35,7 @@ jobs:
             --registry .work/m3-a2/case-registry-v1.json
           python3 scripts/measurement/m3_matrix.py validate-plan \
             --registry .work/m3-a2/case-registry-v1.json \
-            --plan .work/m3-a2/matrix-plan-v1.json
+            --plan .work/m3-a2/matrix-plan-v2.json
 
       - name: Fetch pinned case-selection source
         shell: bash
@@ -86,7 +86,7 @@ jobs:
           set -euo pipefail
           build/m3-a2/venv/bin/python scripts/measurement/m3_batch.py \
             --registry .work/m3-a2/case-registry-v1.json \
-            --plan .work/m3-a2/matrix-plan-v1.json \
+            --plan .work/m3-a2/matrix-plan-v2.json \
             --source-file build/m3-a2/source/_video.py \
             --git-commit "$GITHUB_SHA" \
             --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
@@ -99,11 +99,23 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/measurement/m3_contracts.py validate \
-            --input build/m3-a2/evidence/qualification/v1-web-embedded.json
-          mkdir -p .work/evidence/m3-a2/qualification
-          cp \
-            build/m3-a2/evidence/qualification/v1-web-embedded.json \
-            .work/evidence/m3-a2/qualification/v1-copyrightx-r1.json
+            --input build/m3-a2/evidence/qualification/v1-qualified.json
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+
+          registry = json.loads(
+              pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text(encoding="utf-8")
+          )
+          v1 = next(case for case in registry["cases"] if case["caseClass"] == "V1")
+          target = pathlib.Path(v1["qualification"]["evidencePath"])
+          target.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(
+              "build/m3-a2/evidence/qualification/v1-qualified.json",
+              target,
+          )
+          PY
           python3 scripts/measurement/m3_matrix.py aggregate \
             --registry .work/m3-a2/case-registry-v1.json \
             --input-dir build/m3-a2/evidence/probes \

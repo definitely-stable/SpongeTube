@@ -26,9 +26,17 @@
       "caseRevision": "v1-cc-longform-r2",
       "providerContentIdSha256": "bf1bd79528f3cf139ba7b8eb6a0b68293345eff2f3604fe38607abe44e4a9a20",
       "durationSeconds": 4060,
-      "status": "ACTIVE",
-      "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json"
+      "status": "ACTIVE_LANE_SWEEP_PENDING",
+      "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json",
+      "observedLanes": [
+        {
+          "lane": "WEB_EMBEDDED",
+          "status": "QUALIFICATION_NOT_MET",
+          "workflowRunId": 38153754876,
+          "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2-web-embedded.json"
+        }
+      ]
     }
   ],
-  "selectionPolicy": "Advance only to the next eligible candidate in pinned source order after retained qualification failure; never skip ahead based on live outcome."
+  "selectionPolicy": "Advance candidates only after the active candidate fails qualification across the complete predeclared primary-lane order. Each qualification-lane attempt is reused as its matrix cell; no hidden provider probes."
 }

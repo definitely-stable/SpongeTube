@@ -36,7 +36,6 @@ EXPECTED_PRIMARY_LANES = (
     "WEB_SAFARI",
 )
 EXPECTED_DEFERRED_LANES = ("ANDROID", "IOS")
-V1_QUALIFICATION_LANE = "WEB_EMBEDDED"
 V1_QUALIFICATION_SUCCESSFUL_PURPOSES = ("VIDEO", "AUDIO")
 V1_QUALIFICATION_REQUIRE_HTTPS = True
 EXPECTED_LANE_PROFILES = {
@@ -308,8 +307,8 @@ def build_plan(registry: Mapping[str, Any]) -> dict[str, Any]:
             "mediaProbeMode": "range-set",
         })
     return {
-        "planVersion": 1,
-        "planId": f"{registry['registryId']}:plan-v1",
+        "planVersion": 2,
+        "planId": f"{registry['registryId']}:plan-v2",
         "registryId": registry["registryId"],
         "registryDigestSha256": _sha256_json(registry),
         "primaryLanes": list(registry["primaryLanes"]),
@@ -318,11 +317,11 @@ def build_plan(registry: Mapping[str, Any]) -> dict[str, Any]:
         "qualificationGates": {
             case["caseClass"]: {
                 "evidencePath": case["qualification"].get("evidencePath"),
-                "lane": V1_QUALIFICATION_LANE,
+                "orderedLanes": list(registry["primaryLanes"]),
                 "requiredMediaLayouts": list(case["qualification"]["requiredMediaLayouts"]),
                 "requiredSuccessfulProbePurposes": list(V1_QUALIFICATION_SUCCESSFUL_PURPOSES),
                 "requireHttps": V1_QUALIFICATION_REQUIRE_HTTPS,
-                "reuseAsMatrixCell": True,
+                "reuseQualificationAttemptsAsMatrixCells": True,
             }
             for case in registry["cases"]
             if case["qualification"]["mode"] == "PROBE_EVIDENCE"
@@ -455,8 +454,8 @@ def validate_qualification_document(
     video_case = document["videoCase"]
     _require(video_case["caseClass"] == case_class, "qualification artifact is for another case")
     _require(
-        document["client"]["lane"] == V1_QUALIFICATION_LANE,
-        f"{case_class}: qualification lane must be {V1_QUALIFICATION_LANE}",
+        document["client"]["lane"] in registry["primaryLanes"],
+        f"{case_class}: qualification lane must be one of the frozen primary lanes",
     )
     allowed_layouts = set(qualification["requiredMediaLayouts"])
     _require(

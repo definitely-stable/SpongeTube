@@ -16,7 +16,7 @@ python3 scripts/measurement/m3_matrix.py validate-registry \
 
 python3 scripts/measurement/m3_matrix.py validate-plan \
   --registry .work/m3-a2/case-registry-v1.json \
-  --plan .work/m3-a2/matrix-plan-v1.json
+  --plan .work/m3-a2/matrix-plan-v2.json
 ```
 
 Before a manual live run, the workflow executes:
@@ -69,13 +69,17 @@ One run:
 - fails unless each fingerprint has exactly one source match;
 - uses one exact git commit, one GitHub-hosted runner and one pinned yt-dlp
   installation;
-- runs the predeclared V1/WEB_EMBEDDED qualification first;
+- sweeps V1 through the frozen primary-lane order before V0/V2;
 - requires SPLIT_AV/MULTIPLE plus observed HTTPS and successful bounded VIDEO
-  and AUDIO reads;
-- reuses that same artifact as its matrix cell;
-- executes only the remaining 17 cells after qualification succeeds;
+  and AUDIO reads on one lane;
+- reuses every qualification attempt as its corresponding matrix cell;
+- after qualification, executes every remaining matrix cell exactly once;
 - aggregates exactly 18 unique cells;
 - emits no M3-A3 architecture decision.
+
+If all six V1 lanes fail, the batch retains those six planned V1 cell artifacts
+and stops before the twelve V0/V2 cells. On success it still performs exactly
+18 unique provider probes.
 
 The batch output is a redacted portable bundle under
 `build/m3-a2/evidence/`. The ephemeral pinned source lives outside that

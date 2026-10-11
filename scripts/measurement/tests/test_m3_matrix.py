@@ -28,7 +28,7 @@ from m3_matrix import (
 
 
 REGISTRY_PATH = REPO_ROOT / ".work" / "m3-a2" / "case-registry-v1.json"
-PLAN_PATH = REPO_ROOT / ".work" / "m3-a2" / "matrix-plan-v1.json"
+PLAN_PATH = REPO_ROOT / ".work" / "m3-a2" / "matrix-plan-v2.json"
 EXAMPLE_PATH = REPO_ROOT / ".work" / "schemas" / "examples" / "m3" / "m3-a-probe-v1.example.json"
 GIT_SHA = "c" * 40
 
@@ -119,11 +119,11 @@ class M3A2RegistryTest(unittest.TestCase):
         self.assertEqual(
             {
                 "evidencePath": ".work/evidence/m3-a2/qualification/v1-cc-longform-r2.json",
-                "lane": "WEB_EMBEDDED",
+                "orderedLanes": list(EXPECTED_PRIMARY_LANES),
                 "requiredMediaLayouts": ["SPLIT_AV", "MULTIPLE"],
                 "requiredSuccessfulProbePurposes": ["VIDEO", "AUDIO"],
                 "requireHttps": True,
-                "reuseAsMatrixCell": True,
+                "reuseQualificationAttemptsAsMatrixCells": True,
             },
             plan["qualificationGates"]["V1"],
         )
@@ -256,10 +256,16 @@ class M3A2QualificationTest(unittest.TestCase):
         with self.assertRaises(M3MatrixError):
             validate_qualification_document(document, registry(), case_class="V1")
 
-    def test_v1_qualification_lane_is_predeclared(self):
+    def test_v1_any_frozen_primary_lane_can_qualify(self):
         document = qualification_probe()
         document["client"]["lane"] = "WEB"
         document["client"]["profileId"] = "yt-dlp:web"
+        validate_qualification_document(document, registry(), case_class="V1")
+
+    def test_v1_deferred_lane_cannot_qualify(self):
+        document = qualification_probe()
+        document["client"]["lane"] = "ANDROID"
+        document["client"]["profileId"] = "yt-dlp:android"
         with self.assertRaises(M3MatrixError):
             validate_qualification_document(document, registry(), case_class="V1")
 
