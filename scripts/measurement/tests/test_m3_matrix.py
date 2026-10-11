@@ -16,8 +16,10 @@ from m3_matrix import (
     EXPECTED_PRIMARY_LANES,
     M3MatrixError,
     aggregate_probes,
+    build_plan,
     planned_cells,
     render_markdown,
+    validate_plan,
     validate_case_input,
     validate_probe_against_registry,
     validate_qualification_document,
@@ -26,6 +28,7 @@ from m3_matrix import (
 
 
 REGISTRY_PATH = REPO_ROOT / ".work" / "m3-a2" / "case-registry-v1.json"
+PLAN_PATH = REPO_ROOT / ".work" / "m3-a2" / "matrix-plan-v1.json"
 EXAMPLE_PATH = REPO_ROOT / ".work" / "schemas" / "examples" / "m3" / "m3-a-probe-v1.example.json"
 GIT_SHA = "c" * 40
 
@@ -92,6 +95,13 @@ class M3A2RegistryTest(unittest.TestCase):
         self.assertEqual(("V0", "WEB_EMBEDDED"), cells[0])
         self.assertEqual(("V2", "WEB_SAFARI"), cells[-1])
 
+    def test_committed_plan_is_exact_registry_expansion(self):
+        reg = registry()
+        plan = load(PLAN_PATH)
+        validate_plan(plan, reg)
+        self.assertEqual(build_plan(reg), plan)
+        self.assertEqual(18, len(plan["cells"]))
+
     def test_registry_contains_fingerprints_not_raw_provider_ids(self):
         encoded = json.dumps(registry(), sort_keys=True)
         self.assertNotIn("youtube.com/watch", encoded)
@@ -138,6 +148,20 @@ class M3A2InputPreflightTest(unittest.TestCase):
                 case_class="V0",
                 case_revision=reg["cases"][0]["caseRevision"],
                 video_id="different-id",
+            )
+
+    def test_deferred_lane_cannot_enter_primary_matrix_preflight(self):
+        reg = registry()
+        synthetic_id = "synthetic-public-id"
+        reg["cases"][0]["providerContentIdSha256"] = m3_matrix._sha256_text(synthetic_id)
+        with self.assertRaises(M3MatrixError):
+            validate_case_input(
+                reg,
+                case_class="V0",
+                case_revision=reg["cases"][0]["caseRevision"],
+                video_id=synthetic_id,
+                lane="ANDROID",
+                purpose="matrix",
             )
 
     def test_case_revision_cannot_be_substituted(self):
@@ -191,6 +215,12 @@ class M3A2ProbeBindingTest(unittest.TestCase):
 
         broken = copy.deepcopy(document)
         broken["client"]["lane"] = "ANDROID"
+        broken["client"]["profileId"] = "yt-dlp:android"
+        with self.assertRaises(M3MatrixError):
+            validate_probe_against_registry(broken, registry())
+
+        broken = copy.deepcopy(document)
+        broken["client"]["profileId"] = "yt-dlp:web"
         with self.assertRaises(M3MatrixError):
             validate_probe_against_registry(broken, registry())
 
