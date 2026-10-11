@@ -116,6 +116,17 @@ class M3A2RegistryTest(unittest.TestCase):
         validate_plan(plan, reg)
         self.assertEqual(build_plan(reg), plan)
         self.assertEqual(18, len(plan["cells"]))
+        self.assertEqual(
+            {
+                "evidencePath": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json",
+                "lane": "WEB_EMBEDDED",
+                "requiredMediaLayouts": ["SPLIT_AV", "MULTIPLE"],
+                "requiredSuccessfulProbePurposes": ["VIDEO", "AUDIO"],
+                "requireHttps": True,
+                "reuseAsMatrixCell": True,
+            },
+            plan["qualificationGates"]["V1"],
+        )
 
     def test_registry_contains_fingerprints_not_raw_provider_ids(self):
         encoded = json.dumps(registry(), sort_keys=True)
