@@ -32,7 +32,7 @@
       "role": "PUBLIC_ANONYMOUS_EMBEDDABLE_LONG_FORM",
       "selectionEvidence": {
         "sourceRepository": "yt-dlp/yt-dlp",
-        "sourceRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+        "sourceRevision": "3a08beaf031ab68f966401ead017ac81fe8486cf",
         "sourcePath": "yt_dlp/extractor/youtube/_video.py",
         "facts": [
           "availability=public",
@@ -53,7 +53,7 @@
       "role": "PUBLIC_ANONYMOUS_LONG_FORM_SPLIT_AV_REFERENCE",
       "selectionEvidence": {
         "sourceRepository": "yt-dlp/yt-dlp",
-        "sourceRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+        "sourceRevision": "3a08beaf031ab68f966401ead017ac81fe8486cf",
         "sourcePath": "yt_dlp/extractor/youtube/_video.py",
         "facts": [
           "availability=public",
@@ -78,7 +78,7 @@
       "role": "PUBLIC_ANONYMOUS_NON_EMBEDDABLE_NEGATIVE",
       "selectionEvidence": {
         "sourceRepository": "yt-dlp/yt-dlp",
-        "sourceRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+        "sourceRevision": "3a08beaf031ab68f966401ead017ac81fe8486cf",
         "sourcePath": "yt_dlp/extractor/youtube/_video.py",
         "facts": [
           "availability=public",
