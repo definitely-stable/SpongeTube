@@ -212,6 +212,42 @@ def planned_cells(registry: Mapping[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
+def build_plan(registry: Mapping[str, Any]) -> dict[str, Any]:
+    cases = _case_map(registry)
+    cells = []
+    for case_class, lane in planned_cells(registry):
+        case = cases[case_class]
+        cells.append({
+            "caseClass": case_class,
+            "caseRevision": case["caseRevision"],
+            "providerContentIdSha256": case["providerContentIdSha256"],
+            "lane": lane,
+            "profileId": registry["laneProfiles"][lane],
+            "purpose": "matrix",
+            "mediaProbeMode": "range-set",
+        })
+    return {
+        "planVersion": 1,
+        "planId": f"{registry['registryId']}:plan-v1",
+        "registryId": registry["registryId"],
+        "registryDigestSha256": _sha256_json(registry),
+        "primaryLanes": list(registry["primaryLanes"]),
+        "deferredLanes": list(registry["deferredLanes"]),
+        "cells": cells,
+        "qualificationGates": {
+            case["caseClass"]: case["qualification"].get("evidencePath")
+            for case in registry["cases"]
+            if case["qualification"]["mode"] == "PROBE_EVIDENCE"
+        },
+    }
+
+
+def validate_plan(plan: Mapping[str, Any], registry: Mapping[str, Any]) -> None:
+    _require(isinstance(plan, Mapping), "matrix plan must be an object")
+    expected = build_plan(registry)
+    _require(plan == expected, "matrix plan does not exactly match deterministic registry expansion")
+
+
 def _matching_reference(document: Mapping[str, Any], registry: Mapping[str, Any]) -> Mapping[str, Any] | None:
     oracle = registry["referenceOracle"]
     for reference in document.get("references") or []:
@@ -577,6 +613,18 @@ def _cmd_validate_registry(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_validate_plan(args: argparse.Namespace) -> int:
+    registry = load_registry(pathlib.Path(args.registry))
+    plan = _load_json(pathlib.Path(args.plan))
+    _require(isinstance(plan, Mapping), "matrix plan must be an object")
+    validate_plan(plan, registry)
+    print(
+        "M3-A2 plan valid: "
+        f"id={plan['planId']} cells={len(plan['cells'])}"
+    )
+    return 0
+
+
 def _cmd_preflight(args: argparse.Namespace) -> int:
     registry_path = pathlib.Path(args.registry)
     registry = load_registry(registry_path)
@@ -650,6 +698,11 @@ def _build_parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate-registry")
     validate.add_argument("--registry", required=True)
     validate.set_defaults(func=_cmd_validate_registry)
+
+    validate_plan_parser = sub.add_parser("validate-plan")
+    validate_plan_parser.add_argument("--registry", required=True)
+    validate_plan_parser.add_argument("--plan", required=True)
+    validate_plan_parser.set_defaults(func=_cmd_validate_plan)
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--registry", required=True)
