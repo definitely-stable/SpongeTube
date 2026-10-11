@@ -14,7 +14,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import m3_batch
 import m3_matrix
 from m3_batch import BatchInputs, M3BatchError, execute_batch
-from m3_matrix import build_plan, validate_registry
+from m3_matrix import M3MatrixError, build_plan, validate_registry
 
 
 REGISTRY_PATH = REPO_ROOT / ".work" / "m3-a2" / "case-registry-v1.json"
