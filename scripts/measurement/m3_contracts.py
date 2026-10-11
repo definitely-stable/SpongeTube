@@ -56,6 +56,7 @@ OUTCOMES = (
     "SABR_ONLY",
     "DRM_GATED",
     "PROVIDER_REJECTED",
+    "PROVIDER_RATE_LIMITED",
     "UNSUPPORTED_DELIVERY",
     "INCONCLUSIVE",
 )
@@ -68,7 +69,7 @@ REFERENCE_ROLES = {
     "INVIDIOUS": "COMPARISON_ONLY",
 }
 
-_ANY_URL = re.compile(r"\\b[a-zA-Z][a-zA-Z0-9+.-]*://\\S+")
+_ANY_URL = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+")
 
 
 def _repo_root() -> pathlib.Path:
