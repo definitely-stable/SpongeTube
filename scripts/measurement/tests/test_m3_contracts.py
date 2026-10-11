@@ -213,6 +213,29 @@ class M3A0OutcomeTest(unittest.TestCase):
         validate_probe_document(document)
 
 
+    def test_provider_outcomes_require_matching_observations(self):
+        rejected = example()
+        rejected["outcome"]["classification"] = "PROVIDER_REJECTED"
+        with self.assertRaises(M3ContractError):
+            validate_probe_document(rejected)
+        rejected["providerSignals"]["rejection"] = "PRESENT"
+        validate_probe_document(rejected)
+
+        limited = example()
+        limited["outcome"]["classification"] = "PROVIDER_RATE_LIMITED"
+        with self.assertRaises(M3ContractError):
+            validate_probe_document(limited)
+        limited["providerSignals"]["throttling"] = "PRESENT"
+        validate_probe_document(limited)
+
+    def test_descriptor_lifetime_requires_observed_expiry(self):
+        document = example()
+        document["delivery"]["descriptorLifetimeSeconds"] = 3600
+        with self.assertRaises(M3ContractError):
+            validate_probe_document(document)
+        document["delivery"]["descriptorExpiry"] = "PRESENT"
+        validate_probe_document(document)
+
 class M3A0ReferenceOracleTest(unittest.TestCase):
     def test_reference_roles_are_frozen(self):
         expected = {
@@ -263,6 +286,12 @@ class M3A0PrivacyTest(unittest.TestCase):
         document["limitations"] = [
             "saw https://example.invalid/videoplayback?sig=secret"
         ]
+        with self.assertRaises(M3ContractError):
+            validate_probe_document(document)
+
+    def test_plain_url_is_rejected_from_portable_evidence(self):
+        document = example()
+        document["limitations"] = ["reference at https://example.invalid/path"]
         with self.assertRaises(M3ContractError):
             validate_probe_document(document)
 
