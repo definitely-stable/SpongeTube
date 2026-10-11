@@ -104,8 +104,11 @@ class M3A2RegistryTest(unittest.TestCase):
 
     def test_registry_contains_fingerprints_not_raw_provider_ids(self):
         encoded = json.dumps(registry(), sort_keys=True)
+        plan_encoded = json.dumps(load(PLAN_PATH), sort_keys=True)
         self.assertNotIn("youtube.com/watch", encoded)
         self.assertNotIn("youtu.be/", encoded)
+        self.assertNotIn("youtube.com/watch", plan_encoded)
+        self.assertNotIn("youtu.be/", plan_encoded)
         for case in registry()["cases"]:
             self.assertRegex(case["providerContentIdSha256"], r"^[0-9a-f]{64}$")
 
@@ -117,6 +120,30 @@ class M3A2RegistryTest(unittest.TestCase):
 
         reg = registry()
         reg["cases"].append(copy.deepcopy(reg["cases"][0]))
+        with self.assertRaises(M3MatrixError):
+            validate_registry(reg)
+
+    def test_registry_rejects_extra_fields_urls_and_source_revision_drift(self):
+        reg = registry()
+        reg["rawVideoId"] = "forbidden"
+        with self.assertRaises(M3MatrixError):
+            validate_registry(reg)
+
+        reg = registry()
+        reg["cases"][0]["selectionEvidence"]["facts"].append("url=https://example.invalid")
+        with self.assertRaises(M3MatrixError):
+            validate_registry(reg)
+
+        reg = registry()
+        reg["cases"][0]["selectionEvidence"]["sourceRevision"] = "f" * 40
+        with self.assertRaises(M3MatrixError):
+            validate_registry(reg)
+
+    def test_v1_qualification_path_is_traversal_safe(self):
+        reg = registry()
+        reg["cases"][1]["qualification"]["evidencePath"] = (
+            ".work/evidence/m3-a2/qualification/../../escape.json"
+        )
         with self.assertRaises(M3MatrixError):
             validate_registry(reg)
 
@@ -205,6 +232,11 @@ class M3A2ProbeBindingTest(unittest.TestCase):
 
         broken = copy.deepcopy(document)
         broken["producer"]["version"] = "2"
+        with self.assertRaises(M3MatrixError):
+            validate_probe_against_registry(broken, registry())
+
+        broken = copy.deepcopy(document)
+        broken["producer"]["revision"] = "f" * 40
         with self.assertRaises(M3MatrixError):
             validate_probe_against_registry(broken, registry())
 
