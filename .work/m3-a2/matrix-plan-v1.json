@@ -2,7 +2,7 @@
   "planVersion": 1,
   "planId": "m3-a2-cases-2026-10-11-r1:plan-v1",
   "registryId": "m3-a2-cases-2026-10-11-r1",
-  "registryDigestSha256": "ca8652e9903e022505ec16511578d079fd0a7821de234c7ce50834e940a116db",
+  "registryDigestSha256": "df42ebb42d03cffae88cfc34aa8db3f536b5bfc9004e39427568d93026018c5e",
   "primaryLanes": [
     "WEB_EMBEDDED",
     "TV",
