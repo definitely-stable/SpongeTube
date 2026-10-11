@@ -61,7 +61,9 @@ One run:
   provider access;
 - uses one exact git commit, one GitHub-hosted runner and one pinned yt-dlp
   installation;
-- runs V1/WEB_EMBEDDED qualification first;
+- runs the predeclared V1/WEB_EMBEDDED qualification first;
+- requires SPLIT_AV/MULTIPLE plus observed HTTPS and successful bounded VIDEO
+  and AUDIO reads;
 - reuses that same artifact as its matrix cell;
 - executes only the remaining 17 cells after qualification succeeds;
 - aggregates exactly 18 unique cells;
