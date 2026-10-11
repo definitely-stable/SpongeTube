@@ -180,6 +180,19 @@
     }
   ],
   "qualificationGates": {
-    "V1": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json"
+    "V1": {
+      "evidencePath": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json",
+      "lane": "WEB_EMBEDDED",
+      "requiredMediaLayouts": [
+        "SPLIT_AV",
+        "MULTIPLE"
+      ],
+      "requiredSuccessfulProbePurposes": [
+        "VIDEO",
+        "AUDIO"
+      ],
+      "requireHttps": true,
+      "reuseAsMatrixCell": true
+    }
   }
 }
