@@ -36,6 +36,7 @@ EXPECTED_PRIMARY_LANES = (
     "WEB_SAFARI",
 )
 EXPECTED_DEFERRED_LANES = ("ANDROID", "IOS")
+V1_QUALIFICATION_LANE = "WEB_EMBEDDED"
 EXPECTED_LANE_PROFILES = {
     "WEB_EMBEDDED": "yt-dlp:web_embedded",
     "TV": "yt-dlp:tv",
@@ -444,10 +445,27 @@ def validate_qualification_document(
 
     video_case = document["videoCase"]
     _require(video_case["caseClass"] == case_class, "qualification artifact is for another case")
+    _require(
+        document["client"]["lane"] == V1_QUALIFICATION_LANE,
+        f"{case_class}: qualification lane must be {V1_QUALIFICATION_LANE}",
+    )
     allowed_layouts = set(qualification["requiredMediaLayouts"])
     _require(
         document["delivery"]["mediaLayout"] in allowed_layouts,
         f"{case_class}: qualification requires mediaLayout in {sorted(allowed_layouts)}",
+    )
+    _require(
+        document["capabilities"]["https"] == "PRESENT",
+        f"{case_class}: qualification requires observed HTTPS delivery",
+    )
+    successful_purposes = {
+        item["purpose"]
+        for item in document["budget"]["mediaProbes"]
+        if isinstance(item, Mapping) and int(item.get("bytesRead") or 0) > 0
+    }
+    _require(
+        "VIDEO" in successful_purposes and "AUDIO" in successful_purposes,
+        f"{case_class}: qualification requires successful bounded VIDEO and AUDIO reads",
     )
 
 
