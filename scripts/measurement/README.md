@@ -1,5 +1,54 @@
 # Measurement and evidence kernels
 
+## M3-A2 matrix planner and aggregator
+
+`m3_matrix.py` binds live M3-A evidence to the frozen case registry and
+deterministic 18-cell plan. It validates raw-input fingerprints before live
+requests, enforces exact lane/profile/reference bindings, gates V1 on retained
+split-A/V qualification evidence, rejects duplicate or mixed-commit cells, and
+aggregates only validated `m3-a-probe-v1` artifacts.
+
+Validate repository planning state:
+
+```bash
+python3 scripts/measurement/m3_matrix.py validate-registry \
+  --registry .work/m3-a2/case-registry-v1.json
+
+python3 scripts/measurement/m3_matrix.py validate-plan \
+  --registry .work/m3-a2/case-registry-v1.json \
+  --plan .work/m3-a2/matrix-plan-v1.json
+```
+
+Before a manual live run, the workflow executes:
+
+```bash
+python3 scripts/measurement/m3_matrix.py preflight \
+  --registry .work/m3-a2/case-registry-v1.json \
+  --case-class V0 \
+  --case-revision "<registry revision>" \
+  --lane WEB_EMBEDDED \
+  --video-id "<raw research input>" \
+  --purpose matrix
+```
+
+The raw ID is hashed in memory and never enters the portable artifact.
+For V1, run `purpose=qualification` first and retain the validated artifact at
+the registry-declared qualification path before V1 matrix cells are allowed.
+
+Aggregate collected artifacts:
+
+```bash
+python3 scripts/measurement/m3_matrix.py aggregate \
+  --registry .work/m3-a2/case-registry-v1.json \
+  --input-dir .work/evidence/m3-a2/probes \
+  --output .work/evidence/m3-a2/matrix-v1.json \
+  --markdown .work/evidence/m3-a2/matrix-v1.md \
+  --require-complete
+```
+
+The report deliberately leaves `globalDecision=NOT_MADE_M3_A2`; architecture
+selection belongs to M3-A3.
+
 ## M3-A bounded live-provider producer
 
 `m3_probe.py` is the M3-A1 laboratory producer. It imports the pinned yt-dlp
