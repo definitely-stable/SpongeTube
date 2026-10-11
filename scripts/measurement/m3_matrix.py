@@ -355,6 +355,10 @@ def validate_probe_against_registry(
     producer = document.get("producer") or {}
     _require(producer.get("toolId") == registry["producer"]["toolId"], "probe producer.toolId does not match registry")
     _require(producer.get("version") == registry["producer"]["version"], "probe producer.version does not match registry")
+    _require(
+        producer.get("revision") == document.get("gitCommit"),
+        "probe producer.revision must equal probe gitCommit",
+    )
     _require(_matching_reference(document, registry) is not None, "probe does not contain the pinned reference oracle")
 
     video_case = document.get("videoCase") or {}
