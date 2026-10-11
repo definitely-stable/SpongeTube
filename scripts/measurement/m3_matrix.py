@@ -36,6 +36,16 @@ EXPECTED_PRIMARY_LANES = (
     "WEB_SAFARI",
 )
 EXPECTED_DEFERRED_LANES = ("ANDROID", "IOS")
+EXPECTED_LANE_PROFILES = {
+    "WEB_EMBEDDED": "yt-dlp:web_embedded",
+    "TV": "yt-dlp:tv",
+    "ANDROID_VR": "yt-dlp:android_vr",
+    "MWEB": "yt-dlp:mweb",
+    "WEB": "yt-dlp:web",
+    "WEB_SAFARI": "yt-dlp:web_safari",
+    "ANDROID": "yt-dlp:android",
+    "IOS": "yt-dlp:ios",
+}
 EXPECTED_PRODUCER_ID = "spongetube.m3-bounded-probe"
 EXPECTED_PRODUCER_VERSION = "1"
 EXPECTED_ORACLE_ID = "YT_DLP"
@@ -106,6 +116,10 @@ def validate_registry(registry: Mapping[str, Any]) -> None:
     _require(
         tuple(registry.get("deferredLanes") or ()) == EXPECTED_DEFERRED_LANES,
         "deferredLanes must match frozen M3-A2 order",
+    )
+    _require(
+        registry.get("laneProfiles") == EXPECTED_LANE_PROFILES,
+        "laneProfiles must match frozen M3-A1 client mapping",
     )
 
     cases = registry.get("cases")
@@ -243,11 +257,20 @@ def validate_probe_against_registry(
         f"{case_class}: probe provider fingerprint does not match frozen registry",
     )
 
-    lane = (document.get("client") or {}).get("lane")
+    client = document.get("client") or {}
+    lane = client.get("lane")
     allowed = set(registry["primaryLanes"])
     if allow_deferred_lane:
         allowed.update(registry["deferredLanes"])
     _require(lane in allowed, f"probe lane {lane!r} is not planned for this matrix")
+    _require(
+        client.get("profileId") == registry["laneProfiles"][lane],
+        f"probe profileId does not match frozen lane profile for {lane}",
+    )
+    _require(
+        client.get("profileVersion") == registry["referenceOracle"]["version"],
+        "probe profileVersion does not match pinned reference version",
+    )
     return case
 
 
@@ -257,6 +280,8 @@ def validate_case_input(
     case_class: str,
     case_revision: str,
     video_id: str,
+    lane: str | None = None,
+    purpose: str | None = None,
 ) -> Mapping[str, Any]:
     cases = _case_map(registry)
     _require(case_class in cases, f"unknown case class {case_class!r}")
@@ -268,6 +293,14 @@ def validate_case_input(
         actual == case["providerContentIdSha256"],
         f"{case_class}: raw provider ID does not match frozen fingerprint",
     )
+    if lane is not None:
+        if purpose == "matrix":
+            _require(lane in registry["primaryLanes"], f"lane {lane!r} is not in the frozen primary matrix")
+        else:
+            _require(
+                lane in (*registry["primaryLanes"], *registry["deferredLanes"]),
+                f"unknown lane {lane!r}",
+            )
     return case
 
 
@@ -552,6 +585,8 @@ def _cmd_preflight(args: argparse.Namespace) -> int:
         case_class=args.case_class,
         case_revision=args.case_revision,
         video_id=args.video_id,
+        lane=args.lane,
+        purpose=args.purpose,
     )
 
     if args.purpose == "matrix":
@@ -621,6 +656,7 @@ def _build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--case-class", choices=EXPECTED_CASE_CLASSES, required=True)
     preflight.add_argument("--case-revision", required=True)
     preflight.add_argument("--video-id", required=True)
+    preflight.add_argument("--lane", choices=tuple(EXPECTED_LANE_PROFILES), required=True)
     preflight.add_argument("--purpose", choices=("qualification", "matrix"), required=True)
     preflight.set_defaults(func=_cmd_preflight)
 
