@@ -161,6 +161,51 @@ class M3A1MetadataBudgetTest(unittest.TestCase):
         self.assertFalse(result.extraction_completed)
 
 
+    def test_metadata_http_failure_is_reduced_without_retaining_response(self):
+        class FakeResponse:
+            headers = {"Retry-After": "7"}
+
+        class FakeHttpError(Exception):
+            status = 429
+            response = FakeResponse()
+
+        class FakeYoutubeDL:
+            def __init__(self, params):
+                self.params = params
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def urlopen(self, req):
+                raise FakeHttpError()
+
+            def extract_info(self, url, download=False):
+                self.urlopen(object())
+
+        fake_module = types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)
+        with mock.patch.object(
+            m3_probe,
+            "_load_yt_dlp",
+            return_value=(
+                fake_module,
+                m3_probe.EXPECTED_YTDLP_VERSION,
+                YTDLP_REVISION,
+            ),
+        ):
+            result = _extract_with_yt_dlp("public-id", "WEB_EMBEDDED")
+
+        self.assertEqual(1, result.metadata_requests_used)
+        self.assertTrue(result.signals.saw_throttling)
+        self.assertTrue(result.signals.saw_retry_after)
+        summary = _summary_from_extraction(result, [])
+        self.assertEqual("PRESENT", summary.provider_signals["throttling"])
+        self.assertEqual("PRESENT", summary.provider_signals["retryAfter"])
+        self.assertEqual("PROVIDER_RATE_LIMITED", summary.outcome["classification"])
+
+
 class _FakeHeaders(dict):
     pass
 
