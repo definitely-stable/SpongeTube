@@ -268,6 +268,21 @@ class M3A1ClassificationTest(unittest.TestCase):
         self.assertEqual("NOT_REQUIRED", summary.requirements["gvsPoToken"])
         self.assertEqual("VIABLE_ANONYMOUS", summary.outcome["classification"])
 
+    def test_sibling_rejection_does_not_erase_working_anonymous_path(self):
+        ext = extraction([direct_muxed(), direct_video()])
+        good = successful_media("STARTUP", "p0")
+        rejected = MediaProbeResult(
+            purpose="VIDEO",
+            probe_id="p1",
+            byte_limit=64 * 1024,
+            status=403,
+            rejection=True,
+        )
+        summary = _summary_from_extraction(ext, [good, rejected])
+
+        self.assertEqual("PRESENT", summary.provider_signals["rejection"])
+        self.assertEqual("VIABLE_ANONYMOUS", summary.outcome["classification"])
+
     def test_missing_pot_without_working_path_is_token_gated(self):
         ext = extraction([direct_muxed(missing_pot=True)])
         summary = _summary_from_extraction(ext, [])
