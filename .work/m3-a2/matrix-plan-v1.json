@@ -2,7 +2,7 @@
   "planVersion": 1,
   "planId": "m3-a2-cases-2026-10-11-r1:plan-v1",
   "registryId": "m3-a2-cases-2026-10-11-r1",
-  "registryDigestSha256": "6c3f850269faf4bc6e73ca97d72ea022d5a94316a977f78b20d0904e876c5702",
+  "registryDigestSha256": "ca8652e9903e022505ec16511578d079fd0a7821de234c7ce50834e940a116db",
   "primaryLanes": [
     "WEB_EMBEDDED",
     "TV",
@@ -72,8 +72,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "lane": "WEB_EMBEDDED",
       "profileId": "yt-dlp:web_embedded",
       "purpose": "matrix",
@@ -81,8 +81,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "lane": "TV",
       "profileId": "yt-dlp:tv",
       "purpose": "matrix",
@@ -90,8 +90,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "lane": "ANDROID_VR",
       "profileId": "yt-dlp:android_vr",
       "purpose": "matrix",
@@ -99,8 +99,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "lane": "MWEB",
       "profileId": "yt-dlp:mweb",
       "purpose": "matrix",
@@ -108,8 +108,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "lane": "WEB",
       "profileId": "yt-dlp:web",
       "purpose": "matrix",
@@ -117,8 +117,8 @@
     },
     {
       "caseClass": "V1",
-      "caseRevision": "v1-apollo14-r1",
-      "providerContentIdSha256": "4dd40ebd35885bc5e455ba77168ebcdfdcfcbd433d8c457b1ab593a80375d7d1",
+      "caseRevision": "v1-copyrightx-r1",
+      "providerContentIdSha256": "aff77f1d01f33c474e2ed5567480309ceff720642b13d72f79fc67f328f9d3b8",
       "lane": "WEB_SAFARI",
       "profileId": "yt-dlp:web_safari",
       "purpose": "matrix",
@@ -180,6 +180,6 @@
     }
   ],
   "qualificationGates": {
-    "V1": ".work/evidence/m3-a2/qualification/v1-apollo14-r1.json"
+    "V1": ".work/evidence/m3-a2/qualification/v1-copyrightx-r1.json"
   }
 }
