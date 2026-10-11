@@ -126,7 +126,7 @@ Exit:
 
 ## M3 — YouTube Adapter
 
-Status: **Active — M3-A1 bounded probe implementation (#142)**
+Status: **Active — M3-A2 predeclared compatibility matrix (#144)**
 
 Canonical milestone specification: `.work/milestones/M3.md`.
 
@@ -134,7 +134,7 @@ M3 has two deliberately different tracks. Feasibility starts early; production c
 
 ### M3-A — YouTube Delivery Feasibility Probe
 
-Status: **Active — M3-A0 complete; M3-A1 bounded probe implementation; production coupling not started**
+Status: **Active — M3-A0/M3-A1 complete; M3-A2 matrix collection; production coupling not started**
 
 Goal: determine the smallest viable anonymous long-form YouTube VOD delivery path and identify provider assumptions that Sponge Core must not accidentally freeze.
 
