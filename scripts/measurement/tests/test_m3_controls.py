@@ -26,6 +26,14 @@ class ControlPlanTests(unittest.TestCase):
         self.matrix_plan = build_plan(self.registry)
         self.plan = build_control_plan(self.registry, self.matrix_plan)
 
+    def test_committed_plan_matches_exact_repository_registry(self):
+        from m3_matrix import load_registry
+        root = REPO_ROOT / ".work" / "m3-a2"
+        registry = load_registry(root / "case-registry-v1.json")
+        matrix_plan = json.loads((root / "matrix-plan-v2.json").read_text(encoding="utf-8"))
+        committed = json.loads((root / "control-plan-v1.json").read_text(encoding="utf-8"))
+        validate_control_plan(committed, registry, matrix_plan)
+
     def test_plan_is_exact_four_cell_subset_of_original_matrix(self):
         self.assertEqual(4, len(self.plan["cells"]))
         self.assertEqual(PAIRS, tuple((c["caseClass"], c["lane"]) for c in self.plan["cells"]))
