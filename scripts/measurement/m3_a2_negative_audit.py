@@ -19,7 +19,6 @@ from m3_matrix import (
     load_registry,
     validate_plan,
     validate_probe_against_registry,
-    validate_qualification_document,
 )
 
 MAX_ENTRY_BYTES = 128 * 1024
@@ -44,12 +43,45 @@ def _read_json_bytes(raw: bytes, name: str) -> Mapping[str, Any]:
     return value
 
 
+def independent_qualification_reason(
+    artifact: Mapping[str, Any], gate: Mapping[str, Any]
+) -> str | None:
+    """Recompute the gate from the frozen plan, not the producer's validator."""
+    allowed_layouts = sorted(gate["requiredMediaLayouts"])
+    if artifact["delivery"]["mediaLayout"] not in allowed_layouts:
+        return f"V1: qualification requires mediaLayout in {allowed_layouts}"
+    if gate["requireHttps"] and artifact["capabilities"]["https"] != "PRESENT":
+        return "V1: qualification requires observed HTTPS delivery"
+    readable = {
+        probe["purpose"]
+        for probe in artifact["budget"]["mediaProbes"]
+        if int(probe["bytesRead"]) > 0
+    }
+    missing = [purpose for purpose in gate["requiredSuccessfulProbePurposes"] if purpose not in readable]
+    if missing:
+        return f"V1: qualification is missing successful bounded probes {missing}"
+    return None
+
+
 def audit_bundle(
     bundle_path: pathlib.Path,
     registry: Mapping[str, Any],
     plan: Mapping[str, Any],
+    *,
+    expected_bundle_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Check exact 6-lane negative sweep, canonical evidence and provenance."""
+    if expected_bundle_sha256 is not None:
+        _require(
+            len(expected_bundle_sha256) == 64
+            and all(c in "0123456789abcdef" for c in expected_bundle_sha256),
+            "invalid expected bundle SHA-256",
+        )
+        _require(bundle_path.stat().st_size <= MAX_TOTAL_BYTES, "oversized ZIP archive")
+        _require(
+            hashlib.sha256(bundle_path.read_bytes()).hexdigest() == expected_bundle_sha256,
+            "canonical ZIP SHA-256 mismatch",
+        )
     validate_plan(plan, registry)
     gate = plan["qualificationGates"]["V1"]
     lanes = list(gate["orderedLanes"])
@@ -125,12 +157,11 @@ def audit_bundle(
         _require(artifact["gitCommit"] == git_sha, f"{lane}: mixed source commits")
         runner_images.add(artifact["environment"]["runnerImage"])
 
-        try:
-            validate_qualification_document(artifact, registry, case_class="V1")
-        except M3MatrixError as exc:
-            failure_reason = str(exc)
-        else:
-            raise NegativeAuditError(f"{lane}: a qualified lane was declared negative")
+        failure_reason = independent_qualification_reason(artifact, gate)
+        _require(
+            failure_reason is not None,
+            f"{lane}: a qualified lane was declared negative",
+        )
 
         attempt = attempts[i - 1]
         _require(
@@ -189,12 +220,14 @@ def main() -> int:
     parser.add_argument("--registry", type=pathlib.Path, required=True)
     parser.add_argument("--plan", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
+    parser.add_argument("--expected-bundle-sha256", required=True)
     args = parser.parse_args()
     try:
         result = audit_bundle(
             args.bundle,
             load_registry(args.registry),
             json.loads(args.plan.read_text(encoding="utf-8")),
+            expected_bundle_sha256=args.expected_bundle_sha256,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
