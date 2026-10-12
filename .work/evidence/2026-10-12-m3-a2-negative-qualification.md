@@ -38,10 +38,11 @@ python3 scripts/measurement/m3_a2_negative_audit.py \
   --bundle /path/to/m3-a2-canonical-matrix.zip \
   --registry .work/m3-a2/case-registry-v1.json \
   --plan .work/m3-a2/matrix-plan-v2.json \
+  --expected-bundle-sha256 1f9f8bfca187b5387edc1086e5287fb085eec12cb506d2aff5fcf92e3e6ad8c2 \
   --output /tmp/m3-a2-negative-audit.json
 ```
 
-The independent audit validates the six existing `m3-a-probe-v1` documents,
+The independent audit checks the exact downloaded ZIP digest, recomputes the V1 gate without using the producer's qualification helper, and validates the six existing `m3-a-probe-v1` documents,
 exact registry, source commit, lane/profile bindings, paired qualification copies,
 all six failure reasons and SHA-256 of each retained probe. It deliberately cannot
 promote `QUALIFICATION_NOT_MET` into a successful matrix or global provider decision.
