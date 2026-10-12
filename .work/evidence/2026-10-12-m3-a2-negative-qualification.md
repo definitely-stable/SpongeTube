@@ -1,16 +1,16 @@
 # M3-A2 — canonical V1 r2 primary-lane qualification failure
 
 Date: 2026-10-12 (audit); live run: 2026-10-11 UTC.
-Scope: issue #144, exact-main commit \`23665f64c9a22b0e7bc6131d41b7a475961d9ff6\`.
+Scope: issue #144, exact-main commit `23665f64c9a22b0e7bc6131d41b7a475961d9ff6`.
 Workflow: https://github.com/definitely-stable/SpongeTube/actions/runs/38155051380
 Artifact: https://github.com/definitely-stable/SpongeTube/actions/runs/38155051380/artifacts/11707558975
-Uploaded artifact SHA-256: \`1f9f8bfca187b5387edc1086e5287fb085eec12cb506d2aff5fcf92e3e6ad8c2\`.
+Uploaded artifact SHA-256: `1f9f8bfca187b5387edc1086e5287fb085eec12cb506d2aff5fcf92e3e6ad8c2`.
 Artifact retention is 30 days. Run provenance must not be replaced by a later rerun.
 
 ## Observed, not inferred
 
 Exactly six V1 r2 primary-lane probes were retained on the frozen plan v2, followed by fail-closed stop.
-All six returned \`INCONCLUSIVE\`, \`mediaLayout=UNKNOWN\`, \`https=UNKNOWN\`, no
+All six returned `INCONCLUSIVE`, `mediaLayout=UNKNOWN`, `https=UNKNOWN`, no
 successful direct-media probe and no observed typed rejection/throttling. Each metadata
 extraction was incomplete; the 32-request ceiling was not exhausted.
 
@@ -25,26 +25,26 @@ extraction was incomplete; the 32-request ceiling was not exhausted.
 | **Total** | **17** | **0** | **0/6** |
 
 The 12 V0/V2 matrix cells were intentionally **not run**; no complete compatibility
-matrix exists. The v1 summary's key \`remainingCellsExecuted=12\` is a known
+matrix exists. The v1 summary's key `remainingCellsExecuted=12` is a known
 misnomer: it counts unexecuted cells, not executed probes. This report uses
-\`unexecutedCells\` instead. Do not silently rewrite original evidence.
+`unexecutedCells` instead. Do not silently rewrite original evidence.
 
 ## Independent reproducibility
 
 Download the exact workflow artifact ZIP and run:
 
-\`\`\`sh
+```sh
 python3 scripts/measurement/m3_a2_negative_audit.py \
   --bundle /path/to/m3-a2-canonical-matrix.zip \
   --registry .work/m3-a2/case-registry-v1.json \
   --plan .work/m3-a2/matrix-plan-v2.json \
   --output /tmp/m3-a2-negative-audit.json
-\`\`\`
+```
 
-The independent audit validates the six existing \`m3-a-probe-v1\` documents,
+The independent audit validates the six existing `m3-a-probe-v1` documents,
 exact registry, source commit, lane/profile bindings, paired qualification copies,
 all six failure reasons and SHA-256 of each retained probe. It deliberately cannot
-promote \`QUALIFICATION_NOT_MET\` into a successful matrix or global provider decision.
+promote `QUALIFICATION_NOT_MET` into a successful matrix or global provider decision.
 
 ## Research decision
 
