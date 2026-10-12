@@ -1,0 +1,120 @@
+name: M3-A2-C1 Paired Controls
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .work/m3-a2/control-run-v1.trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-a2-c1-paired-controls-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  controls:
+    name: bounded V0/V2 paired controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate frozen control and matrix plans
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_controls.py validate-plan \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --matrix-plan .work/m3-a2/matrix-plan-v2.json \
+            --control-plan .work/m3-a2/control-plan-v1.json
+
+      - name: Fetch pinned case-selection source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/m3-a2-c1/source
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import urllib.request
+
+          registry = json.loads(
+              pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text(encoding="utf-8")
+          )
+          selections = [case["selectionEvidence"] for case in registry["cases"]]
+          repos = {s["sourceRepository"] for s in selections}
+          revisions = {s["sourceRevision"] for s in selections}
+          paths = {s["sourcePath"] for s in selections}
+          if repos != {"yt-dlp/yt-dlp"} or len(revisions) != 1 or len(paths) != 1:
+              raise SystemExit("Pinned case-selection provenance mismatch")
+          revision = next(iter(revisions))
+          source_path = next(iter(paths))
+          url = f"https://raw.githubusercontent.com/yt-dlp/yt-dlp/{revision}/{source_path}"
+          target = pathlib.Path("build/m3-a2-c1/source/_video.py")
+          with urllib.request.urlopen(url, timeout=30) as response:
+              payload = response.read()
+          if not payload:
+              raise SystemExit("Pinned case-selection source empty")
+          target.write_bytes(payload)
+          print("Pinned case-selection source loaded ephemerally")
+          PY
+
+      - name: Prepare isolated pinned reference oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-a2-c1/venv
+          build/m3-a2-c1/venv/bin/python -m pip install \
+            --disable-pip-version-check --no-input "yt-dlp==2026.8.19"
+          test "$(build/m3-a2-c1/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.08.19"
+          test "$(build/m3-a2-c1/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+
+      - name: Execute exactly four independent control cells
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/m3-a2-c1/venv/bin/python scripts/measurement/m3_controls.py run \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --matrix-plan .work/m3-a2/matrix-plan-v2.json \
+            --control-plan .work/m3-a2/control-plan-v1.json \
+            --source-file build/m3-a2-c1/source/_video.py \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --output-dir build/m3-a2-c1/evidence
+
+      - name: Independently verify partial matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_matrix.py aggregate \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --input-dir build/m3-a2-c1/evidence/probes \
+            --output build/m3-a2-c1/recheck/control-matrix-v1.json \
+            --markdown build/m3-a2-c1/recheck/control-matrix-v1.md
+          cmp build/m3-a2-c1/evidence/aggregate/control-matrix-v1.json \
+              build/m3-a2-c1/recheck/control-matrix-v1.json
+          cmp build/m3-a2-c1/evidence/aggregate/control-matrix-v1.md \
+              build/m3-a2-c1/recheck/control-matrix-v1.md
+
+      - name: Remove ephemeral pinned case-selection source
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/m3-a2-c1/source
+
+      - name: Upload redacted bounded control evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m3-a2-c1-paired-controls
+          path: build/m3-a2-c1/evidence/
+          if-no-files-found: warn
+          retention-days: 30
