@@ -1,10 +1,9 @@
 name: M3-A2-C2-D0 Metadata Diagnostics
 
+# The one-shot C2-D0 canonical run 38551923709 is complete.
+# No implicit network probes on future source or trigger changes.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [.work/m3-a2/c2-d0-run-v1.trigger]
 
 permissions:
   contents: read
