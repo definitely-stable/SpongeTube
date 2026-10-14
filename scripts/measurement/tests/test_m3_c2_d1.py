@@ -202,7 +202,7 @@ class C2D1Tests(unittest.TestCase):
 
     def test_negative_and_non_mapping_response_paths(self):
         for behavior, kind, stage, extractor in (
-            ("HTTP_ERROR", "EXCEPTION", "EXTRACT_INFO_RAISED", "YTDLP_DOWNLOAD_ERROR"),
+            ("HTTP_ERROR", "EXCEPTION", "EXTRACT_INFO_RAISED", "OTHER_EXCEPTION"),
             ("NON_MAPPING", "RETURNED", "NON_MAPPING_RETURNED", "NONE"),
             ("SUCCESS", "RETURNED", "MAPPING_RETURNED", "NONE"),
             ("FAKE_RESPONSE", "RETURNED", "EXTRACT_INFO_RAISED", "YTDLP_EXTRACTOR_ERROR"),
