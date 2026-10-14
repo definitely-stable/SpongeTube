@@ -1,12 +1,9 @@
 name: M3-A2-C2-D1 Response and Extractor Stages
 
-# First canonical run is one-shot on main; remove BOTH trigger and push event
-# after independent evidence audit. Manual-only thereafter.
+# Canonical D1 run 38556880002 completed; research-only manual dispatch.
+# No automatic provider calls on source or evidence changes.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [.work/m3-a2/c2-d1-run-v1.trigger]
 
 permissions:
   contents: read
