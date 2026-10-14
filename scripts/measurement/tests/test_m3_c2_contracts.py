@@ -40,6 +40,27 @@ class C2ClassificationTest(unittest.TestCase):
         exc = RuntimeError("no supported javascript runtime for video SECRET_PROVIDER_ID")
         self.assertEqual("UNCLASSIFIED", classify_exception(exc))
 
+    def test_spoofed_status_attributes_cannot_claim_http_response(self):
+        for attribute, status in (("status", 403), ("code", 429)):
+            with self.subTest(attribute=attribute):
+                exc = RuntimeError("private data from an arbitrary layer")
+                setattr(exc, attribute, status)
+                self.assertEqual("UNCLASSIFIED", classify_exception(exc))
+
+    def test_only_actual_http_exception_can_supply_http_status(self):
+        cause = urllib.error.HTTPError(
+            "https://example.invalid/private", 403, "confidential", {}, None,
+        )
+        outer = RuntimeError("do not inspect or retain this text")
+        outer.__cause__ = cause
+        self.assertEqual("HTTP_403", classify_exception(outer))
+        self.assertEqual(
+            "UNCLASSIFIED",
+            classify_exception(urllib.error.HTTPError(
+                "https://example.invalid/private", 302, "redirect", {}, None,
+            )),
+        )
+
     def test_nested_error_does_not_retain_exception_string(self):
         try:
             raise TimeoutError("signed URL https://example.invalid/private")
@@ -71,7 +92,7 @@ class C2DocumentTest(unittest.TestCase):
 
     def test_artifact_contains_only_typed_safe_metadata(self):
         validate_document(self.doc, self.registry)
-        self.assertEqual("EXTRACTOR_ERROR", self.doc["terminalClass"])
+        self.assertEqual("UNCLASSIFIED", self.doc["terminalClass"])
         self.assertEqual([{"ordinal": 2, "class": "HTTP_403"}], self.doc["networkFailures"])
         self.assertEqual(2, self.doc["metadataRequestsUsed"])
         rendered = json.dumps(self.doc, sort_keys=True)
