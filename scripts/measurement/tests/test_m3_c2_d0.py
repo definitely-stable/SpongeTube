@@ -11,7 +11,8 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from m3_batch import inputs, M3BatchError
+from m3_batch import M3BatchError
+from test_m3_batch import inputs
 from m3_c2_contracts import C2ContractError
 from m3_c2_d0 import (
     D0Error, PAIRS, build_plan, run_d0, typed_network_category,
