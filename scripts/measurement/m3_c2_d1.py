@@ -160,6 +160,7 @@ def validate_document_d1(doc: Mapping[str, Any], registry: Mapping[str, Any]) ->
     require(isinstance(doc, dict) and set(doc) == BASE_KEYS | {
         "responseEvents", "extractorStage", "extractorErrorType",
     }, "invalid D1 document key set")
+    require(doc["protocol"] == PROTOCOL, "unapproved D1 diagnostic protocol")
     base = {k: doc[k] for k in BASE_KEYS}
     base["protocol"] = C2_PROTOCOL
     validate_document(base, registry)
