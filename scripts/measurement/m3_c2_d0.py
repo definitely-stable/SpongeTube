@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import sys
 import urllib.parse
 from collections.abc import Mapping
@@ -113,6 +114,15 @@ def observe_cell(
     *, registry: Mapping[str, Any], cell: Mapping[str, Any], raw_id: str,
     git_commit: str, runner_image: str, oracle_loader: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require(
+        isinstance(git_commit, str) and re.fullmatch(r"[0-9a-f]{40}", git_commit) is not None,
+        "exact lowercase source SHA required before provider I/O",
+    )
+    require(
+        isinstance(runner_image, str)
+        and re.fullmatch(r"[A-Za-z0-9._@-]{1,100}", runner_image) is not None,
+        "sanitized runner identity required before provider I/O",
+    )
     case_class, lane = cell["caseClass"], cell["lane"]
     validate_case_input(registry, case_class=case_class, case_revision=cell["caseRevision"], video_id=raw_id, lane=lane)
     require(cell["profileId"] == registry["laneProfiles"][lane], "client profile drift")
