@@ -1,12 +1,9 @@
 name: M3-A2-C1 Paired Controls
 
+# The one-shot path trigger has been consumed by canonical run 38537003057.
+# All subsequent live-provider probes require explicit workflow_dispatch.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - .work/m3-a2/control-run-v1.trigger
 
 permissions:
   contents: read

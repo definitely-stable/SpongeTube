@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "experiment": "M3-A2-C1",
+  "status": "CONTROL_PILOT_AUDITED_NEGATIVE",
+  "verifiedAtUtc": "2026-10-14",
+  "issue": 152,
+  "gitCommit": "8e452171f33586823207f8f628cfe819e8aac30f",
+  "workflowRunId": 38537003057,
+  "artifactId": 11880123093,
+  "zipSha256": "e871d8b18ec2894d4ee3864851b43350f2d7a55747e915c14ac2c405449fc91e",
+  "runnerImage": "ubuntu24@20261004.327.1",
+  "controlPlanId": "m3-a2-v0-v2-control-pilot-2026-10-12-v1",
+  "referenceOracle": {
+    "id": "YT_DLP",
+    "version": "2026.08.19",
+    "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+  },
+  "observedCells": 4,
+  "missingCells": 14,
+  "metadataRequests": 16,
+  "mediaProbes": 0,
+  "v1Qualification": "NOT_EVALUATED",
+  "globalDecision": "NOT_MADE_M3_A2",
+  "files": {
+    "aggregate/control-matrix-v1.json": "63ae79a54bb467785d3c1c069fb63059faa7deb65239bce2d96ad97304f0bdfd",
+    "aggregate/control-matrix-v1.md": "e47610acac4106b2f426888878b572d259fb95a6b2c7c221c5fddc75af2b131d",
+    "control-summary-v1.json": "065536d413dbda35759ea5a2c7fb9d52f20a5ceb2ac09ff140a6107592ea5d0c",
+    "probes/v0-tv.json": "ccaf94a1eec11249eafb94808d893f69b071bcda4f1fae389663fbdbe3016c9d",
+    "probes/v0-web_embedded.json": "e2033f61c36aedd7e4928187126ff551fa37cbcdb4722ef138c4f137831342af",
+    "probes/v2-tv.json": "7edc9b19defc689fe9c1b7547558f7aa685784532c7b85d9ff8ead750d467270",
+    "probes/v2-web_embedded.json": "21b059616d4c9ab8c7c6f2442af4b8b4868e5c4e57bcaf83f8b9a06b37ef0e65"
+  },
+  "cells": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "mediaProbes": 0,
+      "outcome": "INCONCLUSIVE"
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "mediaProbes": 0,
+      "outcome": "INCONCLUSIVE"
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "mediaProbes": 0,
+      "outcome": "INCONCLUSIVE"
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "mediaProbes": 0,
+      "outcome": "INCONCLUSIVE"
+    }
+  ]
+}
