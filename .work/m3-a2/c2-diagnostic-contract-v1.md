@@ -39,11 +39,15 @@ asserting that requirement. A generic yt-dlp warning, a missing runtime,
 unknown exception or unsuccessful media metadata extraction never proves
 the cause is a JS challenge or a PO-token requirement.
 
-`classify_exception` inspects known exception *types*, numeric HTTP status and
-bounded exception-cause links only. It **never calls str(exc)**, includes raw
-message text or carries provider IDs, signed URLs, cookies, authorization
-headers, tokens, user identifiers or raw egress IPs in the artifact.
-An unknown wrapped exception remains UNCLASSIFIED / EXTRACTOR_ERROR.
+`classify_exception` inspects known exception *types*, HTTP status only
+from a recognized HTTP response exception, and bounded exception-cause links.
+A generic exception's `status` or `code` attribute is not HTTP evidence.
+It **never calls str(exc)**, includes raw message text or carries provider
+IDs, signed URLs, cookies, authorization headers, tokens, user identifiers
+or raw egress IPs in the artifact.
+An unknown wrapped exception remains `UNCLASSIFIED`. `EXTRACTOR_ERROR`
+requires future explicitly verified extractor-origin evidence; this offline
+capture does not infer that category from arbitrary exceptions.
 
 ## Falsification and acceptance
 
