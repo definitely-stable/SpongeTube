@@ -1,0 +1,130 @@
+name: M3-A2-C2-D0 Metadata Diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.work/m3-a2/c2-d0-run-v1.trigger]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-c2-d0-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate frozen plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d0.py validate-plan \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --c1-plan .work/m3-a2/control-plan-v1.json \
+            --plan .work/m3-a2/c2-d0-plan-v1.json
+
+      - name: Fetch pinned reference case source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/m3-c2-d0/source
+          python3 - <<'PY'
+          import json, pathlib, urllib.request
+          cases = json.loads(pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text())["cases"]
+          sources = [c["selectionEvidence"] for c in cases]
+          repos = {c["sourceRepository"] for c in sources}
+          revisions = {c["sourceRevision"] for c in sources}
+          paths = {c["sourcePath"] for c in sources}
+          if repos != {"yt-dlp/yt-dlp"} or len(revisions) != 1 or len(paths) != 1:
+              raise SystemExit("Pinned source mismatch")
+          url = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/" + next(iter(revisions)) + "/" + next(iter(paths))
+          with urllib.request.urlopen(url, timeout=30) as response:
+              payload = response.read(2 * 1024 * 1024 + 1)
+          if not payload or len(payload) > 2 * 1024 * 1024:
+              raise SystemExit("Pinned source outside size bound")
+          pathlib.Path("build/m3-c2-d0/source/_video.py").write_bytes(payload)
+          print("Pinned source loaded ephemerally")
+          PY
+
+      - name: Install isolated pinned yt-dlp
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-c2-d0/venv
+          build/m3-c2-d0/venv/bin/python -m pip install --disable-pip-version-check --no-input "yt-dlp==2026.8.19"
+          test "$(build/m3-c2-d0/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.08.19"
+          test "$(build/m3-c2-d0/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+
+      - name: Collect metadata diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/m3-c2-d0/venv/bin/python scripts/measurement/m3_c2_d0.py run \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --c1-plan .work/m3-a2/control-plan-v1.json \
+            --plan .work/m3-a2/c2-d0-plan-v1.json \
+            --source-file build/m3-c2-d0/source/_video.py \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --output-dir build/m3-c2-d0/evidence
+
+      - name: Independently verify artifacts and privacy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, sys
+          sys.path.insert(0, "scripts/measurement")
+          from m3_c2_contracts import validate_document
+          from m3_batch import derive_case_inputs_from_source
+          root = pathlib.Path("build/m3-c2-d0/evidence")
+          registry = json.loads(pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text())
+          ids = derive_case_inputs_from_source(registry, pathlib.Path("build/m3-c2-d0/source/_video.py").read_text())
+          manifest = json.loads((root / "manifest-v1.json").read_text())
+          probes = {"v0-web_embedded.json", "v2-web_embedded.json", "v0-tv.json", "v2-tv.json"}
+          expected = probes | {"summary-v1.json"}
+          if set(row["path"] for row in manifest["files"]) != expected:
+              raise SystemExit("Manifest mismatch")
+          if {path.name for path in root.iterdir()} != expected | {"manifest-v1.json"}:
+              raise SystemExit("Unexpected evidence file")
+          for item in manifest["files"]:
+              if hashlib.sha256((root / item["path"]).read_bytes()).hexdigest() != item["sha256"]:
+                  raise SystemExit("Checksum mismatch")
+          for name in probes:
+              validate_document(json.loads((root / name).read_text()), registry)
+          summary = json.loads((root / "summary-v1.json").read_text())
+          if (
+              summary["controlCellsObserved"] != 4
+              or summary["totalMediaProbes"] != 0
+              or summary["globalDecision"] != "NOT_MADE_M3_A2"
+          ):
+              raise SystemExit("Incomplete diagnostics")
+          for path in root.iterdir():
+              raw = path.read_bytes()
+              if any(value.encode() in raw for value in ids.values()):
+                  raise SystemExit("Provider ID leaked")
+          print("C2-D0 evidence verified independently")
+          PY
+
+      - name: Delete ephemeral input
+        if: always()
+        shell: bash
+        run: rm -rf build/m3-c2-d0/source
+
+      - name: Upload only validated diagnostics
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m3-a2-c2-d0-metadata-only
+          path: build/m3-c2-d0/evidence/
+          if-no-files-found: error
+          retention-days: 30
