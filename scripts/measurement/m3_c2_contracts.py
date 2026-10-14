@@ -115,6 +115,26 @@ class DiagnosticCapture:
             "class": classify_exception(error),
         })
 
+    def failed_request_class(self, ordinal: int, category: str) -> None:
+        """Accept only trusted, already type-reduced transport evidence.
+
+        The caller must establish the transport exception class before invoking
+        this method. A raw exception message or arbitrary status is never passed.
+        """
+        _require(
+            type(ordinal) is int and 1 <= ordinal <= self.request_attempts,
+            "failed request ordinal is outside observed request attempts",
+        )
+        _require(
+            type(category) is str and category in OBSERVABLE_CLASSES,
+            "unapproved network diagnostic class",
+        )
+        _require(
+            not any(item["ordinal"] == ordinal for item in self.network_failures),
+            "duplicate request failure",
+        )
+        self.network_failures.append({"ordinal": ordinal, "class": category})
+
     def finish(
         self,
         *,
