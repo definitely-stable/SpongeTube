@@ -145,6 +145,17 @@ class D0Tests(unittest.TestCase):
                 self.assertEqual([{"class": "HTTP_403", "ordinal": 1}], doc["networkFailures"])
                 self.assertEqual("UNCLASSIFIED", doc["terminalClass"])
 
+    def test_failure_class_api_rejects_untrusted_diagnosis(self):
+        from m3_c2_contracts import DiagnosticCapture
+        capture = DiagnosticCapture()
+        capture.next_request()
+        for category in ("JS_RUNTIME_UNAVAILABLE", "TOKEN_GATED", "HTTP_999", "Authorization: token"):
+            with self.subTest(category=category), self.assertRaises(C2ContractError):
+                capture.failed_request_class(1, category)
+        capture.failed_request_class(1, "UNCLASSIFIED")
+        with self.assertRaises(C2ContractError):
+            capture.failed_request_class(1, "HTTP_403")
+
     def test_source_identity_rejected_before_network_calls(self):
         wrong = dict(self.ids)
         wrong["V1"] = "not-a-valid-id"
