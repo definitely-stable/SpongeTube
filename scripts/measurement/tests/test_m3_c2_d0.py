@@ -182,6 +182,16 @@ class D0Tests(unittest.TestCase):
             with self.subTest(mutate=mutate), self.assertRaises(D0Error):
                 validate_plan(wrong, self.registry, self.c1)
 
+    def test_bad_git_sha_or_runner_fails_before_network(self):
+        cell = self.plan["cells"][0]
+        for sha, runner in (("GARBAGE", self.inputs.runner_image), (self.inputs.git_commit, "bad/url")):
+            with self.subTest(sha=sha, runner=runner), self.assertRaises(D0Error):
+                observe_cell(
+                    registry=self.registry, cell=cell, raw_id=self.ids["V0"],
+                    git_commit=sha, runner_image=runner, oracle_loader=self.loader,
+                )
+        self.assertEqual(0, FakeOracle.network_calls)
+
     def test_wrong_oracle_revision_fails_before_network(self):
         def invalid_loader():
             oracle = self.registry["referenceOracle"]
