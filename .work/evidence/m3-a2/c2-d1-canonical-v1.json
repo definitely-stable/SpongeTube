@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d1-responses-2026-10-14-v1",
+  "result": "SIXTEEN_2XX_RESPONSES_FOUR_YTDLP_DOWNLOAD_ERRORS",
+  "exactGitCommit": "aadd92be9446cf15b08c99b78992546c6f74bee3",
+  "runnerImage": "ubuntu24@20261004.327.1",
+  "workflowRunId": 38556880002,
+  "artifactId": 11889828319,
+  "archiveSha256": "446a2502f0f085930bcbded379eb3809c75aadecca851bd6d2b4794b6c24a181",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "oracleVersion": "2026.08.19",
+  "oracleRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+  "totalMetadataRequests": 16,
+  "totalMediaProbes": 0,
+  "observedCells": 4,
+  "returnedHttp2xxEvents": 16,
+  "returnedUnknownContentTypeEvents": 16,
+  "typedEscapingTransportErrors": 0,
+  "extractionCompletedCount": 0,
+  "globalDecision": "NOT_MADE_M3_A2",
+  "files": {
+    "summary-v1.json": "40266375324045d62dbf34f70143ce7e99133d58c1951f55b0402756ef6647cc",
+    "v0-tv.json": "e2825f215a5a528c0e14c9a9dbb7d622eba750b79e22b686f90796de357b34cb",
+    "v0-web_embedded.json": "5720d2cd625217a45a75872750896a495c8cd23e1717d2a6f8a852a5412e3c58",
+    "v2-tv.json": "a27e8e1527bd01417c1e5843eae35ba42f3e2df557a7bef6b7efb4eb77658cf4",
+    "v2-web_embedded.json": "c4fcf9c39641fb1496d7b2b3a8d8157ffab13f85713f7d6084cb5f66e3a73984"
+  },
+  "cells": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "contentTypeFamily": "UNKNOWN",
+      "extractorStage": "EXTRACT_INFO_RAISED",
+      "extractorErrorType": "YTDLP_DOWNLOAD_ERROR"
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "contentTypeFamily": "UNKNOWN",
+      "extractorStage": "EXTRACT_INFO_RAISED",
+      "extractorErrorType": "YTDLP_DOWNLOAD_ERROR"
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "contentTypeFamily": "UNKNOWN",
+      "extractorStage": "EXTRACT_INFO_RAISED",
+      "extractorErrorType": "YTDLP_DOWNLOAD_ERROR"
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "contentTypeFamily": "UNKNOWN",
+      "extractorStage": "EXTRACT_INFO_RAISED",
+      "extractorErrorType": "YTDLP_DOWNLOAD_ERROR"
+    }
+  ]
+}
