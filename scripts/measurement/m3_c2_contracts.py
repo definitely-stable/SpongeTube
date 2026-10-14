@@ -63,11 +63,11 @@ def classify_exception(error: BaseException) -> str:
         if current is None or id(current) in visited:
             break
         visited.add(id(current))
-        code = _status_class(getattr(current, "status", None))
-        if code is None:
-            code = _status_class(getattr(current, "code", None))
-        if code is not None:
-            return code
+        # An arbitrary exception may expose a .status or .code attribute.
+        # Only a recognized HTTP response exception is evidence of HTTP status.
+        # Future transport libraries need explicit, separately tested adapters.
+        if isinstance(current, urllib.error.HTTPError):
+            return _status_class(current.code) or "UNCLASSIFIED"
         if isinstance(current, (TimeoutError, socket.timeout)):
             return "TIMEOUT"
         if isinstance(current, ssl.SSLError):
@@ -135,9 +135,9 @@ class DiagnosticCapture:
         if extraction_completed:
             terminal = "NONE"
         elif terminal_error is not None:
+            # A generic exception is not proof of extractor-specific failure.
+            # Preserve UNKNOWN rather than inventing an upstream cause.
             terminal = classify_exception(terminal_error)
-            if terminal == "UNCLASSIFIED":
-                terminal = "EXTRACTOR_ERROR"
         else:
             terminal = "UNCLASSIFIED"
 
