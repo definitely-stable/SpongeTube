@@ -1,0 +1,110 @@
+name: M3-A2-C2-D1 Response and Extractor Stages
+
+# First canonical run is one-shot on main; remove BOTH trigger and push event
+# after independent evidence audit. Manual-only thereafter.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.work/m3-a2/c2-d1-run-v1.trigger]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-c2-d1-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate frozen plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d1.py validate-plan \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --c1-plan .work/m3-a2/control-plan-v1.json \
+            --d0-plan .work/m3-a2/c2-d0-plan-v1.json \
+            --plan .work/m3-a2/c2-d1-plan-v1.json
+
+      - name: Fetch pinned reference case source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/m3-c2-d1/source
+          python3 - <<'PY'
+          import json, pathlib, urllib.request
+          cases = json.loads(pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text())["cases"]
+          sources = [c["selectionEvidence"] for c in cases]
+          repos = {c["sourceRepository"] for c in sources}
+          revisions = {c["sourceRevision"] for c in sources}
+          paths = {c["sourcePath"] for c in sources}
+          if repos != {"yt-dlp/yt-dlp"} or len(revisions) != 1 or len(paths) != 1:
+              raise SystemExit("Pinned source mismatch")
+          url = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/" + next(iter(revisions)) + "/" + next(iter(paths))
+          with urllib.request.urlopen(url, timeout=30) as response:
+              payload = response.read(2 * 1024 * 1024 + 1)
+          if not payload or len(payload) > 2 * 1024 * 1024:
+              raise SystemExit("Pinned source outside size bound")
+          pathlib.Path("build/m3-c2-d1/source/_video.py").write_bytes(payload)
+          print("Pinned source loaded ephemerally")
+          PY
+
+      - name: Install isolated pinned yt-dlp
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-c2-d1/venv
+          build/m3-c2-d1/venv/bin/python -m pip install --disable-pip-version-check --no-input "yt-dlp==2026.8.19"
+          test "$(build/m3-c2-d1/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.08.19"
+          test "$(build/m3-c2-d1/venv/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+
+      - name: Collect metadata diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/m3-c2-d1/venv/bin/python scripts/measurement/m3_c2_d1.py run \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --c1-plan .work/m3-a2/control-plan-v1.json \
+            --d0-plan .work/m3-a2/c2-d0-plan-v1.json \
+            --plan .work/m3-a2/c2-d1-plan-v1.json \
+            --source-file build/m3-c2-d1/source/_video.py \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --output-dir build/m3-c2-d1/evidence
+
+      - name: Independently verify all four typed artifacts, hashes and privacy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d1.py verify \
+            --registry .work/m3-a2/case-registry-v1.json \
+            --c1-plan .work/m3-a2/control-plan-v1.json \
+            --d0-plan .work/m3-a2/c2-d0-plan-v1.json \
+            --plan .work/m3-a2/c2-d1-plan-v1.json \
+            --source-file build/m3-c2-d1/source/_video.py \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --output-dir build/m3-c2-d1/evidence
+
+      - name: Delete ephemeral input
+        if: always()
+        shell: bash
+        run: rm -rf build/m3-c2-d1/source
+
+      - name: Upload only validated diagnostics
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m3-a2-c2-d1-typed-response
+          path: build/m3-c2-d1/evidence/
+          if-no-files-found: error
+          retention-days: 30
