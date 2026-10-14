@@ -29,7 +29,8 @@ CATEGORIES = frozenset({
 })
 # EJS unavailability may be emitted ONLY by an explicit versioned reference
 # signal, never inferred from a missing runtime, generic exception or warning.
-TERMINAL_CATEGORIES = CATEGORIES | {"NONE"}
+OBSERVABLE_CLASSES = CATEGORIES - {"JS_RUNTIME_UNAVAILABLE"}
+TERMINAL_CATEGORIES = OBSERVABLE_CLASSES | {"NONE"}
 _ALLOWED_HOST_TOKEN = re.compile(r"[A-Za-z0-9._@-]{1,100}\Z")
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -124,7 +125,6 @@ class DiagnosticCapture:
         runner_image: str,
         extraction_completed: bool,
         terminal_error: BaseException | None = None,
-        explicit_js_reference_signal: bool = False,
     ) -> dict[str, Any]:
         _require(
             not (extraction_completed and terminal_error is not None),
@@ -132,13 +132,7 @@ class DiagnosticCapture:
         )
         # Only an explicit, separately pinned reference signal may assert
         # runtime unavailability. Generic no-JS configuration alone cannot.
-        _require(
-            not (extraction_completed and explicit_js_reference_signal),
-            "successful extraction cannot assert a JS requirement",
-        )
-        if explicit_js_reference_signal:
-            terminal = "JS_RUNTIME_UNAVAILABLE"
-        elif extraction_completed:
+        if extraction_completed:
             terminal = "NONE"
         elif terminal_error is not None:
             terminal = classify_exception(terminal_error)
@@ -255,11 +249,11 @@ def validate_document(document: Mapping[str, Any], registry: Mapping[str, Any]) 
         _exact_keys(item, {"ordinal", "class"}, "network failure")
         ordinal = item["ordinal"]
         _require(type(ordinal) is int and 1 <= ordinal <= n, "failure ordinal out of range")
-        _require(item["class"] in CATEGORIES, "unknown/unsafe failure class")
+        _require(isinstance(item["class"], str) and item["class"] in OBSERVABLE_CLASSES, "unknown/unsafe failure class")
         ordinals.append(ordinal)
     _require(ordinals == sorted(set(ordinals)), "failure records must be unique and ordered")
     _require(type(document["extractionCompleted"]) is bool, "invalid extraction completion")
-    _require(document["terminalClass"] in TERMINAL_CATEGORIES, "unknown terminal failure class")
+    _require(isinstance(document["terminalClass"], str) and document["terminalClass"] in TERMINAL_CATEGORIES, "unknown terminal failure class")
     if document["extractionCompleted"]:
         _require(document["terminalClass"] == "NONE", "complete extraction cannot have terminal failure")
     else:
