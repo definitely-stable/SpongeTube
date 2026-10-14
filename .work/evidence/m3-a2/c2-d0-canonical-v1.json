@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d0-nojs-2026-10-14-v1",
+  "result": "FOUR_INCOMPLETE_NO_TYPED_NETWORK_ERRORS",
+  "exactGitCommit": "47b9865aec0feb4ee34991ffd0bcbd23886858a6",
+  "runnerImage": "ubuntu24@20261004.327.1",
+  "workflowRunId": 38551923709,
+  "artifactId": 11887246544,
+  "archiveSha256": "516ecaf3976768d5ff533849dbc74e38fdff487d9aedc7d6c1dee3cbd0a2e840",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "oracleVersion": "2026.08.19",
+  "oracleRevision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+  "totalMetadataRequests": 16,
+  "totalMediaProbes": 0,
+  "observedCells": 4,
+  "extractionCompleteCount": 0,
+  "networkExceptionCount": 0,
+  "globalDecision": "NOT_MADE_M3_A2",
+  "files": {
+    "summary-v1.json": "dd8756b04f36d96602d259731e88ddd910f47ff7b974e1229d0718497e4f3c25",
+    "v0-tv.json": "a04fb5b859ea81ca30953f31bacdc3b73763b6f49a65279a9a02f596da9c90ed",
+    "v0-web_embedded.json": "31b204e7d79d4258616c9ec17aee1e231d0fc58c5f038c777333c5879bf69e27",
+    "v2-tv.json": "fdfec74e1a57ad18fc76baac59d635e1e8367fce49a0a891603ecd438cf4d2a1",
+    "v2-web_embedded.json": "ed9dee015db0fe69f9ade8f0b5fa9f07833ad260a103fd071c95524ee0da3874"
+  },
+  "cells": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "requests": 4,
+      "networkExceptions": 0,
+      "terminalClass": "UNCLASSIFIED",
+      "extractionCompleted": false
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "requests": 4,
+      "networkExceptions": 0,
+      "terminalClass": "UNCLASSIFIED",
+      "extractionCompleted": false
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "requests": 4,
+      "networkExceptions": 0,
+      "terminalClass": "UNCLASSIFIED",
+      "extractionCompleted": false
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "requests": 4,
+      "networkExceptions": 0,
+      "terminalClass": "UNCLASSIFIED",
+      "extractionCompleted": false
+    }
+  ]
+}
