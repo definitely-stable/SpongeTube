@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import types
+import urllib.parse
 from collections.abc import Mapping
 from typing import Any, Callable
 
@@ -21,6 +22,8 @@ import m3_c2_d1 as d1
 import m3_c2_d2 as d2
 from m3_batch import derive_case_inputs_from_source
 from m3_matrix import load_registry, validate_case_input
+from m3_c2_d0 import SilentLogger
+from m3_c2_contracts import OBSERVABLE_CLASSES, classify_exception
 
 PLAN_ID = "m3-a2-c2-d3-paired-oracles-2026-10-25-v1"
 PROTOCOL = "m3-a2-c2-d3-paired-oracles-v1"
@@ -40,13 +43,6 @@ CLIENT_KEYS = frozenset({"lane", "profileId"})
 def require(ok: bool, reason: str) -> None:
     if not ok:
         raise ValueError(reason)
-
-
-def cloned_registry(registry: Mapping[str, Any], arm: str) -> dict[str, Any]:
-    require(arm in ORACLES, "unknown reference arm")
-    result = copy.deepcopy(registry)
-    result["referenceOracle"] = dict(ORACLES[arm])
-    return result
 
 
 def build_plan(registry: Mapping[str, Any], c1: Mapping[str, Any],
@@ -95,6 +91,158 @@ def _observation_key(step: Mapping[str, Any]) -> str:
     return f"{step['ordinal']:02d}-{step['caseClass'].lower()}-{step['lane'].lower()}-{step['arm'].lower()}.json"
 
 
+def validate_typed_reference(ob: Any, registry: Mapping[str, Any],
+                             step: Mapping[str, Any], plan: Mapping[str, Any]) -> None:
+    """Independent D3 schema. The original frozen D0-D2 registry is NEVER rewritten."""
+    required = d1.BASE_KEYS | {
+        "responseEvents", "extractorStage", "extractorErrorType", "nestedCauseClass",
+    }
+    require(type(ob) is dict and set(ob) == required, "unexpected D3 reference fields")
+    require(type(ob["schemaVersion"]) is int and ob["schemaVersion"] == 1
+            and ob["protocol"] == PROTOCOL
+            and ob["referenceOracle"] == ORACLES[step["arm"]]
+            and ob["mode"] == plan["mode"]
+            and ob["decision"] == "DIAGNOSTIC_ONLY_NO_PROVIDER_INFERENCE"
+            and type(ob["metadataRequestLimit"]) is int
+            and ob["metadataRequestLimit"] == MAX_PER_OBSERVATION,
+            "invalid D3 reference provenance/mode")
+    n = ob["metadataRequestsUsed"]
+    require(type(n) is int and 0 <= n <= MAX_PER_OBSERVATION,
+            "observation request budget exceeded")
+    require(type(ob["extractionCompleted"]) is bool
+            and type(ob["extractorStage"]) is str
+            and ob["extractorStage"] in d1.EXTRACTOR_STAGES
+            and type(ob["extractorErrorType"]) is str
+            and ob["extractorErrorType"] in d1.EXTRACTOR_TYPES
+            and type(ob["nestedCauseClass"]) is str
+            and ob["nestedCauseClass"] in d2.CAUSE_CLASSES,
+            "untrusted extractor state")
+    stage, kind = ob["extractorStage"], ob["extractorErrorType"]
+    if stage == "MAPPING_RETURNED":
+        require(ob["extractionCompleted"] and kind == "NONE"
+                and ob["nestedCauseClass"] == "NONE" and ob["terminalClass"] == "NONE",
+                "success has terminal error")
+    elif stage == "NON_MAPPING_RETURNED":
+        require(not ob["extractionCompleted"] and kind == "NONE"
+                and ob["nestedCauseClass"] == "NONE"
+                and ob["terminalClass"] == "UNCLASSIFIED",
+                "nonmapping outcome drift")
+    else:
+        require(not ob["extractionCompleted"] and kind != "NONE",
+                "exception stage inconsistent")
+    require(type(ob["terminalClass"]) is str
+            and ob["terminalClass"] in OBSERVABLE_CLASSES | {"NONE"},
+            "untrusted terminal class")
+    failures, events = ob["networkFailures"], ob["responseEvents"]
+    require(type(failures) is list and type(events) is list and len(events) == n,
+            "incomplete request accounting")
+    failure_by_ordinal = {}
+    for failure in failures:
+        require(type(failure) is dict and set(failure) == {"ordinal", "class"}
+                and type(failure["ordinal"]) is int
+                and 1 <= failure["ordinal"] <= n
+                and type(failure["class"]) is str
+                and failure["class"] in OBSERVABLE_CLASSES
+                and failure["ordinal"] not in failure_by_ordinal,
+                "invalid trusted network failure")
+        failure_by_ordinal[failure["ordinal"]] = failure["class"]
+    for ordinal, ev in enumerate(events, 1):
+        require(type(ev) is dict and type(ev.get("ordinal")) is int
+                and ev["ordinal"] == ordinal, "request event ordinal drift")
+        if ev.get("kind") == "RETURNED":
+            require(set(ev) == {"ordinal", "kind", "httpClass", "contentTypeFamily"}
+                    and type(ev["httpClass"]) is str
+                    and ev["httpClass"] in d1.HTTP_CLASSES
+                    and type(ev["contentTypeFamily"]) is str
+                    and ev["contentTypeFamily"] in d1.CONTENT_TYPES
+                    and ordinal not in failure_by_ordinal,
+                    "untrusted response telemetry")
+        elif ev.get("kind") == "EXCEPTION":
+            require(set(ev) == {"ordinal", "kind", "class"}
+                    and type(ev["class"]) is str
+                    and failure_by_ordinal.get(ordinal) == ev["class"],
+                    "response/exception mismatch")
+        else:
+            raise ValueError("unapproved network observation")
+
+
+def observe_versioned_cell(*, registry: Mapping[str, Any],
+                           cell: Mapping[str, Any], arm: str, raw_id: str,
+                           git_commit: str, runner_image: str,
+                           oracle_loader: Callable[[], Any]) -> dict[str, Any]:
+    """Reuse D2 safe HTTP/exception observers without changing the D2 frozen oracle."""
+    require(arm in ORACLES, "unknown arm")
+    validate_case_input(registry, case_class=cell["caseClass"],
+                        case_revision=cell["caseRevision"], video_id=raw_id,
+                        lane=cell["lane"])
+    require(cell["profileId"] == registry["laneProfiles"][cell["lane"]],
+            "unapproved profile")
+    api, version, revision = oracle_loader()
+    require(version == ORACLES[arm]["version"]
+            and revision == ORACLES[arm]["revision"], "oracle installation drift")
+    capture = d2.ResponseCaptureD2()
+
+    class InstrumentedYoutubeDL(api.YoutubeDL):
+        def urlopen(self, request):
+            ordinal = capture.next_request()  # BEFORE provider I/O.
+            try:
+                result = super().urlopen(request)
+            except Exception as error:
+                capture.failed(ordinal, error, api.networking_exceptions)
+                raise
+            capture.returned(ordinal, result, api.networking_response_type)
+            return result
+
+    params = {
+        "logger": SilentLogger(), "quiet": True, "no_warnings": False,
+        "skip_download": True, "noplaylist": True, "cachedir": False,
+        "js_runtimes": {}, "remote_components": set(),
+        "extractor_args": {"youtube": {
+            "player_client": [__import__("m3_probe").LANE_TO_YTDLP_CLIENT[cell["lane"]]],
+            "formats": ["missing_pot"],
+        }},
+    }
+    stage = "INITIALIZATION_FAILED"
+    terminal_error: BaseException | None = None
+    completed = False
+    errtype = "NONE"
+    url = "https://www.youtube.com/watch?v=" + urllib.parse.quote(raw_id, safe="")
+    try:
+        with InstrumentedYoutubeDL(params) as ydl:
+            stage = "EXTRACT_INFO_RAISED"
+            result = ydl.extract_info(url, download=False)
+            completed = isinstance(result, Mapping)
+            stage = "MAPPING_RETURNED" if completed else "NON_MAPPING_RETURNED"
+    except Exception as exc:
+        terminal_error = exc
+        errtype = d1.extractor_exception_type(exc, api.utils)
+    terminal = "NONE" if completed else (
+        classify_exception(terminal_error) if terminal_error is not None
+        else "UNCLASSIFIED"
+    )
+    observation = {
+        "schemaVersion": 1, "protocol": PROTOCOL,
+        "case": {k: cell[k] for k in CASE_KEYS},
+        "client": {"lane": cell["lane"], "profileId": cell["profileId"]},
+        "gitCommit": git_commit, "runnerImage": runner_image,
+        "referenceOracle": dict(ORACLES[arm]),
+        "mode": {"jsRuntime": "DISABLED", "remoteComponents": "DISABLED",
+                 "poTokenProvider": "ABSENT", "credentialsUsed": False},
+        "metadataRequestLimit": MAX_PER_OBSERVATION,
+        "metadataRequestsUsed": capture.request_attempts,
+        "networkFailures": sorted(capture.network_failures, key=lambda x: x["ordinal"]),
+        "extractionCompleted": completed, "terminalClass": terminal,
+        "decision": "DIAGNOSTIC_ONLY_NO_PROVIDER_INFERENCE",
+        "responseEvents": sorted(capture.response_events, key=lambda x: x["ordinal"]),
+        "extractorStage": stage, "extractorErrorType": errtype,
+        "nestedCauseClass": d2.nested_cause_class(
+            terminal_error, api.utils, api.networking_exceptions),
+    }
+    validate_typed_reference(observation, registry,
+                             {"arm": arm}, {"mode": observation["mode"]})
+    return observation
+
+
 def validate_observation(doc: Any, registry: Mapping[str, Any],
                          plan: Mapping[str, Any], step: Mapping[str, Any],
                          git_commit: str, runner_image: str) -> None:
@@ -108,8 +256,7 @@ def validate_observation(doc: Any, registry: Mapping[str, Any],
             and doc["caseClass"] == step["caseClass"]
             and doc["lane"] == step["lane"], "observation identity drift")
     observation = doc["observation"]
-    reference_registry = cloned_registry(registry, step["arm"])
-    d2.validate_document_d2(observation, reference_registry)
+    validate_typed_reference(observation, registry, step, plan)
     cell = next(x for x in plan["cells"] if x["caseClass"] == step["caseClass"]
                 and x["lane"] == step["lane"])
     require(observation["case"] == {k: cell[k] for k in CASE_KEYS}
@@ -347,8 +494,8 @@ def main() -> int:
             )
             cell = next(x for x in plan["cells"] if x["caseClass"] == step["caseClass"]
                         and x["lane"] == step["lane"])
-            observation = d2.observe_cell(
-                registry=cloned_registry(registry, step["arm"]), cell=cell,
+            observation = observe_versioned_cell(
+                registry=registry, cell=cell, arm=step["arm"],
                 raw_id=ids[step["caseClass"]], git_commit=args.git_commit,
                 runner_image=args.runner_image,
                 oracle_loader=lambda: (fake_api, oracle["version"], oracle["revision"]),
