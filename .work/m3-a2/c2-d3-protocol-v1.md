@@ -26,7 +26,7 @@ Machine-plan source: `.work/m3-a2/c2-d3-plan-v1.json`.
 - **A**: yt-dlp `2026.08.19`, release SHA
   `594bd50c2c78ac432f81600d309fdc4e0a92d82c`.
 - **B**: yt-dlp `2026.10.21`, release SHA
-  `6ccd977303412151ee23352c6257dd658ffc1987`.
+  `8cdf4fea48ecf4064387375301d7f294ebdb17c1`.
 - Exactly **4 original paired cells** (V0/V2 × WEB_EMBEDDED/TV),
   each observed once under A and once under B, **8 attempts**:
   `V0/web: A,B`; `V2/web: B,A`; `V0/tv: B,A`; `V2/tv: A,B`.

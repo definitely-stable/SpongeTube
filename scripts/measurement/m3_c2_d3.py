@@ -31,7 +31,7 @@ ORACLES = {
     "A": {"id": "YT_DLP", "version": "2026.08.19",
           "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c"},
     "B": {"id": "YT_DLP", "version": "2026.10.21",
-          "revision": "6ccd977303412151ee23352c6257dd658ffc1987"},
+          "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"},
 }
 ORDER = (("A", "B"), ("B", "A"), ("B", "A"), ("A", "B"))
 MAX_PER_OBSERVATION = 32

@@ -66,7 +66,7 @@ jobs:
           test "$(build/m3-c2-d3/venv-a/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.08.19"
           test "$(build/m3-c2-d3/venv-a/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
           test "$(build/m3-c2-d3/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.10.21"
-          test "$(build/m3-c2-d3/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "6ccd977303412151ee23352c6257dd658ffc1987"
+          test "$(build/m3-c2-d3/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
 
       - name: Observe fixed version-paired controls with 0 media reads
         shell: bash
