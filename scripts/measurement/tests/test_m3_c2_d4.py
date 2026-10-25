@@ -52,7 +52,7 @@ class YoutubeIE:
         return None
 
 
-YoutubeIE.__module__ = "yt_dlp.extractor.youtube._video"
+YoutubeIE.__module__ = "yt_dlp.extractor.youtube"
 
 
 class D4Tests(unittest.TestCase):
@@ -126,11 +126,24 @@ class D4Tests(unittest.TestCase):
         ], [(x["stage"], x["outcome"]) for x in trace])
         self.assertNotIn("SECRET_SIGNED_LINK", json.dumps(trace))
 
+    def test_original_pre_override_module_name_is_rejected(self):
+        # Pinned youtube/__init__.py rewrites __module__ for plugin overrides.
+        former = YoutubeIE.__module__
+        original = YoutubeIE.__dict__["_real_extract"]
+        try:
+            YoutubeIE.__module__ = "yt_dlp.extractor.youtube._video"
+            with self.assertRaises(ValueError):
+                with StageObserver().installed(YoutubeIE):
+                    pass
+        finally:
+            YoutubeIE.__module__ = former
+        self.assertIs(YoutubeIE.__dict__["_real_extract"], original)
+
     def test_instrumentation_restores_even_if_setup_fails(self):
         class YoutubeIEBad:
             pass
         YoutubeIEBad.__name__ = "YoutubeIE"
-        YoutubeIEBad.__module__ = "yt_dlp.extractor.youtube._video"
+        YoutubeIEBad.__module__ = "yt_dlp.extractor.youtube"
         with self.assertRaises(ValueError):
             with StageObserver().installed(YoutubeIEBad):
                 pass

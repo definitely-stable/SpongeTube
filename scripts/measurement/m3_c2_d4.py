@@ -106,7 +106,7 @@ class StageObserver:
         """
         originals: dict[str, Any] = {}
         require(type(ie_class) is type and ie_class.__name__ == "YoutubeIE"
-                and ie_class.__module__ == "yt_dlp.extractor.youtube._video",
+                and ie_class.__module__ == "yt_dlp.extractor.youtube",
                 "unexpected target extractor class")
         for name in HOOKS:
             fn = vars(ie_class).get(name)
@@ -357,7 +357,7 @@ def main() -> int:
             return 0
         if args.command == "validate-hooks":
             phase = "LOAD_ORACLE"
-            from yt_dlp.extractor.youtube._video import YoutubeIE
+            from yt_dlp.extractor.youtube import YoutubeIE
             import yt_dlp.version
             oracle = d3.ORACLES["B"]
             require(yt_dlp.version.__version__ == oracle["version"]
@@ -365,13 +365,13 @@ def main() -> int:
                     "unexpected installed oracle")
             phase = "BIND_STAGE_HOOKS"
             target_ok = (type(YoutubeIE) is type and YoutubeIE.__name__ == "YoutubeIE"
-                         and YoutubeIE.__module__ == "yt_dlp.extractor.youtube._video")
+                         and YoutubeIE.__module__ == "yt_dlp.extractor.youtube")
             print("D4_SAFE_TARGET_TYPE:" + ("EXACT" if type(YoutubeIE) is type else
                                                   "CUSTOM_METACLASS"))
             print("D4_SAFE_TARGET_NAME:" + ("MATCH" if YoutubeIE.__name__ == "YoutubeIE"
                                            else "MISMATCH"))
             print("D4_SAFE_TARGET_MODULE:" + (
-                "MATCH" if YoutubeIE.__module__ == "yt_dlp.extractor.youtube._video"
+                "MATCH" if YoutubeIE.__module__ == "yt_dlp.extractor.youtube"
                 else "MISMATCH"))
             print("D4_SAFE_HOOK_TARGET:" + ("MATCH" if target_ok else "MISMATCH"))
             # Only static trusted hook labels and booleans; do not print
@@ -400,7 +400,7 @@ def main() -> int:
             from yt_dlp import utils
             from yt_dlp.networking import exceptions as network_types
             from yt_dlp.networking.common import Response
-            from yt_dlp.extractor.youtube._video import YoutubeIE
+            from yt_dlp.extractor.youtube import YoutubeIE
             oracle = d3.ORACLES["B"]
             require(yt_dlp.version.__version__ == oracle["version"]
                     and yt_dlp.version.RELEASE_GIT_HEAD == oracle["revision"],
