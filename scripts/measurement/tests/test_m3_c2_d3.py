@@ -53,7 +53,7 @@ class D3Tests(unittest.TestCase):
             oracle_loader=lambda: (D2Oracle, oracle["version"], oracle["revision"]),
         )
 
-    def run(self, root):
+    def run_bundle(self, root):
         return run_d3(
             registry=self.registry, c1=self.c1, d0=self.d0, d1_plan=self.d1,
             d2_plan=self.d2, plan=self.plan, ids=self.ids, git_commit=self.sha,
@@ -117,7 +117,7 @@ class D3Tests(unittest.TestCase):
     def test_empty_output_required_and_full_paired_bundle(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp) / "evidence"
-            summary = self.run(root)
+            summary = self.run_bundle(root)
             self.assertEqual(8, summary["observations"])
             self.assertEqual(8, FakeOracle.network_calls)
             self.assertEqual(0, summary["totalMediaProbes"])
@@ -136,7 +136,7 @@ class D3Tests(unittest.TestCase):
                                "www.youtube.com", *self.ids.values()):
                     self.assertNotIn(secret, path.read_text())
             with self.assertRaises(ValueError):
-                self.run(root)
+                self.run_bundle(root)
 
     def test_bad_case_identity_aborts_before_network(self):
         ids = dict(self.ids)
@@ -152,7 +152,7 @@ class D3Tests(unittest.TestCase):
     def test_untrusted_status_and_metadata_cannot_claim_viability(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td) / "d3"
-            self.run(root)
+            self.run_bundle(root)
             path = root / "02-v0-web_embedded-b.json"
             original = json.loads(path.read_text())
             for key, value in (("arm", "A"), ("ordinal", 7), ("lane", "TV")):
@@ -180,7 +180,7 @@ class D3Tests(unittest.TestCase):
     def test_tamper_rejected_even_if_manifest_digest_recalculated(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td) / "d3"
-            self.run(root)
+            self.run_bundle(root)
             path = root / "summary-v1.json"
             summary = json.loads(path.read_text())
             summary["globalDecision"] = "B_REQUIRED"
@@ -198,7 +198,7 @@ class D3Tests(unittest.TestCase):
     def test_missing_duplicate_and_unexpected_evidence_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td) / "d3"
-            self.run(root)
+            self.run_bundle(root)
             (root / "garbage.txt").write_text("sensitive")
             with self.assertRaises(ValueError):
                 verify_bundle(registry=self.registry, plan=self.plan, ids=self.ids,
