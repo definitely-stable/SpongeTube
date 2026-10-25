@@ -132,7 +132,7 @@ class C2D2Tests(unittest.TestCase):
         self.assertEqual("UNKNOWN", safe_mime_family(Response(headers={"Content-Type": "text/html"}), Response))
         forged = types.SimpleNamespace(status=200, headers=headers())
         self.assertEqual("UNKNOWN", safe_mime_family(forged, Response))
-        self.assertEqual("UNKNOWN", safe_mime_family(Response(headers=headers()), object))
+        self.assertEqual("UNKNOWN", safe_mime_family(Response(headers=headers()), str))
 
     def test_header_accessor_exception_fails_unknown(self):
         class BrokenMessage(Message):
@@ -190,7 +190,7 @@ class C2D2Tests(unittest.TestCase):
         self.assertEqual("YTDLP_DOWNLOAD_ERROR", doc["extractorErrorType"])
         self.assertEqual("YTDLP_EXTRACTOR_ERROR", doc["nestedCauseClass"])
         self.assertEqual("UNCLASSIFIED", doc["terminalClass"])
-        self.assertEqual("NOT_MADE_M3_A2", doc["decision"].replace("DIAGNOSTIC_ONLY_NO_PROVIDER_INFERENCE","NOT_MADE_M3_A2"))
+        self.assertEqual("DIAGNOSTIC_ONLY_NO_PROVIDER_INFERENCE", doc["decision"])
         validate_document_d2(doc, self.registry)
         self.assertEqual({}, FakeOracle.configured_modes[0]["js"])
         self.assertEqual(set(), FakeOracle.configured_modes[0]["remote"])
@@ -203,7 +203,7 @@ class C2D2Tests(unittest.TestCase):
         self.assertEqual("NONE", successful["nestedCauseClass"])
         D2Oracle.behavior = "UNKNOWN"
         unknown = self.observe()
-        self.assertEqual("UNKNOWN", unknown["nestedCauseClass"] if unknown["nestedCauseClass"] != "NONE" else "NONE")
+        self.assertEqual("NONE", unknown["nestedCauseClass"])
         self.assertEqual("OTHER_EXCEPTION", unknown["extractorErrorType"])
 
     def test_invalid_identity_rejected_before_any_io(self):
