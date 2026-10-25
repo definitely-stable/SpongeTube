@@ -64,6 +64,12 @@ jobs:
           test "$(build/m3-c2-d4/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.10.21"
           test "$(build/m3-c2-d4/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
 
+      - name: Validate pinned YoutubeIE hook bindings offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/m3-c2-d4/venv-b/bin/python scripts/measurement/m3_c2_d4.py validate-hooks
+
       - name: Observe exactly four typed extractor phase traces
         shell: bash
         run: |
