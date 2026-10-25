@@ -88,8 +88,11 @@ Research workflow: `.github/workflows/m3-a2-c2-d2.yml`.
 
 ## Canonical evidence procedure
 
-After reviewed PR merge, separately arm a **single use** exact-main-path
-trigger, or explicitly dispatch a reviewed manual research run. The run must
+The reviewed implementation PR carries the **single-use**
+`.work/m3-a2/c2-d2-run-v1.trigger` and a path-scoped `main` push event.
+No provider calls occur on PR/Verify; squash merge on main triggers one
+canonical run. An explicit reviewed manual research run remains available.
+The run must
 use one exact GITHUB_SHA, one GitHub-hosted Ubuntu runner and the pinned
 reference. Independently download the original ZIP; record its SHA-256 and
 each entry digest under `.work/evidence/`. Preserve the original artifact
