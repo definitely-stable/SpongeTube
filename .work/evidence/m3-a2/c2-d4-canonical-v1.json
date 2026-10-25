@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d4-independent-canonical-audit-v1",
+  "runId": 40233961424,
+  "artifactId": 12614560774,
+  "gitCommit": "bdb93660648550fda440eb445881a02be8810098",
+  "runnerImage": "ubuntu24@20261023.334.3",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "originalZipSha256": "27b087cd49c8188c1fb6bb878d197d5e91d591c40838de264f03681a9df66e8d",
+  "originalManifestSha256": "b114a523f538b4f311337195757063ae25b827c3a7f9f7ca4616bcca2dd002ef",
+  "files": {
+    "02-v0-web_embedded-b.json": "ca7a4cc28a09f19bb07b790a90a20bee26673edbd2dc8a8c56467c07da6181a8",
+    "03-v2-web_embedded-b.json": "0585c82e5ee3a408be9ff59bf558a11cfb564056c9481bc720dd51e9ca9bb50b",
+    "05-v0-tv-b.json": "c70c52eb01cce759ea1cf1833868b2c5fe25845b6de5628a619da60c01141de7",
+    "08-v2-tv-b.json": "cc7581c022dd588880473500ef6904fc667068980872be5cdd976cb8be2b4321",
+    "summary-v1.json": "e915767b436226b7bcb37222c393cee12b77246bc4873d8b301d91ac4c8c17be"
+  },
+  "observations": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "returnedHttp2xx": 4,
+      "mimeSequence": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCause": "YTDLP_EXTRACTOR_ERROR",
+      "stageEvents": 16,
+      "firstRaisedPhase": "VIDEO_EXTRACT",
+      "extractionCompleted": false,
+      "returnedStages": [
+        "WEBPAGE_FETCH",
+        "INITIAL_DATA",
+        "CLIENT_SELECTION",
+        "PLAYER_RESPONSE",
+        "PLAYER_RESPONSES",
+        "INITIAL_EXTRACT",
+        "FORMAT_SELECTION"
+      ]
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "returnedHttp2xx": 4,
+      "mimeSequence": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCause": "YTDLP_EXTRACTOR_ERROR",
+      "stageEvents": 16,
+      "firstRaisedPhase": "VIDEO_EXTRACT",
+      "extractionCompleted": false,
+      "returnedStages": [
+        "WEBPAGE_FETCH",
+        "INITIAL_DATA",
+        "CLIENT_SELECTION",
+        "PLAYER_RESPONSE",
+        "PLAYER_RESPONSES",
+        "INITIAL_EXTRACT",
+        "FORMAT_SELECTION"
+      ]
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "returnedHttp2xx": 4,
+      "mimeSequence": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCause": "YTDLP_EXTRACTOR_ERROR",
+      "stageEvents": 16,
+      "firstRaisedPhase": "VIDEO_EXTRACT",
+      "extractionCompleted": false,
+      "returnedStages": [
+        "WEBPAGE_FETCH",
+        "INITIAL_DATA",
+        "CLIENT_SELECTION",
+        "PLAYER_RESPONSE",
+        "PLAYER_RESPONSES",
+        "INITIAL_EXTRACT",
+        "FORMAT_SELECTION"
+      ]
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "returnedHttp2xx": 4,
+      "mimeSequence": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCause": "YTDLP_EXTRACTOR_ERROR",
+      "stageEvents": 16,
+      "firstRaisedPhase": "VIDEO_EXTRACT",
+      "extractionCompleted": false,
+      "returnedStages": [
+        "WEBPAGE_FETCH",
+        "INITIAL_DATA",
+        "CLIENT_SELECTION",
+        "PLAYER_RESPONSE",
+        "PLAYER_RESPONSES",
+        "INITIAL_EXTRACT",
+        "FORMAT_SELECTION"
+      ]
+    }
+  ],
+  "controlCells": 4,
+  "totalMetadataRequests": 16,
+  "totalMediaProbes": 0,
+  "metadataCompleted": 0,
+  "globalDecision": "NOT_MADE_M3_A2",
+  "audit": {
+    "archiveFileSet": "PASS",
+    "allFiveManifestDigests": "PASS",
+    "frozenOracleCaseClientProvenance": "PASS",
+    "metadataLimitAndNoMedia": "PASS",
+    "closedStageStackIntegrity": "PASS",
+    "typedD3Responses": "PASS",
+    "derivedSummary": "PASS",
+    "closedFieldPrivacy": "PASS"
+  }
+}
