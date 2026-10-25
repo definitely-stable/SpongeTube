@@ -331,6 +331,17 @@ def _check_privacy(root: pathlib.Path, ids: Mapping[str, str]) -> None:
                 "raw case identifier in portable evidence")
 
 
+def separate_interpreter_paths(interpreters: Mapping[str, pathlib.Path]) -> bool:
+    """Different venv locations may symlink to the SAME host Python binary.
+
+    Resolve() dereferences those links and falsely treats independent venvs
+    as one installation. Compare normalized executable LOCATIONS instead;
+    observe-one additionally validates the installed version and release SHA.
+    """
+    return (set(interpreters) == {"A", "B"}
+            and interpreters["A"].absolute() != interpreters["B"].absolute())
+
+
 def run_d3(*, registry: Mapping[str, Any], c1: Mapping[str, Any], d0: Mapping[str, Any],
            d1_plan: Mapping[str, Any], d2_plan: Mapping[str, Any],
            plan: Mapping[str, Any], ids: Mapping[str, str],
@@ -349,8 +360,8 @@ def run_d3(*, registry: Mapping[str, Any], c1: Mapping[str, Any], d0: Mapping[st
         require(source_file is not None and interpreters is not None
                 and set(interpreters) == set(ORACLES), "both isolated environments required")
         require(all(x.is_file() for x in interpreters.values()), "interpreter missing")
-        require(interpreters["A"].resolve() != interpreters["B"].resolve(),
-                "same interpreter used for both versions")
+        require(separate_interpreter_paths(interpreters),
+                "same venv interpreter path used for both versions")
 
     records: list[dict[str, Any]] = []
     output.mkdir(parents=True, exist_ok=True)
