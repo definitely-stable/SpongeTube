@@ -1,13 +1,9 @@
 name: M3-A2-C2-D3 Paired Reference Version Comparator
 
-# One canonical provider-facing run on reviewed merge only; no PR provider I/O.
-# Exact-run marker and push event must be removed together after evidence audit.
+# Canonical D3 run 40214965133 completed; research manual dispatch only.
+# No automatic provider I/O on PR or main changes.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.work/m3-a2/c2-d3-run-v1.trigger'
 
 permissions:
   contents: read
