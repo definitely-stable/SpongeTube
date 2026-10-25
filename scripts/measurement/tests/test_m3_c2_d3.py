@@ -20,7 +20,7 @@ from m3_c2_d0 import build_plan as build_d0_plan
 from m3_c2_d1 import build_plan as build_d1_plan
 from m3_c2_d2 import build_plan as build_d2_plan
 from m3_c2_d3 import (
-    ORACLES, MAX_TOTAL, ORDER, build_plan, observe_versioned_cell,
+    ORACLES, MAX_TOTAL, ORDER, build_plan, observe_versioned_cell, separate_interpreter_paths,
     run_d3, validate_observation, validate_plan, verify_bundle,
 )
 
@@ -80,6 +80,24 @@ class D3Tests(unittest.TestCase):
         self.assertEqual(list(ORDER), bycell)
         self.assertEqual(4, sum(step["arm"] == "A" for step in self.plan["execution"]))
         self.assertEqual(4, sum(step["arm"] == "B" for step in self.plan["execution"]))
+
+    def test_isolated_venv_symlinks_must_not_resolve_to_one_system_python(self):
+        self.assertFalse(separate_interpreter_paths({
+            "A": pathlib.Path("same/venv/python"),
+            "B": pathlib.Path("same/venv/python"),
+        }))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            one, two = root / "venv-a" / "python", root / "venv-b" / "python"
+            one.parent.mkdir()
+            two.parent.mkdir()
+            try:
+                one.symlink_to(sys.executable)
+                two.symlink_to(sys.executable)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation not permitted on this runner")
+            self.assertEqual(one.resolve(), two.resolve())
+            self.assertTrue(separate_interpreter_paths({"A": one, "B": two}))
 
     def test_forged_plan_variants_rejected(self):
         for name in ("newVersion", "oracleRevision", "order", "budget", "client",
