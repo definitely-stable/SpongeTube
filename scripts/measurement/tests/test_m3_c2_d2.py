@@ -160,13 +160,20 @@ class C2D2Tests(unittest.TestCase):
         wrapped = DownloadError("secret")
         wrapped.__cause__ = suspicious
         self.assertEqual("UNKNOWN", nested_cause_class(wrapped, FakeOracle.utils, FakeOracle.networking_exceptions))
-        self.assertEqual("UNKNOWN", nested_cause_class(suspicious, FakeOracle.utils, FakeOracle.networking_exceptions))
+        self.assertEqual("NONE", nested_cause_class(suspicious, FakeOracle.utils, FakeOracle.networking_exceptions))
 
     def test_cyclic_nested_exception_is_bounded(self):
         a, b = DownloadError("A"), RuntimeError("B")
         a.__cause__ = b
         b.__cause__ = a
         self.assertEqual("UNKNOWN", nested_cause_class(a, FakeOracle.utils, FakeOracle.networking_exceptions))
+
+    def test_attempt_33_refused_before_io(self):
+        capture = ResponseCaptureD2()
+        for i in range(32):
+            self.assertEqual(i + 1, capture.next_request())
+        with self.assertRaises(ValueError):
+            capture.next_request()
 
     def test_capture_only_typed_response(self):
         capture = ResponseCaptureD2()
