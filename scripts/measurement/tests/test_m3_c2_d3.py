@@ -18,9 +18,9 @@ from m3_controls import build_control_plan
 from m3_matrix import build_plan as build_matrix_plan, load_registry
 from m3_c2_d0 import build_plan as build_d0_plan
 from m3_c2_d1 import build_plan as build_d1_plan
-from m3_c2_d2 import build_plan as build_d2_plan, observe_cell
+from m3_c2_d2 import build_plan as build_d2_plan
 from m3_c2_d3 import (
-    ORACLES, MAX_TOTAL, ORDER, build_plan, cloned_registry,
+    ORACLES, MAX_TOTAL, ORDER, build_plan, observe_versioned_cell,
     run_d3, validate_observation, validate_plan, verify_bundle,
 )
 
@@ -46,8 +46,8 @@ class D3Tests(unittest.TestCase):
         oracle = ORACLES[step["arm"]]
         cell = next(x for x in self.plan["cells"]
                     if x["caseClass"] == step["caseClass"] and x["lane"] == step["lane"])
-        return observe_cell(
-            registry=cloned_registry(self.registry, step["arm"]), cell=cell,
+        return observe_versioned_cell(
+            registry=self.registry, cell=cell, arm=step["arm"],
             raw_id=self.ids[step["caseClass"]], git_commit=self.sha,
             runner_image=self.runner,
             oracle_loader=lambda: (D2Oracle, oracle["version"], oracle["revision"]),
