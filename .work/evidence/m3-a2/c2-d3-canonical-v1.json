@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d3-independent-canonical-audit-v1",
+  "runId": 40214965133,
+  "artifactId": 12606659103,
+  "gitCommit": "5c2b72263d8550d682498a2304fd84566353e254",
+  "runnerImage": "ubuntu24@20261023.334.3",
+  "oracles": {
+    "A": {
+      "id": "YT_DLP",
+      "version": "2026.08.19",
+      "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+    },
+    "B": {
+      "id": "YT_DLP",
+      "version": "2026.10.21",
+      "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+    }
+  },
+  "zipSha256": "595f9dd140867c03adbe9158268b862bdfd974b8891242c627de07bec884a154",
+  "manifestSha256": "e7a6d6e69a5174f74d776bcf162e5f955ed97eb3328df5cc2fc200e49878ec41",
+  "entries": {
+    "01-v0-web_embedded-a.json": "58dfbbcb94dc73901e673d67a746ab521b5f7b73485c9915aaad9c0a3a200dcf",
+    "02-v0-web_embedded-b.json": "3f4885e2b3aa5be7f96a897e1211e989a01f28ccced81fdd15c9350c02e120d2",
+    "03-v2-web_embedded-b.json": "1641f31d27f1db199fcb14aef39477f18585f1d61a6d611c7798478c900a0a8f",
+    "04-v2-web_embedded-a.json": "99e26ba515975b4ab5d4854a0123b9c3e08d50536003ce64833b884ae70e25b9",
+    "05-v0-tv-b.json": "22bd92945d576cbc4b5c3df6a229f9e3c369dc8c7d062afed3b4169c4cc9025e",
+    "06-v0-tv-a.json": "11625f5469f5ff24e9ca858bb0d3a6b057737e65a9c24f0e0dbb3824bfe01c5f",
+    "07-v2-tv-a.json": "889b33ed1c58a6555a58df46bb174a5773b416295cbd87c572ce9c611d2dd83d",
+    "08-v2-tv-b.json": "9074a0610f80f3c27dc41e441b6892c8e439ad1e602f4d4ede57ccdab895156d",
+    "summary-v1.json": "e2f2ae3c44b906a335c1809e9ca6d43541485b4d64ed82535f69f65e8d52ca62"
+  },
+  "observations": 8,
+  "pairedCells": 4,
+  "totalMetadataRequests": 32,
+  "totalMediaProbes": 0,
+  "metadataCompletedA": 0,
+  "metadataCompletedB": 0,
+  "returnedHttp2xx": 32,
+  "mimeSequencePerObservation": [
+    "HTML",
+    "HTML",
+    "TEXT_OTHER",
+    "JSON"
+  ],
+  "extractorFailure": "YTDLP_DOWNLOAD_ERROR",
+  "trustedNestedCause": "YTDLP_EXTRACTOR_ERROR",
+  "versionAssociatedCompletionDifference": false,
+  "globalDecision": "NOT_MADE_M3_A2",
+  "audit": {
+    "zipDigests": "PASS",
+    "manifestEntries": "PASS",
+    "caseFingerprints": "PASS",
+    "oracleVersions": "PASS",
+    "runAndRunnerBinding": "PASS",
+    "closedTelemetryContract": "PASS",
+    "derivedSummary": "PASS",
+    "frozenBudget": "PASS",
+    "noMediaReads": "PASS"
+  }
+}
