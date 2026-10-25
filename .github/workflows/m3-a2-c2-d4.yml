@@ -1,0 +1,100 @@
+name: M3-A2-C2-D4 Typed Extractor Phase Trace
+
+# Single-use canonical exact-main observation; PR Verify remains provider-free.
+# Remove marker + push event atomically in evidence cleanup PR.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.work/m3-a2/c2-d4-run-v1.trigger'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-c2-d4-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  typed-extractor-phases:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate frozen D4 before network I/O
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d4.py validate-plan
+
+      - name: Fetch frozen reference case fixture ephemerally
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/m3-c2-d4/source
+          python3 - <<'PY'
+          import json, pathlib, urllib.request
+          cases = json.loads(pathlib.Path(".work/m3-a2/case-registry-v1.json").read_text())["cases"]
+          refs = [c["selectionEvidence"] for c in cases]
+          repos = {c["sourceRepository"] for c in refs}
+          shas = {c["sourceRevision"] for c in refs}
+          names = {c["sourcePath"] for c in refs}
+          if repos != {"yt-dlp/yt-dlp"} or len(shas) != 1 or len(names) != 1:
+              raise SystemExit("D4 fixture identities drifted")
+          url = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/" + next(iter(shas)) + "/" + next(iter(names))
+          with urllib.request.urlopen(url, timeout=30) as response:
+              content = response.read(2 * 1024 * 1024 + 1)
+          if not content or len(content) > 2 * 1024 * 1024:
+              raise SystemExit("D4 fixture bound exceeded")
+          pathlib.Path("build/m3-c2-d4/source/_video.py").write_bytes(content)
+          print("Ephemeral pinned case source verified")
+          PY
+
+      - name: Install isolated pinned B reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-c2-d4/venv-b
+          build/m3-c2-d4/venv-b/bin/python -m pip install --disable-pip-version-check --no-input "yt-dlp==2026.10.21"
+          test "$(build/m3-c2-d4/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.__version__)')" = "2026.10.21"
+          test "$(build/m3-c2-d4/venv-b/bin/python -c 'import yt_dlp.version; print(yt_dlp.version.RELEASE_GIT_HEAD)')" = "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+
+      - name: Observe exactly four typed extractor phase traces
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d4.py run \
+            --source-file build/m3-c2-d4/source/_video.py \
+            --interpreter build/m3-c2-d4/venv-b/bin/python \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --output-dir build/m3-c2-d4/evidence
+
+      - name: Independently validate phase stacks, metadata budgets and digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d4.py verify \
+            --source-file build/m3-c2-d4/source/_video.py \
+            --git-commit "$GITHUB_SHA" \
+            --runner-image "${ImageOS:-ubuntu-24.04}@${ImageVersion:-unknown}" \
+            --output-dir build/m3-c2-d4/evidence
+
+      - name: Remove ephemeral provider fixture
+        if: always()
+        shell: bash
+        run: rm -rf build/m3-c2-d4/source
+
+      - name: Upload only privacy-closed verified D4 data
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m3-a2-c2-d4-extractor-phases
+          path: build/m3-c2-d4/evidence/
+          if-no-files-found: error
+          retention-days: 30

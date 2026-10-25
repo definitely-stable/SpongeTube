@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "planId": "m3-a2-c2-d4-stage-trace-2026-10-26-v1",
+  "protocol": "m3-a2-c2-d4-typed-extractor-phases-v1",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "d3PlanId": "m3-a2-c2-d3-paired-oracles-2026-10-25-v1",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "mode": {
+    "jsRuntime": "DISABLED",
+    "remoteComponents": "DISABLED",
+    "poTokenProvider": "ABSENT",
+    "credentialsUsed": false
+  },
+  "steps": [
+    {
+      "ordinal": 2,
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 3,
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 5,
+      "caseClass": "V0",
+      "lane": "TV",
+      "arm": "B"
+    },
+    {
+      "ordinal": 8,
+      "caseClass": "V2",
+      "lane": "TV",
+      "arm": "B"
+    }
+  ],
+  "hookMap": {
+    "_real_extract": "VIDEO_EXTRACT",
+    "_initial_extract": "INITIAL_EXTRACT",
+    "_download_initial_webpage": "WEBPAGE_FETCH",
+    "_download_initial_data": "INITIAL_DATA",
+    "_get_requested_clients": "CLIENT_SELECTION",
+    "_extract_player_responses": "PLAYER_RESPONSES",
+    "_extract_player_response": "PLAYER_RESPONSE",
+    "_list_formats": "FORMAT_SELECTION"
+  },
+  "maxStageEventsPerObservation": 96,
+  "metadataRequestLimitPerObservation": 32,
+  "maxTotalMetadataRequests": 128,
+  "maxTotalMediaProbes": 0,
+  "globalDecision": "NOT_MADE_M3_A2"
+}
