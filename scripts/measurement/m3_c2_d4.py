@@ -22,6 +22,12 @@ import m3_c2_d3 as d3
 from m3_batch import derive_case_inputs_from_source
 from m3_matrix import load_registry
 
+SAFE_DIAGNOSTIC_PHASES = frozenset({
+    "READ_PLAN", "VALIDATE_PLAN", "REFERENCE_FIXTURE", "CHILD_DISPATCH",
+    "LOAD_ORACLE", "BIND_STAGE_HOOKS", "RUN_REFERENCE",
+    "VALIDATE_TRACE", "WRITE_EVIDENCE", "VERIFY_BUNDLE",
+})
+
 PROTOCOL = "m3-a2-c2-d4-typed-extractor-phases-v1"
 PLAN_ID = "m3-a2-c2-d4-stage-trace-2026-10-26-v1"
 MAX_STAGE_EVENTS = 96
@@ -250,7 +256,15 @@ def run_d4(*, registry: Mapping[str, Any], d3_plan: Mapping[str, Any],
                                         check=False, timeout=180)
             except (OSError, subprocess.TimeoutExpired):
                 raise ValueError("isolated D4 observer failed closed") from None
-            require(result.returncode == 0, "child failed; no portable evidence")
+            if result.returncode != 0:
+                # Read only the static D4-generated phase code, never print or
+                # retain the untrusted child's stdout/stderr or exception text.
+                detail = result.stderr.decode("ascii", errors="ignore")
+                phases = re.findall(r"D4_CLOSED_PHASE:([A-Z_]+)", detail)
+                trusted = next((v for v in reversed(phases)
+                                if v in SAFE_DIAGNOSTIC_PHASES), "UNKNOWN")
+                print("D4_CHILD_CLOSED_PHASE:" + trusted, file=sys.stderr)
+                raise ValueError("child failed; no portable evidence")
             doc = json.loads(dest.read_text(encoding="utf-8"))
         else:
             doc = observer(step)
@@ -318,7 +332,7 @@ DEFAULTS = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("validate-plan", "run", "verify", "observe-one"))
+    parser.add_argument("command", choices=("validate-plan", "validate-hooks", "run", "verify", "observe-one"))
     for name, default in DEFAULTS.items():
         parser.add_argument("--" + name, type=pathlib.Path, default=default)
     parser.add_argument("--source-file", type=pathlib.Path)
@@ -329,22 +343,39 @@ def main() -> int:
     parser.add_argument("--output-file", type=pathlib.Path)
     parser.add_argument("--output-dir", type=pathlib.Path)
     args = parser.parse_args()
+    phase = "READ_PLAN"
     try:
         registry = load_registry(args.registry)
         c1, d0, d1_plan, d2_plan, d3_plan, plan = [
             json.loads(getattr(args, key.replace("-", "_")).read_text(encoding="utf-8"))
             for key in ("c1-plan", "d0-plan", "d1-plan", "d2-plan", "d3-plan", "plan")
         ]
+        phase = "VALIDATE_PLAN"
         validate_plan(plan, registry, c1, d0, d1_plan, d2_plan, d3_plan)
         if args.command == "validate-plan":
             print("D4 four fixed B stage traces, 128 metadata attempts max, 0 media")
             return 0
+        if args.command == "validate-hooks":
+            phase = "LOAD_ORACLE"
+            from yt_dlp.extractor.youtube._video import YoutubeIE
+            import yt_dlp.version
+            oracle = d3.ORACLES["B"]
+            require(yt_dlp.version.__version__ == oracle["version"]
+                    and yt_dlp.version.RELEASE_GIT_HEAD == oracle["revision"],
+                    "unexpected installed oracle")
+            phase = "BIND_STAGE_HOOKS"
+            with StageObserver().installed(YoutubeIE):
+                pass  # zero provider I/O
+            print("D4 exact eight-hook binding PASS; no network")
+            return 0
+        phase = "REFERENCE_FIXTURE"
         require(args.source_file is not None and args.git_commit is not None
                 and args.runner_image is not None, "missing required input")
         ids = derive_case_inputs_from_source(
             registry, args.source_file.read_text(encoding="utf-8"))
         d3.validate_inputs(registry, ids)
         if args.command == "observe-one":
+            phase = "LOAD_ORACLE"
             require(type(args.ordinal) is int and args.output_file is not None
                     and not args.output_file.exists(), "invalid observation")
             step = next((s for s in plan["steps"] if s["ordinal"] == args.ordinal), None)
@@ -365,27 +396,33 @@ def main() -> int:
             cell = next(c for c in d3_plan["cells"]
                         if c["caseClass"] == step["caseClass"] and c["lane"] == step["lane"])
             tracer = StageObserver()
+            phase = "BIND_STAGE_HOOKS"
             with tracer.installed(YoutubeIE):
+                phase = "RUN_REFERENCE"
                 original = d3.observe_versioned_cell(
                     registry=registry, cell=cell, arm="B",
                     raw_id=ids[step["caseClass"]], git_commit=args.git_commit,
                     runner_image=args.runner_image,
                     oracle_loader=lambda: (api, oracle["version"], oracle["revision"]))
+            phase = "VALIDATE_TRACE"
             ref = d3.observation_envelope(step, original)
             record = envelope(step, ref, tracer.events)
             validate_document(record, registry, d3_plan, step,
                               args.git_commit, args.runner_image)
+            phase = "WRITE_EVIDENCE"
             args.output_file.parent.mkdir(parents=True, exist_ok=True)
             args.output_file.write_bytes(d3._serialize(record))
             return 0
         require(args.output_dir is not None, "missing output dir")
         if args.command == "run":
+            phase = "CHILD_DISPATCH"
             result = run_d4(
                 registry=registry, d3_plan=d3_plan, plan=plan, ids=ids,
                 git_commit=args.git_commit, runner_image=args.runner_image,
                 output=args.output_dir, source_file=args.source_file,
                 interpreter=args.interpreter)
         else:
+            phase = "VERIFY_BUNDLE"
             result = verify_bundle(
                 registry=registry, d3_plan=d3_plan, plan=plan, ids=ids,
                 git_commit=args.git_commit, runner_image=args.runner_image,
@@ -395,7 +432,8 @@ def main() -> int:
               "0 media probes; decision=NOT_MADE_M3_A2")
         return 0
     except Exception:
-        print("D4 failed closed; details suppressed", file=sys.stderr)
+        # Never print exception text or provider-controlled values.
+        print("D4_CLOSED_PHASE:" + phase, file=sys.stderr)
         return 2
 
 
