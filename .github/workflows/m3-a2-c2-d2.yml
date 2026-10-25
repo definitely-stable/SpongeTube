@@ -1,13 +1,9 @@
 name: M3-A2-C2-D2 Response and Extractor Stages
 
-# Research-only canonical D2 run: one-shot exact-main marker, never PR-triggered.
-# Remove both marker and push trigger atomically after evidence audit.
+# Canonical D2 run 40205634582 completed on exact main; research-only manual dispatch.
+# No automatic provider calls on source or evidence changes.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.work/m3-a2/c2-d2-run-v1.trigger'
 
 permissions:
   contents: read
