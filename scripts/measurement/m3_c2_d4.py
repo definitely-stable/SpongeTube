@@ -129,7 +129,7 @@ class StageObserver:
                 setattr(ie_class, name, original)
 
 
-def validate_trace(events: Any, completed: bool) -> None:
+def validate_trace(events: Any, completed: bool, extractor_stage: str) -> None:
     require(type(events) is list and len(events) <= MAX_STAGE_EVENTS,
             "invalid stage event count")
     stack: list[str] = []
@@ -145,6 +145,14 @@ def validate_trace(events: Any, completed: bool) -> None:
             require(bool(stack) and stack.pop() == event["stage"],
                     "unbalanced or forged extractor phase exit")
     require(not stack, "incomplete stage trace")
+    require(extractor_stage in d3.d1.EXTRACTOR_STAGES, "unrecognized extractor stage")
+    if extractor_stage != "INITIALIZATION_FAILED":
+        require(bool(events) and events[0]["stage"] == "VIDEO_EXTRACT"
+                and events[0]["outcome"] == "ENTER", "YoutubeIE observer was not entered")
+        require(events[-1]["stage"] == "VIDEO_EXTRACT", "YoutubeIE hook did not terminate")
+        require(events[-1]["outcome"] == (
+            "RAISE" if extractor_stage == "EXTRACT_INFO_RAISED" else "RETURN"),
+            "typed extractor outcome contradicts trace")
     require(not completed or not any(x["outcome"] == "RAISE" for x in events),
             "unresolved stage exception in successful extraction")
 
@@ -200,7 +208,8 @@ def validate_document(document: Any, registry: Mapping[str, Any],
     d3.validate_observation(document["reference"], registry, d3_plan, step,
                             git_commit, runner_image)
     validate_trace(document["stageTrace"],
-                   document["reference"]["observation"]["extractionCompleted"])
+                   document["reference"]["observation"]["extractionCompleted"],
+                   document["reference"]["observation"]["extractorStage"])
 
 
 def _filename(step: Mapping[str, Any]) -> str:
