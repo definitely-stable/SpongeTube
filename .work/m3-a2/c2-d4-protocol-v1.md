@@ -88,3 +88,15 @@ manual `workflow_dispatch`.
 D4 is not production adoption; original M3-A2/M3-A3/M3-B remain open and
 the license/security/distribution gate #52 still applies. Any experiment
 enabling JS/EJS requires a *separate* approved contract, not a D4 edit.
+
+### Confirmed pinned upstream class identity
+
+Pinned `yt_dlp/extractor/youtube/__init__.py` explicitly mutates
+`YoutubeIE.__module__ = 'yt_dlp.extractor.youtube'` to support plugin
+overrides. The real class is still imported from `._video`, but the canonical
+runtime class module is the **public** alias; D4 accepts that exact identity
+only, requires `YoutubeIE` class name, standard class type and all eight
+direct function hooks. A synthetic impostor using `._video` without the
+pinned upstream compatibility mutation is rejected. This adjustment changes
+only the instrumenting observer's identity guard, not any provider controls
+or the eight-hook trace vocabulary.

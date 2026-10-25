@@ -1,0 +1,38 @@
+name: M3-A2-C2-D4 Pinned Hook Preflight (no provider I/O)
+
+# PR-only safe contract: do NOT fetch YouTube case identities or invoke
+# run/observe-one. Only import pinned yt-dlp and install/restore eight hooks.
+on:
+  pull_request:
+    paths:
+      - 'scripts/measurement/m3_c2_d4.py'
+      - 'scripts/measurement/tests/test_m3_c2_d4.py'
+      - '.work/m3-a2/c2-d4-plan-v1.json'
+      - '.github/workflows/m3-a2-c2-d4*.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-pinned-hooks-offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout research producer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify frozen plan without provider I/O
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d4.py validate-plan
+
+      - name: Import pinned yt-dlp and validate eight YoutubeIE hooks offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-c2-d4/venv-preflight
+          build/m3-c2-d4/venv-preflight/bin/python -m pip install --disable-pip-version-check --no-input "yt-dlp==2026.10.21"
+          build/m3-c2-d4/venv-preflight/bin/python scripts/measurement/m3_c2_d4.py validate-hooks
