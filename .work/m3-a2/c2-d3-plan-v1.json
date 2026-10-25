@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "planId": "m3-a2-c2-d3-paired-oracles-2026-10-25-v1",
+  "protocol": "m3-a2-c2-d3-paired-oracles-v1",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "d2PlanId": "m3-a2-c2-d2-mime-causes-2026-10-25-v1",
+  "oracles": {
+    "A": {
+      "id": "YT_DLP",
+      "version": "2026.08.19",
+      "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+    },
+    "B": {
+      "id": "YT_DLP",
+      "version": "2026.10.21",
+      "revision": "6ccd977303412151ee23352c6257dd658ffc1987"
+    }
+  },
+  "mode": {
+    "jsRuntime": "DISABLED",
+    "remoteComponents": "DISABLED",
+    "poTokenProvider": "ABSENT",
+    "credentialsUsed": false
+  },
+  "cells": [
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "WEB_EMBEDDED",
+      "profileId": "yt-dlp:web_embedded"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "WEB_EMBEDDED",
+      "profileId": "yt-dlp:web_embedded"
+    },
+    {
+      "caseClass": "V0",
+      "caseRevision": "v0-big-buck-bunny-r1",
+      "providerContentIdSha256": "5dfdc0688eb53b1bd6a1b186bc35efafba54a2a1e41f7b969e0f3c90052c23a2",
+      "lane": "TV",
+      "profileId": "yt-dlp:tv"
+    },
+    {
+      "caseClass": "V2",
+      "caseRevision": "v2-non-embeddable-r1",
+      "providerContentIdSha256": "c48523cca4a90dfd3589a25271a948f675764723d36a2b3e1222c4a8194d7419",
+      "lane": "TV",
+      "profileId": "yt-dlp:tv"
+    }
+  ],
+  "execution": [
+    {
+      "ordinal": 1,
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "arm": "A"
+    },
+    {
+      "ordinal": 2,
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 3,
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 4,
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "arm": "A"
+    },
+    {
+      "ordinal": 5,
+      "caseClass": "V0",
+      "lane": "TV",
+      "arm": "B"
+    },
+    {
+      "ordinal": 6,
+      "caseClass": "V0",
+      "lane": "TV",
+      "arm": "A"
+    },
+    {
+      "ordinal": 7,
+      "caseClass": "V2",
+      "lane": "TV",
+      "arm": "A"
+    },
+    {
+      "ordinal": 8,
+      "caseClass": "V2",
+      "lane": "TV",
+      "arm": "B"
+    }
+  ],
+  "metadataRequestLimitPerObservation": 32,
+  "maxTotalMetadataRequests": 256,
+  "maxTotalMediaProbes": 0,
+  "treatment": "FULL_REFERENCE_VERSION_NOT_SINGLE_EXTRACTOR_CHANGE",
+  "globalDecision": "NOT_MADE_M3_A2"
+}
