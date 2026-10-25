@@ -366,6 +366,13 @@ def main() -> int:
             phase = "BIND_STAGE_HOOKS"
             target_ok = (type(YoutubeIE) is type and YoutubeIE.__name__ == "YoutubeIE"
                          and YoutubeIE.__module__ == "yt_dlp.extractor.youtube._video")
+            print("D4_SAFE_TARGET_TYPE:" + ("EXACT" if type(YoutubeIE) is type else
+                                                  "CUSTOM_METACLASS"))
+            print("D4_SAFE_TARGET_NAME:" + ("MATCH" if YoutubeIE.__name__ == "YoutubeIE"
+                                           else "MISMATCH"))
+            print("D4_SAFE_TARGET_MODULE:" + (
+                "MATCH" if YoutubeIE.__module__ == "yt_dlp.extractor.youtube._video"
+                else "MISMATCH"))
             print("D4_SAFE_HOOK_TARGET:" + ("MATCH" if target_ok else "MISMATCH"))
             # Only static trusted hook labels and booleans; do not print
             # actual type, module strings, function names or source objects.
