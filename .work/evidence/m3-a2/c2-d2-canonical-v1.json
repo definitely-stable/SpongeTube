@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d2-independent-canonical-audit-v1",
+  "runId": 40205634582,
+  "artifactId": 12603807239,
+  "gitCommit": "2cb34cef638dd07ea6e299b6290c7b7a5f2bffd7",
+  "runnerImage": "ubuntu24@20261023.334.3",
+  "referenceOracle": {
+    "id": "YT_DLP",
+    "version": "2026.08.19",
+    "revision": "594bd50c2c78ac432f81600d309fdc4e0a92d82c"
+  },
+  "artifactZipSha256": "f047e77b5a1881199f750fc0abc2ea15512ce56c53a3606d9a8f55200ce4eb18",
+  "manifestFileSha256": "e08ba6b4bab131c2a4acc57e01f9aa17f182c7ce0a1fe46acb9f790582c37d4c",
+  "files": {
+    "summary-v1.json": "2fdd4ec137e68ddcd41e739f71b392ce91d95ce0e65e19824f690f53043e86bc",
+    "v0-tv.json": "226d14dd9e072bdd4eceee8d755ecf456410b0b9fc869f3fec704e45dc402df1",
+    "v0-web_embedded.json": "21ef577225c0d1221dfe4f52b5280ea7ec960878087db8a7514354c18cf4ae5c",
+    "v2-tv.json": "5836c2f6117d4e53ed925cdac2633a20107b2a7fd17b66036020d602235b31a9",
+    "v2-web_embedded.json": "5666d8fad7cd9a67d1e74eeaa0800b5291c164fb8e33d2edc5b30b53f83de22f"
+  },
+  "manifestMatched": true,
+  "independentSchemaAndBindingAudit": "PASS",
+  "privacyClosedFieldAudit": "PASS",
+  "controlCells": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "responseStatusClasses": [
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX"
+      ],
+      "responseMimeFamilies": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCauseClass": "YTDLP_EXTRACTOR_ERROR",
+      "extractionCompleted": false
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "metadataRequests": 4,
+      "responseStatusClasses": [
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX"
+      ],
+      "responseMimeFamilies": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCauseClass": "YTDLP_EXTRACTOR_ERROR",
+      "extractionCompleted": false
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "responseStatusClasses": [
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX"
+      ],
+      "responseMimeFamilies": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCauseClass": "YTDLP_EXTRACTOR_ERROR",
+      "extractionCompleted": false
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "metadataRequests": 4,
+      "responseStatusClasses": [
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX",
+        "HTTP_2XX"
+      ],
+      "responseMimeFamilies": [
+        "HTML",
+        "HTML",
+        "TEXT_OTHER",
+        "JSON"
+      ],
+      "outerError": "YTDLP_DOWNLOAD_ERROR",
+      "nestedCauseClass": "YTDLP_EXTRACTOR_ERROR",
+      "extractionCompleted": false
+    }
+  ],
+  "totalMetadataRequests": 16,
+  "totalMediaProbes": 0,
+  "globalDecision": "NOT_MADE_M3_A2"
+}
