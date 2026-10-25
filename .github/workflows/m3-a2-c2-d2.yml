@@ -1,9 +1,13 @@
 name: M3-A2-C2-D2 Response and Extractor Stages
 
-# D2 is research-only manual dispatch; no automatic provider calls.
-# No automatic provider calls on source or evidence changes.
+# Research-only canonical D2 run: one-shot exact-main marker, never PR-triggered.
+# Remove both marker and push trigger atomically after evidence audit.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.work/m3-a2/c2-d2-run-v1.trigger'
 
 permissions:
   contents: read
