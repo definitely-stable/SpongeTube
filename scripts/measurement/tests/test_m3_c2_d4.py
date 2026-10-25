@@ -110,7 +110,7 @@ class D4Tests(unittest.TestCase):
                  for path in ("control-plan-v1.json", "c2-d0-plan-v1.json",
                               "c2-d1-plan-v1.json", "c2-d2-plan-v1.json",
                               "c2-d3-plan-v1.json", "c2-d4-plan-v1.json")]
-        validate_plan(plans[-1], registry, *plans)
+        validate_plan(plans[-1], registry, *plans[:-1])
         self.assertEqual(4, len(plans[-1]["steps"]))
         self.assertTrue(all(s["arm"] == "B" for s in plans[-1]["steps"]))
         self.assertEqual([2, 3, 5, 8], [s["ordinal"] for s in plans[-1]["steps"]])
