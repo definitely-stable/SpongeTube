@@ -21,7 +21,7 @@ from m3_c2_d1 import build_plan as build_d1_plan
 from m3_c2_d2 import build_plan as build_d2_plan
 from m3_c2_d3 import (build_plan as build_d3_plan, observe_versioned_cell,
                       observation_envelope, ORACLES)
-from m3_c2_d4 import (HOOKS, StageObserver, build_plan, envelope, run_d4,
+from m3_c2_d4 import (HOOKS, SAFE_DIAGNOSTIC_PHASES, StageObserver, build_plan, envelope, run_d4,
                       validate_document, validate_plan, validate_trace,
                       verify_bundle, MAX_STAGE_EVENTS)
 
@@ -155,6 +155,15 @@ class D4Tests(unittest.TestCase):
             validate_trace([], False, "EXTRACT_INFO_RAISED")
         with self.assertRaises(ValueError):
             validate_trace(trace, True, "MAPPING_RETURNED")
+
+    def test_diagnostic_phases_are_fixed_and_payload_free(self):
+        self.assertEqual({
+            "READ_PLAN", "VALIDATE_PLAN", "REFERENCE_FIXTURE", "CHILD_DISPATCH",
+            "LOAD_ORACLE", "BIND_STAGE_HOOKS", "RUN_REFERENCE",
+            "VALIDATE_TRACE", "WRITE_EVIDENCE", "VERIFY_BUNDLE",
+        }, SAFE_DIAGNOSTIC_PHASES)
+        self.assertFalse(any("TOKEN" in stage or "SECRET" in stage or
+                             "URL" in stage for stage in SAFE_DIAGNOSTIC_PHASES))
 
     def test_event_budget(self):
         recorder = StageObserver()
