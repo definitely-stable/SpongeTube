@@ -1,13 +1,9 @@
 name: M3-A2-C2-D4 Typed Extractor Phase Trace
 
-# Single-use canonical exact-main observation; PR Verify remains provider-free.
-# Remove marker + push event atomically in evidence cleanup PR.
+# Canonical D4 run 40233961424 completed; research-only manual dispatch.
+# No automatic provider calls on source or evidence changes.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.work/m3-a2/c2-d4-run-v1.trigger'
 
 permissions:
   contents: read
