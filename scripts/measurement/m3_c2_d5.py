@@ -34,19 +34,22 @@ def require(ok: bool, why: str) -> None:
 
 
 def build_plan(registry: Mapping[str, Any], d4_plan: Mapping[str, Any]) -> dict[str, Any]:
+    expected_steps = [
+        {"ordinal": 2, "caseClass": "V0", "lane": "WEB_EMBEDDED", "arm": "B"},
+        {"ordinal": 3, "caseClass": "V2", "lane": "WEB_EMBEDDED", "arm": "B"},
+        {"ordinal": 5, "caseClass": "V0", "lane": "TV", "arm": "B"},
+        {"ordinal": 8, "caseClass": "V2", "lane": "TV", "arm": "B"},
+    ]
     require(d4_plan["planId"] == d4.PLAN_ID
             and d4_plan["registryId"] == registry["registryId"]
             and d4_plan["oracle"] == d3.ORACLES["B"]
-            and d4_plan["steps"] == d4.build_plan(registry, {
-                "planId": d3.PLAN_ID, "registryId": registry["registryId"],
-                "oracles": d3.ORACLES, "globalDecision": "NOT_MADE_M3_A2",
-                "execution": [
-                    {"ordinal": 1, "caseClass": "V0", "lane": "WEB_EMBEDDED", "arm": "A"},
-                    *[dict(s) for s in d4_plan["steps"]],
-                ],
-                "mode": d4_plan["mode"],
-            })["steps"],
-            "D4 control identity drift")
+            and d4_plan["mode"] == {
+                "jsRuntime": "DISABLED", "remoteComponents": "DISABLED",
+                "poTokenProvider": "ABSENT", "credentialsUsed": False,
+            }
+            and d4_plan["steps"] == expected_steps
+            and d4_plan["globalDecision"] == "NOT_MADE_M3_A2",
+            "D4 controls, oracle, no-JS/no-token mode drift")
     return {
         "schemaVersion": 1, "planId": PLAN_ID, "protocol": PROTOCOL,
         "registryId": registry["registryId"], "d4PlanId": d4_plan["planId"],
