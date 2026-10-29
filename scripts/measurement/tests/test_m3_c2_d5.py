@@ -45,7 +45,23 @@ class D5Tests(unittest.TestCase):
         self.ids, self.sha, self.runner = f.ids, f.sha, f.runner
 
     def make_document(self, step):
-        original = self.fixture.observer(step)  # D4 trusted synthetic fixture
+        original = self.fixture.observer(step)  # Typed synthetic D3/D4 evidence
+        # Reproduce the observed D4 post-format exception pattern; the base
+        # fixture deliberately raises earlier inside PLAYER_RESPONSES.
+        ordered = [
+            ("VIDEO_EXTRACT", "ENTER"), ("INITIAL_EXTRACT", "ENTER"),
+            ("WEBPAGE_FETCH", "ENTER"), ("WEBPAGE_FETCH", "RETURN"),
+            ("INITIAL_DATA", "ENTER"), ("INITIAL_DATA", "RETURN"),
+            ("CLIENT_SELECTION", "ENTER"), ("CLIENT_SELECTION", "RETURN"),
+            ("PLAYER_RESPONSES", "ENTER"), ("PLAYER_RESPONSE", "ENTER"),
+            ("PLAYER_RESPONSE", "RETURN"), ("PLAYER_RESPONSES", "RETURN"),
+            ("INITIAL_EXTRACT", "RETURN"), ("FORMAT_SELECTION", "ENTER"),
+            ("FORMAT_SELECTION", "RETURN"), ("VIDEO_EXTRACT", "RAISE"),
+        ]
+        original["stageTrace"] = [
+            {"ordinal": i, "stage": stage, "outcome": outcome}
+            for i, (stage, outcome) in enumerate(ordered, 1)
+        ]
         return envelope(step, original, {
             "formatPopulation": "EMPTY", "formatObservations": 1,
             "raiseNoFormatsCalls": 1, "reportDrmCalls": 0,
