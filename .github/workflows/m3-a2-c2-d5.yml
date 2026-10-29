@@ -1,13 +1,9 @@
 name: M3-A2-C2-D5 Post-Format Terminal Discriminator
 
-# Research one-shot exact-main control, no provider PR I/O.
-# Remove the consumed marker and push trigger together after evidence audit.
+# Canonical D5 run 40911692927 completed; manual-only research workflow.
+# No automatic provider calls following evidence cleanup.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.work/m3-a2/c2-d5-run-v1.trigger'
 
 permissions:
   contents: read

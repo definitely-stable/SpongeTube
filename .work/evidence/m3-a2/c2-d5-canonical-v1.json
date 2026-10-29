@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d5-independent-canonical-audit-v1",
+  "runId": 40911692927,
+  "artifactId": 12914735795,
+  "gitCommit": "3dbb570ab2ee53d185f31a5790dbc09e03acb4b7",
+  "runnerImage": "ubuntu24@20261026.354.1",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "zipSha256": "d3716d8d725dc3f83813858496f4fa2e08efd02c51506693bc42a464aa547d81",
+  "manifestSha256": "b66c4f6d2187db7eb2f4a05edec6f48f5c5781430ad2dba818ea7e4aa77965b4",
+  "files": {
+    "d5-02-v0-web_embedded-b.json": "30c83b5829723d3bd1d7b088908b599670090fb799be5e1a57258048f8814f03",
+    "d5-03-v2-web_embedded-b.json": "c3cf4f355b6741ad5f760f62fccad18cfc37b00b4dfbc1a45ecc053417a01d09",
+    "d5-05-v0-tv-b.json": "2a9fa07415d0c18b54e8a0b25914ad95ae897356ef6bfbfa647381ebce1737a1",
+    "d5-08-v2-tv-b.json": "965c85d150989f357947548c470ad437b52d2a22d1f1f1717b0a62412afa6984",
+    "summary-v1.json": "2d1d67eb2ae5b0e3ab4d8af5c14e835d9fafe5b07d8245222e6acab08a7122ee"
+  },
+  "observations": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "formatPopulation": "EMPTY",
+      "formatObservations": 1,
+      "raiseNoFormatsCalls": 1,
+      "reportDrmCalls": 0,
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "completedMetadata": false,
+      "mediaProbes": 0
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "formatPopulation": "EMPTY",
+      "formatObservations": 1,
+      "raiseNoFormatsCalls": 1,
+      "reportDrmCalls": 0,
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "completedMetadata": false,
+      "mediaProbes": 0
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "formatPopulation": "EMPTY",
+      "formatObservations": 1,
+      "raiseNoFormatsCalls": 1,
+      "reportDrmCalls": 0,
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "completedMetadata": false,
+      "mediaProbes": 0
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "formatPopulation": "EMPTY",
+      "formatObservations": 1,
+      "raiseNoFormatsCalls": 1,
+      "reportDrmCalls": 0,
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "completedMetadata": false,
+      "mediaProbes": 0
+    }
+  ],
+  "totalMetadataRequests": 16,
+  "totalMediaProbes": 0,
+  "completedMetadata": 0,
+  "globalDecision": "NOT_MADE_M3_A2",
+  "independentAudit": {
+    "originalZipDigest": "PASS",
+    "exactSixEntrySet": "PASS",
+    "fiveManifestDigests": "PASS",
+    "frozenD3CaseFingerprintsAndProfiles": "PASS",
+    "canonicalSourceAndRunner": "PASS",
+    "nestedD3TypedHTTP": "PASS",
+    "nestedD4SixteenEventStages": "PASS",
+    "D5ClosedTerminalSchema": "PASS",
+    "derivedSummary": "PASS",
+    "privacyNoRawCaseIDs": "PASS",
+    "requestAndMediaLimits": "PASS"
+  }
+}
