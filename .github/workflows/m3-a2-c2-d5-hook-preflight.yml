@@ -1,0 +1,32 @@
+name: M3-A2-C2-D5 Pinned Terminal Hook Preflight
+
+# PR-only — no provider URLs, credentials, or media probe.
+on:
+  pull_request:
+    paths:
+      - 'scripts/measurement/m3_c2_d5.py'
+      - 'scripts/measurement/tests/test_m3_c2_d5.py'
+      - '.work/m3-a2/c2-d5-plan-v1.json'
+      - '.github/workflows/m3-a2-c2-d5*.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-terminal-hooks-offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify frozen D5 plan
+        run: python3 scripts/measurement/m3_c2_d5.py validate-plan
+      - name: Import pinned package and verify hooks without network provider access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv build/m3-c2-d5/venv-preflight
+          build/m3-c2-d5/venv-preflight/bin/python -m pip install --disable-pip-version-check --no-input "yt-dlp==2026.10.21"
+          build/m3-c2-d5/venv-preflight/bin/python scripts/measurement/m3_c2_d5.py validate-hooks

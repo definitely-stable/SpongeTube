@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "planId": "m3-a2-c2-d5-terminal-2026-10-29-v1",
+  "protocol": "m3-a2-c2-d5-post-format-terminal-v1",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "d4PlanId": "m3-a2-c2-d4-stage-trace-2026-10-26-v1",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "mode": {
+    "jsRuntime": "DISABLED",
+    "remoteComponents": "DISABLED",
+    "poTokenProvider": "ABSENT",
+    "credentialsUsed": false
+  },
+  "steps": [
+    {
+      "ordinal": 2,
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 3,
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 5,
+      "caseClass": "V0",
+      "lane": "TV",
+      "arm": "B"
+    },
+    {
+      "ordinal": 8,
+      "caseClass": "V2",
+      "lane": "TV",
+      "arm": "B"
+    }
+  ],
+  "terminalMethods": [
+    "raise_no_formats",
+    "report_drm"
+  ],
+  "formatResult": [
+    "EMPTY",
+    "NONEMPTY",
+    "UNKNOWN"
+  ],
+  "maxTerminalCallsPerObservation": 8,
+  "maxMetadataRequestsPerObservation": 32,
+  "maxTotalMetadataRequests": 128,
+  "maxTotalMediaProbes": 0,
+  "globalDecision": "NOT_MADE_M3_A2"
+}
