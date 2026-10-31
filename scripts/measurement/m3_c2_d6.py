@@ -330,7 +330,6 @@ def run_d6(*, registry, d5_plan, d3_plan, plan, ids, git_commit, runner_image,
         path = output / filename(step)
         if observer is not None:
             doc = observer(step)
-            path.write_bytes(d3._serialize(doc))
         else:
             command = [str(interpreter), str(pathlib.Path(__file__).resolve()),
                        "observe-one", "--source-file", str(source_file),
@@ -343,10 +342,14 @@ def run_d6(*, registry, d5_plan, d3_plan, plan, ids, git_commit, runner_image,
             require(proc.returncode == 0, "D6 child failed; no evidence")
             doc = json.loads(path.read_text())
         validate_document(doc, registry, d3_plan, step, git_commit, runner_image)
-        records.append(doc)
+        used = doc["reference"]["reference"]["reference"]["observation"]["metadataRequestsUsed"]
         require(sum(x["reference"]["reference"]["reference"]["observation"]
-                    ["metadataRequestsUsed"] for x in records) <= 128,
+                    ["metadataRequestsUsed"] for x in records) + used <= 128,
                 "aggregate metadata budget exceeded")
+        if observer is not None:
+            # Do not persist unvalidated synthetic provider-like input.
+            path.write_bytes(d3._serialize(doc))
+        records.append(doc)
     result = summary(records, git_commit, runner_image)
     (output / "summary-v1.json").write_bytes(d3._serialize(result))
     (output / "manifest-v1.json").write_bytes(d3._serialize({

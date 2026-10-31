@@ -82,4 +82,6 @@ No arbitrary provider objects are stringified or iterated.
 
 Stopping conditions: hook/source drift, provenance mismatch, unknown fields,
 unbounded counts, child failure, privacy leak or conflicting D5 telemetry
-fail closed. No live response is a deterministic release/PR acceptance gate.
+fail closed. Synthetic observers are validated against the closed schema
+before an artifact is written; tests exercise the real pinned positional
+`_list_formats` hook signature and failure-path restoration. No live response is a deterministic release/PR acceptance gate.

@@ -31,8 +31,10 @@ class FakeYoutube:
         yield {"format_id": "18", "url": "SECRET_SIGNED_URL"}
         yield {}
 
-    def _list_formats(self):
-        responses, _ = self._extract_player_responses()
+    def _list_formats(self, video_id, microformats, video_details, player_responses,
+                      player_url, duration=None):
+        # Match the pinned upstream signature: the fourth positional argument
+        # after self must be the player response list, not a fake no-args call.
         return None, None, list(self._extract_formats_and_subtitles())[:-1], {}
 
     def _report_pot_format_skipped(self):
@@ -93,25 +95,35 @@ class D6Tests(unittest.TestCase):
         self.assertEqual("PRESENT", selected_population([
             shape({"streamingData": {"adaptiveFormats": [{"url": "SECRET"}]}})]))
 
-    def test_hooks_preserve_generator_order_and_restore_on_exception(self):
+    def test_hooks_execute_real_list_formats_signature_and_restore(self):
         cls = FakeYoutube
-        orig = {k: vars(cls)[k] for k in self.plan["observedMethods"]}
+        originals = {k: vars(cls)[k] for k in self.plan["observedMethods"]}
         probe = ShapeProbe()
         with probe.installed(cls):
             instance = cls()
-            a = instance._extract_player_response()
-            self.assertEqual("ONE", shape(a)["formats"])
-            self.assertEqual(len(instance._extract_player_responses()[0]), 1)
+            responses, player_url = instance._extract_player_responses()
             self.assertEqual(instance._report_pot_format_skipped(), "SECRET_WARNING")
-            self.assertEqual(
-                [x.get("format_id") for x in instance._extract_formats_and_subtitles()],
-                ["18", None])
+            result = instance._list_formats("fake-video", {}, {}, responses, player_url, None)
+            self.assertEqual([f["format_id"] for f in result[2]], ["18"])
+            self.assertEqual(probe.selection_calls, 1)
+            self.assertEqual(probe.yields, 1)
+            self.assertEqual(probe.po_reports, 1)
+            self.assertEqual(probe.pre[0]["formats"], "ONE")
+            self.assertEqual(probe.selected, probe.post)
+            self.assertEqual(probe.selected[0]["formats"], "ONE")
+            # A second selection must fail closed rather than mix observations.
             with self.assertRaises(ValueError):
-                instance._list_formats()
-        self.assertEqual({k: vars(cls)[k] for k in orig}, orig)
+                instance._list_formats("fake-video", {}, {}, responses, player_url, None)
+        self.assertEqual({k: vars(cls)[k] for k in originals}, originals)
         self.assertNotIn("SECRET", json.dumps(probe.document()))
-        self.assertEqual(1, probe.yields)
-        self.assertEqual(1, probe.po_reports)
+
+    def test_hooks_restore_when_extractor_raises(self):
+        cls = FakeYoutube
+        originals = {k: vars(cls)[k] for k in self.plan["observedMethods"]}
+        with self.assertRaisesRegex(RuntimeError, "PRIVATE_CONTROL_ERROR"):
+            with ShapeProbe().installed(cls):
+                raise RuntimeError("PRIVATE_CONTROL_ERROR")
+        self.assertEqual({k: vars(cls)[k] for k in originals}, originals)
 
     def test_provider_like_payload_is_not_persisted(self):
         p = ShapeProbe()
@@ -144,6 +156,20 @@ class D6Tests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_document(candidate, self.registry, self.d3,
                                   step, self.sha, self.runner)
+
+    def test_rejects_malicious_observer_without_persisting_untrusted_data(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "evidence"
+            def malicious(step):
+                doc = self.make_record(step)
+                doc["structural"]["rawResponseBody"] = "SECRET_SIGNED_URL"
+                return doc
+            with self.assertRaises(ValueError):
+                run_d6(
+                    registry=self.registry, d5_plan=self.d5_plan, d3_plan=self.d3,
+                    plan=self.plan, ids=self.ids, git_commit=self.sha,
+                    runner_image=self.runner, output=path, observer=malicious)
+            self.assertEqual([], list(path.iterdir()))
 
     def test_frozen_bundle_and_independent_recalculation(self):
         with tempfile.TemporaryDirectory() as td:
