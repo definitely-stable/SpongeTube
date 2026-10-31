@@ -12,7 +12,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 from m3_matrix import load_registry
 from m3_c2_d6 import (
-    ShapeProbe, bucket, shape, build_plan, validate_plan, envelope,
+    ShapeProbe, bucket, shape, selected_population, build_plan, validate_plan, envelope,
     validate_document, run_d6, verify_bundle,
 )
 from test_m3_c2_d5 import D5Tests
@@ -86,6 +86,12 @@ class D6Tests(unittest.TestCase):
         self.assertEqual("ONE", shape({"streamingData": {"formats": [1]}})["formats"])
         self.assertEqual("OVER_64", bucket([None] * 65))
         self.assertEqual("UNKNOWN", shape({"streamingData": "PRIVATE_JSON"})["formats"])
+        self.assertEqual("UNKNOWN", selected_population([]))
+        self.assertEqual("UNKNOWN", selected_population([shape({"streamingData": 12})]))
+        self.assertEqual("NO_CANDIDATES_IN_SELECTED_INPUT",
+                         selected_population([shape({"streamingData": {}})]))
+        self.assertEqual("PRESENT", selected_population([
+            shape({"streamingData": {"adaptiveFormats": [{"url": "SECRET"}]}})]))
 
     def test_hooks_preserve_generator_order_and_restore_on_exception(self):
         cls = FakeYoutube

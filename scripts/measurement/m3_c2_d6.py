@@ -264,6 +264,21 @@ def validate_document(doc: Any, registry: Mapping[str, Any],
                 and not s["selectedInputResponses"], "unobserved selection cannot emit")
 
 
+
+def selected_population(samples: list[Mapping[str, str]]) -> str:
+    """Only selected extractor input; never infer wire/source absence."""
+    if not samples:
+        return "UNKNOWN"
+    categories = [sample[key] for sample in samples
+                  for key in ("formats", "adaptiveFormats")]
+    if any(x in ("ONE", "TWO_TO_EIGHT", "NINE_TO_64", "OVER_64")
+           for x in categories):
+        return "PRESENT"
+    if any(x == "UNKNOWN" for x in categories):
+        return "UNKNOWN"
+    return "NO_CANDIDATES_IN_SELECTED_INPUT"
+
+
 def summary(records: list[dict[str, Any]], sha: str, runner: str) -> dict[str, Any]:
     entries = []
     for x in records:
@@ -273,11 +288,11 @@ def summary(records: list[dict[str, Any]], sha: str, runner: str) -> dict[str, A
             "caseClass": x["caseClass"], "lane": x["lane"],
             "preApiResponseCount": len(s["preNormalizationApiResponses"]),
             "postResponseCount": len(s["postNormalizationResponses"]),
-            "sourceCandidateObservation": "PRE_NORMALIZATION_ONLY",
-            "inputFormatPresence": any(
-                v[k] in ("ONE", "TWO_TO_EIGHT", "NINE_TO_64", "OVER_64")
-                for v in s["selectedInputResponses"]
-                for k in ("formats", "adaptiveFormats")),
+            "preApiResponseObservation": ("PRE_NORMALIZATION_API_RETURN"
+                                          if s["preNormalizationApiResponses"]
+                                          else "UNOBSERVED"),
+            "selectedInputCandidateState":
+                selected_population(s["selectedInputResponses"]),
             "emittedFormatMappings": s["emittedFormatMappings"],
             "poTokenSkipReportCalls": s["poTokenSkipReportCalls"],
             "d5FormatPopulation": x["reference"]["terminal"]["formatPopulation"],

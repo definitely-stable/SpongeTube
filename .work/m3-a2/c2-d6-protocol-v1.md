@@ -56,6 +56,11 @@ streams. \`emittedFormatMappings\` counts generator-yielded dicts carrying
 the number of skipped formats. Unknown/unobserved must not be coerced into
 ABSENT, REQUIRED, JS_REQUIRED or NO_GO.
 
+The summary uses `selectedInputCandidateState=PRESENT`,
+`NO_CANDIDATES_IN_SELECTED_INPUT` or `UNKNOWN`, never a boolean that conflates
+missing observations and observed absence. `preApiResponseObservation=UNOBSERVED`
+when no API-return hook fired, and does not claim wire-response absence.
+
 No raw response, title, player status text, provider ID, URL, header, exception,
 credential, token, IP or source format entry may be serialized. All outbound
 observations are closed primitive types and validated before persistence.
