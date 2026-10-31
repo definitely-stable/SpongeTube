@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "planId": "m3-a2-c2-d6-format-supply-2026-11-01-v1",
+  "protocol": "m3-a2-c2-d6-format-supply-v1",
+  "registryId": "m3-a2-cases-2026-10-11-r2",
+  "d5PlanId": "m3-a2-c2-d5-terminal-2026-10-29-v1",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "mode": {
+    "jsRuntime": "DISABLED",
+    "remoteComponents": "DISABLED",
+    "poTokenProvider": "ABSENT",
+    "credentialsUsed": false
+  },
+  "steps": [
+    {
+      "ordinal": 2,
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 3,
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 5,
+      "caseClass": "V0",
+      "lane": "TV",
+      "arm": "B"
+    },
+    {
+      "ordinal": 8,
+      "caseClass": "V2",
+      "lane": "TV",
+      "arm": "B"
+    }
+  ],
+  "observedMethods": [
+    "_extract_player_response",
+    "_extract_player_responses",
+    "_list_formats",
+    "_extract_formats_and_subtitles",
+    "_report_pot_format_skipped"
+  ],
+  "shapeVocabulary": [
+    "ABSENT",
+    "EMPTY",
+    "NINE_TO_64",
+    "NULL",
+    "ONE",
+    "OVER_64",
+    "TWO_TO_EIGHT",
+    "UNKNOWN"
+  ],
+  "maxResponsesPerStage": 8,
+  "maxFormatYields": 256,
+  "maxPoSkipReports": 32,
+  "maxMetadataRequestsPerObservation": 32,
+  "maxTotalMetadataRequests": 128,
+  "maxTotalMediaProbes": 0,
+  "globalDecision": "NOT_MADE_M3_A2"
+}

@@ -1,0 +1,35 @@
+name: M3-A2-C2-D6 Format Supply Preflight
+
+# Strictly offline. Provider-facing D6 is a separate manual research workflow.
+on:
+  pull_request:
+    paths:
+      - '.work/m3-a2/c2-d6-*'
+      - 'scripts/measurement/m3_c2_d6.py'
+      - 'scripts/measurement/tests/test_m3_c2_d6.py'
+      - '.github/workflows/m3-a2-c2-d6*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-reference-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Exact checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Offline plan and falsification suite
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_d6.py validate-plan
+          python3 -m unittest discover -s scripts/measurement/tests -p 'test_m3_c2_d6.py' -v
+      - name: Isolated pinned yt-dlp reference
+        run: |
+          set -euo pipefail
+          python3 -m venv build/d6-venv
+          build/d6-venv/bin/python -m pip install --disable-pip-version-check --no-input 'yt-dlp==2026.10.21'
+          build/d6-venv/bin/python scripts/measurement/m3_c2_d6.py validate-hooks
