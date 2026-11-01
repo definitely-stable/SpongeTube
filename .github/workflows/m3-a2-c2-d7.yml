@@ -1,7 +1,7 @@
 name: M3-A2-C2-D7 Manifest Provenance Diagnostics
 
-# Canonical D7 run 41285812385 completed and independently audited.
-# Research workflow is manual-only; no provider work from push or pull request.
+# D7 provider research is not yet executed. Keep manual-only until reviewed.
+# No provider work from push or pull request.
 on:
   workflow_dispatch:
 
