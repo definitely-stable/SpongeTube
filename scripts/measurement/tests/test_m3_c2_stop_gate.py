@@ -108,7 +108,7 @@ class StopGateTests(unittest.TestCase):
         self.assert_rejected(lambda d:
             d[2]["independentAudit"].update(originalZipDigest="FAIL"))
         self.assert_rejected(lambda d:
-            d[1]["files"].update(raw.json="0"*64))
+            d[1]["files"].update({"raw.json": "0"*64}))
         self.assert_rejected(lambda d:
             d[2].update(globalDecision="PROVIDER_GO"))
         self.assert_rejected(lambda d:
