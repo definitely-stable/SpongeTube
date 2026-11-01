@@ -67,5 +67,6 @@
   "globalDecision": "NOT_MADE_M3_A2",
   "nextAllowed": "NEW_INDEPENDENT_EVIDENCE_AND_PREDECLARED_CONTROL_ONLY",
   "maxMediaProbesPerSlice": 0,
-  "productionAdapterAllowed": false
+  "productionAdapterAllowed": false,
+  "runnerImage": "ubuntu24@20261026.354.1"
 }
