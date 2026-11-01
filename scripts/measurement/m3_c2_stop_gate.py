@@ -21,6 +21,74 @@ EXPECTED_CONTROL_KEYS = (
     ("V0", "WEB_EMBEDDED"), ("V2", "WEB_EMBEDDED"),
     ("V0", "TV"), ("V2", "TV"),
 )
+EXPECTED_ARCHIVED_FILES = {
+  "D5": {
+    "d5-02-v0-web_embedded-b.json": "30c83b5829723d3bd1d7b088908b599670090fb799be5e1a57258048f8814f03",
+    "d5-03-v2-web_embedded-b.json": "c3cf4f355b6741ad5f760f62fccad18cfc37b00b4dfbc1a45ecc053417a01d09",
+    "d5-05-v0-tv-b.json": "2a9fa07415d0c18b54e8a0b25914ad95ae897356ef6bfbfa647381ebce1737a1",
+    "d5-08-v2-tv-b.json": "965c85d150989f357947548c470ad437b52d2a22d1f1f1717b0a62412afa6984",
+    "summary-v1.json": "2d1d67eb2ae5b0e3ab4d8af5c14e835d9fafe5b07d8245222e6acab08a7122ee"
+  },
+  "D6": {
+    "d6-d5-02-v0-web_embedded-b.json": "91961ab5d466822d11c273484420000cfcccdbab24dc78ac1ff716ba951c7c4b",
+    "d6-d5-03-v2-web_embedded-b.json": "82c7357cb7b60c3f4902b20367581a5d0dd3cbe1d648ac097f036657bc07e71e",
+    "d6-d5-05-v0-tv-b.json": "3563b28d71e5f7e5c2d097910be86ffad948c73467d689c184092565eabcd1df",
+    "d6-d5-08-v2-tv-b.json": "71ce3da7765f90d6e6930c16ca0c7f64b6873ad9d26c3ea2a56973987b78f633",
+    "summary-v1.json": "01c374e103adc6cae6e0a7a4d89e2c37bd712c58e31773a9689e202b55837e91"
+  },
+  "D7": {
+    "d7-d6-d5-02-v0-web_embedded-b.json": "cc22393d8a7674e9cc21a597e0af71b823b4307e612bc4d956d00459064da200",
+    "d7-d6-d5-03-v2-web_embedded-b.json": "8204e4a6a164bdab7184c7d751524f1cb3c20a29ef68f0a277c012fca68e7273",
+    "d7-d6-d5-05-v0-tv-b.json": "ac53a80a04426f966c9eca83a126e44e6a0e0a82bc833584a9b65bcfa90c7fa1",
+    "d7-d6-d5-08-v2-tv-b.json": "4b79d6649b1b36f92bce6ba718818b4d0635d861a29cdd1e5ca3b2059ed36385",
+    "summary-v1.json": "c98b0fddd24ecc9c707a0a6ed00ba944749ebf4186893f95cb121c0b30ef95ba"
+  }
+}
+EXPECTED_AUDIT_KEYS = {
+  "D5": [
+    "D5ClosedTerminalSchema",
+    "canonicalSourceAndRunner",
+    "derivedSummary",
+    "exactSixEntrySet",
+    "fiveManifestDigests",
+    "frozenD3CaseFingerprintsAndProfiles",
+    "nestedD3TypedHTTP",
+    "nestedD4SixteenEventStages",
+    "originalZipDigest",
+    "privacyNoRawCaseIDs",
+    "requestAndMediaLimits"
+  ],
+  "D6": [
+    "D6ClosedShapesAndBounds",
+    "canonicalSourceAndRunner",
+    "derivedSummary",
+    "exactSixEntrySet",
+    "fiveManifestDigests",
+    "frozenD3CaseFingerprintsAndProfiles",
+    "nestedD3TypedHTTP",
+    "nestedD4SixteenEventStages",
+    "nestedD5ClosedTerminalSchema",
+    "noRawUrls",
+    "originalZipDigest",
+    "requestAndMediaLimits"
+  ],
+  "D7": [
+    "D7ClosedManifestSchemaAndCrossStageCounts",
+    "canonicalSourceAndRunner",
+    "derivedSummary",
+    "exactSixEntrySet",
+    "fiveManifestDigests",
+    "frozenCaseAndClientEqualityToD6",
+    "nestedD3TypedHTTP",
+    "nestedD4SixteenEventStages",
+    "nestedD5TerminalSchema",
+    "nestedD6ClosedShapeSchema",
+    "originalZipDigest",
+    "privacyNoRawURLs",
+    "requestAndMediaLimits"
+  ]
+}
+
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 SNAPSHOT_KEYS = frozenset({"streamingData", "formats", "adaptiveFormats"})
@@ -119,6 +187,9 @@ def _check_manifest(doc: dict, spec: dict, slice_id: str, plan: dict) -> None:
           and all(type(k) is str and type(v) is str and v == "PASS"
                   for k, v in doc["independentAudit"].items()),
           f"{slice_id} manifest/evidence attestation drift")
+    check(doc["files"] == EXPECTED_ARCHIVED_FILES[slice_id]
+          and set(doc["independentAudit"]) == set(EXPECTED_AUDIT_KEYS[slice_id]),
+          f"{slice_id} archived member hashes or audit checks drift")
     check(type(doc["observations"]) is list and len(doc["observations"]) == 4
           and exact_int(doc["totalMetadataRequests"], 16)
           and exact_int(doc["totalMediaProbes"], 0)
