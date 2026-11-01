@@ -31,14 +31,14 @@ or authorize challenge/anti-abuse bypass.
 
 Run offline:
 
-\`\`\`text
+```text
 python3 scripts/measurement/m3_c2_stop_gate.py verify
 python3 scripts/measurement/m3_c2_stop_gate.py render
 python3 -m unittest discover -s scripts/measurement/tests -p 'test_m3_c2_stop_gate.py' -v
-\`\`\`
+```
 
 Inputs are **unchanged** already-archived D5/D6/D7 digest ledgers and frozen
-\`.work/m3-a2/c2-stop-gate-v1.json\`. The verifier asserts exact GitHub run,
+`.work/m3-a2/c2-stop-gate-v1.json`. The verifier asserts exact GitHub run,
 artifact and source SHAs, expected ZIP/manifest SHA-256 strings, 4 ordered
 cases, matching oracle and runner, 16 metadata calls/0 media per slice,
 closed D5 terminal, D6 input-shape, D7 pre-strip embedded/API + HLS/DASH
