@@ -1,9 +1,14 @@
 name: M3-A2-C2-D7 Manifest Provenance Diagnostics
 
-# D7 provider research is not yet executed. Keep manual-only until reviewed.
-# No provider work from push or pull request.
+# Canonical D7 one-shot exact-main run; temporary marker-scoped push event.
+# Remove consumed marker and this push event atomically after independent ZIP audit.
+# No provider I/O on pull requests.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.work/m3-a2/c2-d7-run-v1.trigger'
 
 permissions:
   contents: read
