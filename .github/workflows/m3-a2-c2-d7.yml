@@ -1,14 +1,9 @@
 name: M3-A2-C2-D7 Manifest Provenance Diagnostics
 
-# Canonical D7 one-shot exact-main run; temporary marker-scoped push event.
-# Remove consumed marker and this push event atomically after independent ZIP audit.
-# No provider I/O on pull requests.
+# Canonical D7 run 41305878254 completed; archive and independent audit retained.
+# Manual-only research; never trigger provider I/O on push or pull request.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.work/m3-a2/c2-d7-run-v1.trigger'
 
 permissions:
   contents: read
