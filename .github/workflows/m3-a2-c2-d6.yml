@@ -1,14 +1,9 @@
 name: M3-A2-C2-D6 Format Supply Diagnostics
 
-# Canonical D6 one-shot. Marker addition on main triggers exactly once.
-# Remove the consumed marker and push trigger together after the independent ZIP audit.
-# Never execute a provider probe in PRs.
+# Canonical D6 run 41285812385 completed and independently audited.
+# Research workflow is manual-only; no provider work from push or pull request.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.work/m3-a2/c2-d6-run-v1.trigger'
 
 permissions:
   contents: read
