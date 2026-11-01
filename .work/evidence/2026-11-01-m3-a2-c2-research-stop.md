@@ -15,7 +15,7 @@ D5/D6/D7 machine-readable ledgers, then returns exactly:
 
 - C2: **STOP_C2_SAME_ENVIRONMENT_ONLY** — further *serial source-shape* probes
   with the same four V0/V2 × WEB_EMBEDDED/TV controls, pinned reference and
-  network setting are not justified by an independent falsifiable question.
+  declared runner mode are not justified by an independent falsifiable question.
 - Overall M3-A2: **NOT_MADE_M3_A2** — the original 18-cell matrix and V1
   split A/V capability have not been completed or positively verified.
 - M3-A3 and M3-B: **BLOCKED** — zero observed media and no supported
@@ -40,7 +40,7 @@ python3 -m unittest discover -s scripts/measurement/tests -p 'test_m3_c2_stop_ga
 Inputs are **unchanged** already-archived D5/D6/D7 digest ledgers and frozen
 `.work/m3-a2/c2-stop-gate-v1.json`. The verifier asserts exact GitHub run,
 artifact and source SHAs, expected ZIP/manifest SHA-256 strings, 4 ordered
-cases, matching oracle and runner, 16 metadata calls/0 media per slice,
+cases, matching oracle and exact frozen runner image, 16 metadata calls/0 media per slice,
 closed D5 terminal, D6 input-shape, D7 pre-strip embedded/API + HLS/DASH
 manifest observations, and no hidden extra fields. Synthetic falsification
 rejects fabricated media, token, manifest, source-presence, provenance and
