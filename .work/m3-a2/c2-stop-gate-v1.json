@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-stop-gate-v1",
+  "gateId": "m3-a2-c2-terminal-evidence-stop-2026-11-01-v1",
+  "scope": "SAME_PINNED_REFERENCE_AND_FOUR_CONTROLS",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "controls": [
+    {
+      "ordinal": 2,
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 3,
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "arm": "B"
+    },
+    {
+      "ordinal": 5,
+      "caseClass": "V0",
+      "lane": "TV",
+      "arm": "B"
+    },
+    {
+      "ordinal": 8,
+      "caseClass": "V2",
+      "lane": "TV",
+      "arm": "B"
+    }
+  ],
+  "evidence": [
+    {
+      "slice": "D5",
+      "path": ".work/evidence/m3-a2/c2-d5-canonical-v1.json",
+      "runId": 40911692927,
+      "artifactId": 12914735795,
+      "gitCommit": "3dbb570ab2ee53d185f31a5790dbc09e03acb4b7",
+      "zipSha256": "d3716d8d725dc3f83813858496f4fa2e08efd02c51506693bc42a464aa547d81",
+      "manifestSha256": "b66c4f6d2187db7eb2f4a05edec6f48f5c5781430ad2dba818ea7e4aa77965b4"
+    },
+    {
+      "slice": "D6",
+      "path": ".work/evidence/m3-a2/c2-d6-canonical-v1.json",
+      "runId": 41285812385,
+      "artifactId": 13075800552,
+      "gitCommit": "0cb6d82dc3f45c5e63f511527ca697522da21d06",
+      "zipSha256": "2bab18a9563200f7ebe07c7fa2ca4b0e8699b44a674401122b73945bfb0fc5eb",
+      "manifestSha256": "8fbf7428e69eb46a98c281a40888a56746448baf677d892c7b896e4188f90362"
+    },
+    {
+      "slice": "D7",
+      "path": ".work/evidence/m3-a2/c2-d7-canonical-v1.json",
+      "runId": 41305878254,
+      "artifactId": 13083550309,
+      "gitCommit": "4cad7091fcbf160464ca7efe7b0360ffa18f60d1",
+      "zipSha256": "1261df13c5d5cd4d03704e92bf47c6f88b782303011cc2e933ca3efefaac86d1",
+      "manifestSha256": "d2af52a0af5ae05841baf228fc825f80412e958e76f436624b6574215aa62167"
+    }
+  ],
+  "gateOutcome": "STOP_C2_SAME_ENVIRONMENT_ONLY",
+  "globalDecision": "NOT_MADE_M3_A2",
+  "nextAllowed": "NEW_INDEPENDENT_EVIDENCE_AND_PREDECLARED_CONTROL_ONLY",
+  "maxMediaProbesPerSlice": 0,
+  "productionAdapterAllowed": false
+}
