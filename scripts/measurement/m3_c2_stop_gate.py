@@ -110,6 +110,7 @@ def expected_plan() -> dict:
         "protocol": "m3-a2-c2-stop-gate-v1",
         "gateId": "m3-a2-c2-terminal-evidence-stop-2026-11-01-v1",
         "scope": "SAME_PINNED_REFERENCE_AND_FOUR_CONTROLS",
+        "runnerImage": "ubuntu24@20261026.354.1",
         "oracle": {
             "id": "YT_DLP", "version": "2026.10.21",
             "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1",
@@ -175,6 +176,7 @@ def _check_manifest(doc: dict, spec: dict, slice_id: str, plan: dict) -> None:
           and SHA.fullmatch(doc["gitCommit"]) is not None
           and type(doc["runnerImage"]) is str
           and re.fullmatch(r"[A-Za-z0-9._@-]{1,100}", doc["runnerImage"]) is not None
+          and doc["runnerImage"] == plan["runnerImage"]
           and doc["oracle"] == plan["oracle"],
           f"{slice_id} canonical identity mismatch")
     check(type(doc["files"]) is dict and len(doc["files"]) == 5
