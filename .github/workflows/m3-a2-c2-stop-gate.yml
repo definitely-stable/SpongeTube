@@ -1,0 +1,46 @@
+name: M3-A2-C2 Archived Evidence Stop Gate
+
+# Offline ledger consistency + anti-forgery tests only. No provider I/O.
+on:
+  pull_request:
+    paths:
+      - '.work/m3-a2/c2-stop-gate-v1.json'
+      - '.work/evidence/m3-a2/c2-d5-canonical-v1.json'
+      - '.work/evidence/m3-a2/c2-d6-canonical-v1.json'
+      - '.work/evidence/m3-a2/c2-d7-canonical-v1.json'
+      - '.work/evidence/2026-11-01-m3-a2-c2-research-stop.md'
+      - 'scripts/measurement/m3_c2_stop_gate.py'
+      - 'scripts/measurement/tests/test_m3_c2_stop_gate.py'
+      - '.github/workflows/m3-a2-c2-stop-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.work/m3-a2/c2-stop-gate-v1.json'
+      - '.work/evidence/m3-a2/c2-d5-canonical-v1.json'
+      - '.work/evidence/m3-a2/c2-d6-canonical-v1.json'
+      - '.work/evidence/m3-a2/c2-d7-canonical-v1.json'
+      - 'scripts/measurement/m3_c2_stop_gate.py'
+      - 'scripts/measurement/tests/test_m3_c2_stop_gate.py'
+      - '.github/workflows/m3-a2-c2-stop-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-c2-stop-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Exact checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate frozen historical ledger contract
+        run: |
+          set -euo pipefail
+          python3 scripts/measurement/m3_c2_stop_gate.py verify
+          python3 scripts/measurement/m3_c2_stop_gate.py render
+      - name: Falsify forged provider/adoption evidence
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s scripts/measurement/tests -p 'test_m3_c2_stop_gate.py' -v
