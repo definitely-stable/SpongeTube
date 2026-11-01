@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "protocol": "m3-a2-c2-d7-independent-canonical-audit-v1",
+  "runId": 41305878254,
+  "artifactId": 13083550309,
+  "gitCommit": "4cad7091fcbf160464ca7efe7b0360ffa18f60d1",
+  "runnerImage": "ubuntu24@20261026.354.1",
+  "oracle": {
+    "id": "YT_DLP",
+    "version": "2026.10.21",
+    "revision": "8cdf4fea48ecf4064387375301d7f294ebdb17c1"
+  },
+  "zipSha256": "1261df13c5d5cd4d03704e92bf47c6f88b782303011cc2e933ca3efefaac86d1",
+  "manifestSha256": "d2af52a0af5ae05841baf228fc825f80412e958e76f436624b6574215aa62167",
+  "files": {
+    "d7-d6-d5-02-v0-web_embedded-b.json": "cc22393d8a7674e9cc21a597e0af71b823b4307e612bc4d956d00459064da200",
+    "d7-d6-d5-03-v2-web_embedded-b.json": "8204e4a6a164bdab7184c7d751524f1cb3c20a29ef68f0a277c012fca68e7273",
+    "d7-d6-d5-05-v0-tv-b.json": "ac53a80a04426f966c9eca83a126e44e6a0e0a82bc833584a9b65bcfa90c7fa1",
+    "d7-d6-d5-08-v2-tv-b.json": "4b79d6649b1b36f92bce6ba718818b4d0635d861a29cdd1e5ca3b2059ed36385",
+    "summary-v1.json": "c98b0fddd24ecc9c707a0a6ed00ba944749ebf4186893f95cb121c0b30ef95ba"
+  },
+  "observations": [
+    {
+      "caseClass": "V0",
+      "lane": "WEB_EMBEDDED",
+      "ordinal": 2,
+      "parsedEmbeddedInitialObservation": "PARSED_RETURN",
+      "parsedEmbeddedStreamingData": "ABSENT",
+      "parsedEmbeddedManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "apiReturnStreamingData": "ABSENT",
+      "apiReturnManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "postNormalizationStreamingData": [
+        "NULL",
+        "ONE"
+      ],
+      "selectedInputManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "selectedInputCandidateState": "NO_CANDIDATES_IN_SELECTED_INPUT",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "mediaProbes": 0,
+      "emittedFormatMappings": 0,
+      "poTokenSkipReportCalls": 0,
+      "formatPopulation": "EMPTY",
+      "raiseNoFormatsCalls": 1
+    },
+    {
+      "caseClass": "V2",
+      "lane": "WEB_EMBEDDED",
+      "ordinal": 3,
+      "parsedEmbeddedInitialObservation": "PARSED_RETURN",
+      "parsedEmbeddedStreamingData": "ABSENT",
+      "parsedEmbeddedManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "apiReturnStreamingData": "ABSENT",
+      "apiReturnManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "postNormalizationStreamingData": [
+        "NULL",
+        "ONE"
+      ],
+      "selectedInputManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "selectedInputCandidateState": "NO_CANDIDATES_IN_SELECTED_INPUT",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "mediaProbes": 0,
+      "emittedFormatMappings": 0,
+      "poTokenSkipReportCalls": 0,
+      "formatPopulation": "EMPTY",
+      "raiseNoFormatsCalls": 1
+    },
+    {
+      "caseClass": "V0",
+      "lane": "TV",
+      "ordinal": 5,
+      "parsedEmbeddedInitialObservation": "PARSED_RETURN",
+      "parsedEmbeddedStreamingData": "ABSENT",
+      "parsedEmbeddedManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "apiReturnStreamingData": "ABSENT",
+      "apiReturnManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "postNormalizationStreamingData": [
+        "NULL",
+        "ONE"
+      ],
+      "selectedInputManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "selectedInputCandidateState": "NO_CANDIDATES_IN_SELECTED_INPUT",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "mediaProbes": 0,
+      "emittedFormatMappings": 0,
+      "poTokenSkipReportCalls": 0,
+      "formatPopulation": "EMPTY",
+      "raiseNoFormatsCalls": 1
+    },
+    {
+      "caseClass": "V2",
+      "lane": "TV",
+      "ordinal": 8,
+      "parsedEmbeddedInitialObservation": "PARSED_RETURN",
+      "parsedEmbeddedStreamingData": "ABSENT",
+      "parsedEmbeddedManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "apiReturnStreamingData": "ABSENT",
+      "apiReturnManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "postNormalizationStreamingData": [
+        "NULL",
+        "ONE"
+      ],
+      "selectedInputManifestState": "NO_MANIFEST_FIELDS_OBSERVED",
+      "selectedInputCandidateState": "NO_CANDIDATES_IN_SELECTED_INPUT",
+      "metadataRequests": 4,
+      "http2xx": 4,
+      "mediaProbes": 0,
+      "emittedFormatMappings": 0,
+      "poTokenSkipReportCalls": 0,
+      "formatPopulation": "EMPTY",
+      "raiseNoFormatsCalls": 1
+    }
+  ],
+  "totalMetadataRequests": 16,
+  "totalMediaProbes": 0,
+  "completedMetadata": 0,
+  "globalDecision": "NOT_MADE_M3_A2",
+  "independentAudit": {
+    "originalZipDigest": "PASS",
+    "exactSixEntrySet": "PASS",
+    "fiveManifestDigests": "PASS",
+    "canonicalSourceAndRunner": "PASS",
+    "frozenCaseAndClientEqualityToD6": "PASS",
+    "nestedD3TypedHTTP": "PASS",
+    "nestedD4SixteenEventStages": "PASS",
+    "nestedD5TerminalSchema": "PASS",
+    "nestedD6ClosedShapeSchema": "PASS",
+    "D7ClosedManifestSchemaAndCrossStageCounts": "PASS",
+    "derivedSummary": "PASS",
+    "privacyNoRawURLs": "PASS",
+    "requestAndMediaLimits": "PASS"
+  }
+}
