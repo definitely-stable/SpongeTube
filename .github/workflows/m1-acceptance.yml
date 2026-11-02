@@ -85,43 +85,43 @@ jobs:
           persist-credentials: false
 
       - name: Download host verification evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: m1-host-verification-evidence
           path: build/m1-acceptance/evidence/host
 
       - name: Download ACC-07 evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: m1-acc07-evidence
           path: build/m1-acceptance/evidence/acc07
 
       - name: Download ACC-15 evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: m1-acc15-evidence
           path: build/m1-acceptance/evidence/acc15
 
       - name: Download API 36 smoke evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: android-smoke-evidence
           path: build/m1-acceptance/evidence/smoke
 
       - name: Download recovery evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: m1-recovery-evidence
           path: build/m1-acceptance/evidence/recovery
 
       - name: Download API 23 compatibility evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: android-compat-api-23
           path: build/m1-acceptance/evidence/compat23
 
       - name: Download API 34 compatibility evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: android-compat-api-34
           path: build/m1-acceptance/evidence/compat34
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload canonical M1 acceptance summary
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: m1-canonical-acceptance-summary
           path: build/m1-acceptance/summary/
