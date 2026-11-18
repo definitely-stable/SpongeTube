@@ -96,8 +96,7 @@ thermal or physical-device performance evidence.
 
 A performance-based `SELECTED` decision requires physical-device evidence.
 A correctness/resilience selection may be made without a performance claim only
-when the decision record says so explicitly and dependency/distribution policy
-is clear.
+when the decision record says so explicitly and the correctness evidence is sufficient.
 
 ## Rejected alternatives
 
