@@ -240,28 +240,103 @@ def verify_events(
             raise ValueError("broker unique bytes differ from manifest")
         if done.get("duplicateRangeBytes") != 0:
             raise ValueError("broker recorded duplicate bytes")
-    joined = [
-        r for r in events
-        if r.get("event") == "CONSUMER_JOINED"
-        and r.get("fetchKey") == units[0].fetch_key
-    ]
+    # The RecoveryCoordinator (not the player) is FetchBroker's single
+    # consumer. Playback joins the *RecoveryChain*, so broker-level
+    # CONSUMER_JOINED is not expected here. That join must be independently
+    # proved against retained recovery-budget events below.
+    if any(r.get("event") == "CONSUMER_JOINED" for r in events):
+        raise ValueError("a second broker consumer bypassed RecoveryCoordinator")
     raised = [
         r for r in events
         if r.get("event") == "PRIORITY_RAISED"
         and r.get("fetchKey") == units[0].fetch_key
     ]
-    if len(joined) != 1 or joined[0].get("singleFlightJoined") is not True:
-        raise ValueError("playback did not join reserve owner")
     if len(raised) != 1 or raised[0].get("effectivePriority") != "PLAYBACK":
-        raise ValueError("playback join did not escalate existing owner")
-    if any(r.get("event") == "CONSUMER_JOINED" for r in events
-           if r.get("fetchKey") != units[0].fetch_key):
-        raise ValueError("unexpected additional broker consumer join")
+        raise ValueError("playback join did not escalate the existing broker owner")
+
+
+def verify_recovery_budget(
+    budget: Mapping[str, Any],
+    units: list[ExpectedUnit],
+    fetch_events: list[dict[str, Any]],
+) -> None:
+    """Join proof at RecoveryChain granularity, not FetchBroker granularity."""
+    from schema_subset import validate_instance, validate_schema_definition
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    schema = json.loads(
+        (root / ".work/schemas/recovery-budget-events-v1.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    validate_schema_definition(schema)
+    validate_instance(schema, dict(budget), root_schema=schema)
+
+    if budget.get("policyId") != "sponge-recovery-v2":
+        raise ValueError("wrong recovery budget policy")
+    if budget.get("sessionId") != "m4-a1b-n0":
+        raise ValueError("wrong recovery session")
+    rows = budget["events"]
+    seq = [r["sequence"] for r in rows]
+    if seq != sorted(set(seq)):
+        raise ValueError("recovery budget sequence is not strictly monotonic")
+    keys = [u.fetch_key for u in units]
+    chains: dict[str, str] = {}
+    registered = {
+        r["fetchKey"]: r["fetchId"]
+        for r in fetch_events if r.get("event") == "OWNER_REGISTERED"
+    }
+    for key in keys:
+        events = [r for r in rows if r.get("fetchKey") == key]
+        started = [r for r in events if r["kind"] == "CHAIN_STARTED"]
+        joined = [r for r in events if r["kind"] == "CONSUMER_JOINED"]
+        charged = [r for r in events if r["kind"] == "CHARGE"]
+        owners = [r for r in events if r["kind"] == "OWNER_STARTED"]
+        terminated = [r for r in events if r["kind"] == "CHAIN_TERMINATED"]
+        if len(started) != 1 or len(owners) != 1 or len(terminated) != 1:
+            raise ValueError(f"{key}: missing or duplicate recovery chain/owner")
+        chain_id = started[0]["recoveryChainId"]
+        if any(r["recoveryChainId"] != chain_id for r in events):
+            raise ValueError(f"{key}: multiple recovery chains")
+        chains[key] = chain_id
+        expected_consumers = ["RESERVE", "PLAYBACK"] if key == keys[0] else [
+            "RESERVE"
+        ]
+        if [r.get("consumerKind") for r in joined] != expected_consumers:
+            raise ValueError(f"{key}: recovery playback/reserve join missing")
+        if any(not r.get("consumerId") for r in joined):
+            raise ValueError(f"{key}: missing recovery consumer identity")
+        if len(charged) != 1:
+            raise ValueError(f"{key}: incorrect recovery request charge count")
+        charge = charged[0].get("charge") or {}
+        if (
+            charge.get("dimension") != "REMOTE_ATTEMPT"
+            or charge.get("amount") != 1
+            or charge.get("spentAfter") != 1
+        ):
+            raise ValueError(f"{key}: incorrect physical-attempt budget accounting")
+        if owners[0].get("fetchId") != registered[key]:
+            raise ValueError(f"{key}: recovery owner disagrees with FetchBroker")
+        if terminated[0].get("terminalReason") != "SUCCESS":
+            raise ValueError(f"{key}: recovery did not finish successfully")
+    if len(set(chains.values())) != len(keys):
+        raise ValueError("unrelated immutable fetches shared a recovery chain")
+    if {r["fetchKey"] for r in rows} != set(keys):
+        raise ValueError("unexpected recovery fetch identity")
+    raised = [
+        r for r in rows if r["kind"] == "PRIORITY_RAISED"
+    ]
+    if (
+        len(raised) != 1 or raised[0]["fetchKey"] != keys[0]
+        or raised[0].get("effectivePriority") != "PLAYBACK"
+        or raised[0]["recoveryChainId"] != chains[keys[0]]
+    ):
+        raise ValueError("playback did not raise the joined RecoveryChain priority")
 
 
 def verify(
     summary: Mapping[str, Any],
     fetch_events: list[dict[str, Any]],
+    recovery_budget: Mapping[str, Any],
     origin_trace: list[Mapping[str, Any]],
     committed: Mapping[str, Any],
     verified: Mapping[str, Any],
@@ -293,6 +368,7 @@ def verify(
     origins = verify_origin(origin_trace, units)
     verify_storage(committed, verified, oracle, units, expected_end_us)
     verify_events(fetch_events, origins, units)
+    verify_recovery_budget(recovery_budget, units, fetch_events)
     return {
         "schemaVersion": 1,
         "status": "PASS",
@@ -309,7 +385,7 @@ def verify(
 def main() -> int:
     parser = argparse.ArgumentParser()
     for key in (
-        "summary", "fetch-events", "origin-trace",
+        "summary", "fetch-events", "recovery-budget", "origin-trace",
         "committed", "verified-files", "oracle", "manifest", "mpd", "output",
     ):
         parser.add_argument("--" + key, required=True, type=pathlib.Path)
@@ -317,6 +393,7 @@ def main() -> int:
     result = verify(
         summary=json.loads(args.summary.read_text(encoding="utf-8")),
         fetch_events=read_jsonl(args.fetch_events),
+        recovery_budget=json.loads(args.recovery_budget.read_text(encoding="utf-8")),
         origin_trace=read_jsonl(args.origin_trace),
         committed=json.loads(args.committed.read_text(encoding="utf-8")),
         verified=json.loads(args.verified_files.read_text(encoding="utf-8")),
