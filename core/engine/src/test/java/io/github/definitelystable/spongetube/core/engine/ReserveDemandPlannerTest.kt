@@ -158,11 +158,12 @@ class ReserveDemandPlannerTest {
         val first = unit("first", "video", "v1", dependencies = listOf("second"))
         val second = unit("second", "video", "v1", dependencies = listOf("first"))
         val media = unit("media", "video", "v1", 0, 10, listOf("first"))
+        val index = indexOf()
         assertThrows(IllegalStateException::class.java) {
             ReserveDemandPlanner.plan(
                 planOf(first, second, media),
                 videoRequirements,
-                indexOf(),
+                index,
                 0,
                 10,
                 8,
