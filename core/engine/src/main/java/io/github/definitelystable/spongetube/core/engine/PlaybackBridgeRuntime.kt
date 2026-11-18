@@ -104,6 +104,7 @@ class PlaybackBridgeRuntime internal constructor(
     private val listener: PlaybackBridgeEventListener?,
 ) {
     private val readCounter = AtomicLong()
+    private val reserveExecutor = ReserveDemandExecutor(this)
     private val eventCounter = AtomicLong()
     private val eventLock = Any()
 
@@ -128,19 +129,50 @@ class PlaybackBridgeRuntime internal constructor(
     }
 
     /**
-     * Harness-only RESERVE demand (M1-E has no ReserveController). The lease
-     * joins or starts the same RecoveryChain the bridge would use.
+     * RESERVE joins the same RecoveryChain and FetchBroker owner as PLAYBACK.
+     * Closing the runtime forbids any new reserve admission.
      */
     suspend fun acquireReserve(
         fetchKey: FetchKey,
         consumerId: String,
     ): PlaybackReserveLease {
+        ensureReserveOpen()
         val unit = requireNotNull(plan.unitForFetchKey(fetchKey)) {
             "fetch key is not part of the playback plan: $fetchKey"
         }
-        return PlaybackReserveLease(
-            acquire(unit, consumerId, RecoveryConsumerKind.RESERVE),
+        val handle = acquire(unit, consumerId, RecoveryConsumerKind.RESERVE)
+        if (closed) {
+            handle.close()
+            ensureReserveOpen()
+        }
+        return PlaybackReserveLease(handle)
+    }
+
+    /**
+     * M4-A1a: bounded, caller-owned reserve execution. No background scope is
+     * launched and no work outlives the calling coroutine. Route admission,
+     * retry budgeting and single-flight ownership stay inside RecoveryCore.
+     */
+    internal suspend fun fillReserveOnce(
+        requirements: PlaybackRequirementSet,
+        playheadUs: Long,
+        targetReserveUs: Long,
+        maxFetchUnits: Int,
+    ): ReserveExecutionReport =
+        reserveExecutor.execute(
+            requirements = requirements,
+            playheadUs = playheadUs,
+            targetReserveUs = targetReserveUs,
+            maxFetchUnits = maxFetchUnits,
         )
+
+    internal fun ensureReserveOpen() {
+        if (closed) {
+            throw PlaybackBridgeException(
+                failure = PlaybackBridgeFailure.RUNTIME_CLOSED,
+                message = "playback bridge runtime is closed",
+            )
+        }
     }
 
     /**
@@ -342,7 +374,7 @@ internal fun coverageReconciler(index: CoverageIndex): RecoveryLocalReconciler =
         }
     }
 
-/** Harness-only RESERVE consumer lease; see [PlaybackBridgeRuntime.acquireReserve]. */
+/** RESERVE consumer lease; see [PlaybackBridgeRuntime.acquireReserve]. */
 @SpongeBridgeApi
 class PlaybackReserveLease internal constructor(
     private val handle: RecoveryHandle,
