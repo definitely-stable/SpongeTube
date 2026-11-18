@@ -1,5 +1,6 @@
 package io.github.definitelystable.spongetube.core.engine
 
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryAttemptGate
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryCoordinator
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryEvidenceRecorder
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryJitterSource
@@ -278,6 +279,7 @@ internal class BridgeHarness(
     val fixture: TestPlanFixture = TestPlanFixture(),
     val store: FakeExtentStore = FakeExtentStore(),
     val policy: RecoveryPolicy = RecoveryPolicy.DEFAULT,
+    val attemptGate: RecoveryAttemptGate = RecoveryAttemptGate.ALWAYS_PERMIT,
 ) {
     val origin = FakeOrigin(fixture::bytesFor)
     val bridgeEvents = CopyOnWriteArrayList<PlaybackBridgeEvent>()
@@ -303,6 +305,7 @@ internal class BridgeHarness(
         broker = broker,
         sessionId = "jvm-bridge",
         policy = policy,
+        attemptGate = attemptGate,
         reconciler = coverageReconciler(index),
         jitter = RecoveryJitterSource { 0L },
         sleeper = RecoverySleeper { backoffDelays += it },
