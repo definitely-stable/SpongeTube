@@ -149,7 +149,6 @@ Probe, with bounded evidence:
 - range/continuation capability;
 - seek/start/sustained-playback behaviour;
 - provider rejection/throttling/backoff observations;
-- dependency licensing and intended distribution constraints.
 
 Deliverables:
 
@@ -193,7 +192,6 @@ Exit:
 - descriptor refresh does not change stable media/storage identity;
 - failures are classified;
 - core tests pass unchanged when adapter implementation changes;
-- project licensing/distribution decision is compatible with every third-party component actually used.
 
 Production coupling happens only after both the M1 core/evidence path and M3-A provider evidence support the chosen boundary.
 
@@ -280,9 +278,6 @@ Account login remains a separate decision and threat/risk review.
 
 ## M8 — Release Hardening
 
-- final LICENSE and third-party license compatibility audit;
-- provider Terms/distribution-channel review and documented release decision;
-- dependency/SBOM/license report appropriate to the release channel;
 - physical-device benchmark matrix;
 - crash/ANR work;
 - accessibility;

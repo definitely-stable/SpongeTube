@@ -1002,7 +1002,7 @@ paired ordering block in which every compared backend produced an eligible
 sample; and counter-balanced/seeded-balanced ordering is verified from retained
 block/position facts. Emulator evidence can support correctness/resilience and
 directional measurements only. A performance-based SELECTED decision requires
-retained physical-device evidence and dependency/distribution clearance.
+retained physical-device evidence.
 
 Canonical G2-E `DEFAULT_ROUTE_LOSS_RESTORE` is isolated as a Wi-Fi-only
 API36 emulator experiment. Mobile data stays disabled from initial route

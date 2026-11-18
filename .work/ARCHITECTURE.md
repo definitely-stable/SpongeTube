@@ -291,7 +291,7 @@ Provider implementation owns those details; Sponge Core only sees FetchUnits, co
 - account/auth support is separate from anonymous transport support;
 - provider logic must be feature-flagged and diagnosable.
 
-Direct use of GPL components such as NewPipeExtractor requires an explicit project licensing decision before production dependency adoption.
+Reference extractor implementations remain isolated until an M3-A3 technical decision and focused adapter verification justify production integration.
 
 ## 6. FetchBroker: one fetch, many consumers
 
