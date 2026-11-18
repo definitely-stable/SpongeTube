@@ -136,7 +136,7 @@ jobs:
 
           # Verify while the N0 request trace is complete. The independent
           # oracle reads real Room SQLite and the published extent files.
-          bash scripts/ci/verify-m4-a1b-evidence.sh "$root" "$trace"
+          bash scripts/ci/verify-m4-a1b-evidence.sh "$root/acceptance" "$trace"
 
           cleanup
           trap - EXIT
