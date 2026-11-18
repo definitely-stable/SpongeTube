@@ -159,7 +159,7 @@ class M4ReserveVerifierTest(unittest.TestCase):
             if r["kind"] == "CONSUMER_JOINED"
             and r["consumerKind"] == "PLAYBACK"
         )
-        target["recoveryChainId"] = "recovery-forged"
+        target["recoveryChainId"] = "recovery-99"
         with self.assertRaisesRegex(ValueError, "multiple recovery chains"):
             verify_recovery_budget(budget, self.units, events)
 
