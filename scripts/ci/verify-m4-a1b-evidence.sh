@@ -19,7 +19,7 @@ if [[ "${#SOURCES[@]}" -ne 1 ]]; then
 fi
 
 SOURCE="${SOURCES[0]}"
-for item in runtime-coverage.json reserve-summary.json fetch-events.jsonl; do
+for item in runtime-coverage.json reserve-summary.json fetch-events.jsonl recovery-budget.json; do
   test -s "$SOURCE/$item"
   cp "$SOURCE/$item" "$OUTPUT_ROOT/device/$item"
 done
@@ -49,6 +49,7 @@ cp "$ORIGIN_TRACE" "$OUTPUT_ROOT/verified/origin-requests.jsonl"
 python3 scripts/measurement/m4_reserve_verifier.py \
   --summary "$OUTPUT_ROOT/device/reserve-summary.json" \
   --fetch-events "$OUTPUT_ROOT/device/fetch-events.jsonl" \
+  --recovery-budget "$OUTPUT_ROOT/device/recovery-budget.json" \
   --origin-trace "$OUTPUT_ROOT/verified/origin-requests.jsonl" \
   --committed "$OUTPUT_ROOT/verified/committed-extents.json" \
   --verified-files "$OUTPUT_ROOT/verified/verified-extent-files.json" \
