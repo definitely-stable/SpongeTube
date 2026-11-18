@@ -10,7 +10,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from m4_reserve_verifier import expected_f1_units, verify_origin, verify_storage
+from m4_reserve_verifier import expected_f1_units, verify_origin, verify_storage, verify_recovery_budget
 
 
 class M4ReserveVerifierTest(unittest.TestCase):
@@ -77,6 +77,99 @@ class M4ReserveVerifierTest(unittest.TestCase):
             {"durableReserveUs": self.playable_end,
              "durablePlayableEndUs": self.playable_end},
         )
+
+    def budget_fixture(self):
+        """Schema-valid RecoveryChain events with 1 owner per F1 unit."""
+        example = REPO_ROOT / (
+            ".work/schemas/examples/m2/recovery/reserve-playback-join/"
+            "recovery-budget-events.json"
+        )
+        document = json.loads(example.read_text(encoding="utf-8"))
+        template = document["events"]
+        # One successful physical owner and one charge per selected extent.
+        common_indices = [0, 1, 2, 3, 4, 5, 8, 16]
+        rows = []
+        fetch_rows = []
+        for index, unit in enumerate(self.units, 1):
+            ids = (
+                [0, 1, 2, 3, 4, 5, 6, 7, 8, 16]
+                if index == 1 else common_indices
+            )
+            fetch_id = f"fetch-{index}"
+            chain_id = f"recovery-{index}"
+            for template_index in ids:
+                row = copy.deepcopy(template[template_index])
+                row.update({
+                    "sessionId": "m4-a1b-n0",
+                    "policyId": "sponge-recovery-v2",
+                    "fetchKey": unit.fetch_key,
+                    "extentId": unit.extent_id,
+                    "recoveryChainId": chain_id,
+                    "sequence": len(rows) + 1,
+                })
+                if row["fetchId"] is not None:
+                    row["fetchId"] = fetch_id
+                    row["attemptCorrelationId"] = (
+                        f"{fetch_id}:attempt-1"
+                    )
+                if row["kind"] == "OWNER_FINISHED":
+                    row["ownerOutcome"] = "SUCCESS"
+                rows.append(row)
+            fetch_rows.append({
+                "event": "OWNER_REGISTERED",
+                "fetchKey": unit.fetch_key,
+                "fetchId": fetch_id,
+            })
+        document.update({
+            "runId": "m4-a1b-n0",
+            "sessionId": "m4-a1b-n0",
+            "policyId": "sponge-recovery-v2",
+            "events": rows,
+        })
+        return document, fetch_rows
+
+    def test_accepts_recovery_chain_join_with_single_owner(self):
+        budget, events = self.budget_fixture()
+        verify_recovery_budget(budget, self.units, events)
+
+    def test_recovery_join_absence_fails_closed(self):
+        budget, events = self.budget_fixture()
+        budget["events"] = [
+            r for r in budget["events"]
+            if not (r["kind"] == "CONSUMER_JOINED"
+                    and r["consumerKind"] == "PLAYBACK")
+        ]
+        with self.assertRaisesRegex(ValueError, "recovery playback/reserve join"):
+            verify_recovery_budget(budget, self.units, events)
+
+    def test_recovery_duplicate_attempt_charge_fails_closed(self):
+        budget, events = self.budget_fixture()
+        row = copy.deepcopy(next(
+            r for r in budget["events"] if r["kind"] == "CHARGE"
+        ))
+        row["sequence"] = max(r["sequence"] for r in budget["events"]) + 1
+        budget["events"].append(row)
+        with self.assertRaisesRegex(ValueError, "charge count"):
+            verify_recovery_budget(budget, self.units, events)
+
+    def test_recovery_join_must_share_same_chain(self):
+        budget, events = self.budget_fixture()
+        target = next(
+            r for r in budget["events"]
+            if r["kind"] == "CONSUMER_JOINED"
+            and r["consumerKind"] == "PLAYBACK"
+        )
+        target["recoveryChainId"] = "recovery-forged"
+        with self.assertRaisesRegex(ValueError, "multiple recovery chains"):
+            verify_recovery_budget(budget, self.units, events)
+
+    def test_recovery_priority_escalation_is_required(self):
+        budget, events = self.budget_fixture()
+        budget["events"] = [
+            r for r in budget["events"] if r["kind"] != "PRIORITY_RAISED"
+        ]
+        with self.assertRaisesRegex(ValueError, "raise the joined"):
+            verify_recovery_budget(budget, self.units, events)
 
     def test_canonical_first_audio_video_units_from_mpd(self):
         self.assertEqual(4, len(self.units))
