@@ -283,7 +283,7 @@ Require as applicable:
 Require:
 
 - reason for introducing/upgrading the dependency;
-- license compatibility check for new direct dependencies;
+- pinned versions and integrity/provenance verification for new direct dependencies;
 - official release/changelog review for material upgrades;
 - no unnecessary duplicate library providing functionality already available in the stack.
 
