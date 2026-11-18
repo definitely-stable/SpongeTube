@@ -124,8 +124,12 @@ internal object ReserveDemandPlanner {
                     visit(dependency)
                 }
                 when (result) {
-                    ExtentResolution.Absent ->
-                        pending.putIfAbsent(unit.extentId, unit.fetchKey)
+                    ExtentResolution.Absent -> {
+                        // Map.putIfAbsent requires Android API 24; minSdk is 23.
+                        if (unit.extentId !in pending) {
+                            pending[unit.extentId] = unit.fetchKey
+                        }
+                    }
                     is ExtentResolution.PublishedNotReady ->
                         check(result.missingDependencyIds.isNotEmpty()) {
                             "published extent is unrepairable: " + unit.extentId.value
