@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryBudgetEventKind
 import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryEvidenceRecorder
+import io.github.definitelystable.spongetube.core.engine.recovery.RecoveryPolicy
 import io.github.definitelystable.spongetube.core.storage.ExtentStore
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureAssets
 import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureCatalog
@@ -243,6 +244,7 @@ class M4ReserveAndroidTest {
             checkNotNull(coverageArtifact),
             checkNotNull(summary),
             fetchEvents.toList(),
+            recovery.budgetArtifact(RecoveryPolicy.DEFAULT_POLICY_ID),
         )
     }
 
@@ -250,6 +252,7 @@ class M4ReserveAndroidTest {
         runtimeCoverage: Map<String, Any?>,
         summary: JSONObject,
         fetchEvents: List<Map<String, Any?>>,
+        recoveryBudget: Map<String, Any?>,
     ) {
         val output = PlatformTestStorageRegistry.getInstance()
         val storeRoot = File(context.filesDir, "sponge")
@@ -263,6 +266,10 @@ class M4ReserveAndroidTest {
             .bufferedWriter().use { it.write(JSONObject(runtimeCoverage).toString(2) + "\n") }
         output.openOutputFile("m4-a1b-evidence/N0/reserve-summary.json")
             .bufferedWriter().use { it.write(summary.toString(2) + "\n") }
+        output.openOutputFile("m4-a1b-evidence/N0/recovery-budget.json")
+            .bufferedWriter().use {
+                it.write(JSONObject(recoveryBudget).toString(2) + "\n")
+            }
         output.openOutputFile("m4-a1b-evidence/N0/fetch-events.jsonl")
             .bufferedWriter().use { writer ->
                 fetchEvents.forEach { event ->
