@@ -90,6 +90,22 @@ class CoverageIndex private constructor(
         return projection.snapshot(requirements, playheadUs)
     }
 
+    /**
+     * Capture one immutable projection for M4 planning so reserve length and
+     * extent readiness cannot come from different refresh generations.
+     */
+    internal fun captureReserveView(
+        requirements: PlaybackRequirementSet,
+        playheadUs: Long,
+    ): ReserveCoverageView {
+        require(playheadUs >= 0) { "playhead must be >= 0" }
+        val captured = projection
+        return ReserveCoverageView(
+            snapshot = captured.snapshot(requirements, playheadUs),
+            resolve = { spec -> captured.resolveExtent(spec) },
+        )
+    }
+
     companion object {
         internal fun forTest(
             loader: suspend () -> List<CommittedExtent>,
