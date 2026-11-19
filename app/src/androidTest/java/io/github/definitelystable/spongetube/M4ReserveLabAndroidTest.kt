@@ -2,6 +2,7 @@ package io.github.definitelystable.spongetube
 
 import android.app.Activity
 import android.content.Intent
+import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
@@ -30,6 +31,7 @@ import org.junit.runner.RunWith
  * It never trusts UI text or a locally derived resume time as its own oracle.
  */
 @RunWith(AndroidJUnit4::class)
+@OptIn(UnstableApi::class)
 class M4ReserveLabAndroidTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
