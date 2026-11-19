@@ -135,9 +135,19 @@ class M4ReserveLabAndroidTest {
     }
 
     private fun click(label: String) {
-        val button = device.wait(Until.findObject(By.text(label)), 15_000)
-        checkNotNull(button) { "M4 UI button not visible: $label" }
-        button.click()
+        val textNode = device.wait(Until.findObject(By.text(label)), 15_000)
+        checkNotNull(textNode) { "M4 UI button not visible: $label" }
+        // Compose exposes the Text child as a virtual accessibility node.
+        // Invoke its actual clickable Button ancestor instead of tapping
+        // arbitrary text bounds (which can be outside the touch target).
+        var target = textNode
+        while (!target.isClickable) {
+            target = checkNotNull(target.parent) {
+                "M4 UI text has no clickable ancestor: $label"
+            }
+        }
+        check(target.isEnabled) { "M4 UI button disabled: $label" }
+        target.click()
     }
 
     private fun expect(text: String, timeout: Long = 20_000) {
