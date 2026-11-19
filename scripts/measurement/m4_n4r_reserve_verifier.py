@@ -136,26 +136,37 @@ def verify_fetch(
     if seq != sorted(set(seq)):
         raise ValueError("non-monotonic FetchBroker evidence")
     expected_keys = [units[0].fetch_key] * 3 + [u.fetch_key for u in units[1:]]
-    kinds = (
-        "OWNER_REGISTERED", "ATTEMPT_STARTED",
-        "ATTEMPT_COMPLETED", "OWNER_COMPLETED",
-    )
-    matches = {
-        k: [r for r in events if r["event"] == k]
-        for k in kinds
-    }
-    for kind in kinds:
-        if [r["fetchKey"] for r in matches[kind]] != expected_keys:
+    # FetchBroker distinguishes failed from successful *physical* owners:
+    # ATTEMPT_FAILED/OWNER_FAILED for the two timeouts, but
+    # ATTEMPT_COMPLETED/OWNER_COMPLETED for successful later requests.
+    # The recovery budget, not the broker, owns the retry sequence.
+    registered = [r for r in events if r["event"] == "OWNER_REGISTERED"]
+    started = [r for r in events if r["event"] == "ATTEMPT_STARTED"]
+    finished = [
+        r for r in events if r["event"] in {"ATTEMPT_FAILED", "ATTEMPT_COMPLETED"}
+    ]
+    terminals = [
+        r for r in events if r["event"] in {"OWNER_FAILED", "OWNER_COMPLETED"}
+    ]
+    for kind, rows in (
+        ("OWNER_REGISTERED", registered), ("ATTEMPT_STARTED", started),
+        ("ATTEMPT_TERMINAL", finished), ("OWNER_TERMINAL", terminals),
+    ):
+        if [r["fetchKey"] for r in rows] != expected_keys:
             raise ValueError(f"{kind}: incorrect physical owner attempt sequence")
 
-    owner_ids = [r["fetchId"] for r in matches["OWNER_REGISTERED"]]
+    owner_ids = [r["fetchId"] for r in registered]
     if len(set(owner_ids)) != ATTEMPTS:
         raise ValueError("physical owner identity reused across retry attempts")
     for n, row in enumerate(origin):
         owner = owner_ids[n]
-        start = matches["ATTEMPT_STARTED"][n]
-        done = matches["ATTEMPT_COMPLETED"][n]
-        end = matches["OWNER_COMPLETED"][n]
+        start = started[n]
+        done = finished[n]
+        end = terminals[n]
+        attempt_event = "ATTEMPT_FAILED" if n < 2 else "ATTEMPT_COMPLETED"
+        owner_event = "OWNER_FAILED" if n < 2 else "OWNER_COMPLETED"
+        if done["event"] != attempt_event or end["event"] != owner_event:
+            raise ValueError("wrong broker terminal kind for failed/restored attempt")
         if any(e.get("fetchId") != owner for e in (start, done, end)):
             raise ValueError("FetchBroker changed physical owner identity")
         correlation = f"{owner}:attempt-1"
