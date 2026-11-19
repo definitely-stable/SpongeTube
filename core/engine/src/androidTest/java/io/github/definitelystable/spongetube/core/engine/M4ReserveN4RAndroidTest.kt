@@ -201,14 +201,16 @@ class M4ReserveN4RAndroidTest {
             // This condition is observed while the physical HTTP response
             // body is blocked by the Media Lab server, not the client hook.
             val blocked = withTimeout(TEST_TIMEOUT_MS) {
-                while (true) {
-                    val state = withContext(Dispatchers.IO) { gateState(controlUrl) }
+                var state: JSONObject
+                do {
+                    state = withContext(Dispatchers.IO) { gateState(controlUrl) }
                     if (state.getString("state") == "CLOSED" &&
                         state.getInt("activeBlockedRequests") > 0) {
-                        break@withTimeout state
+                        break
                     }
                     delay(20)
-                }
+                } while (true)
+                state
             }
             assertEquals("CLOSED", blocked.getString("state"))
             assertEquals(0L, runtime.coverageIndex.snapshot(requirements, 0).durableReserveUs)
