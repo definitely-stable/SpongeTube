@@ -178,7 +178,7 @@ def verify_fetch(
             raise ValueError("FetchBroker spawned an internal retry")
         if str(done.get("transportCorrelationId")) != str(row["requestId"]):
             raise ValueError("origin request ID does not match physical owner")
-        expected_outcome = "READ_TIMEOUT" if n < 2 else "SUCCESS"
+        # FetchBroker v3 retains the M1-compatible projection; the actual\n        # READ_TIMEOUT observation is proved by the recovery failure oracle.\n        expected_outcome = "RETRYABLE_TRANSPORT_FAILURE" if n < 2 else "SUCCESS"
         if done.get("outcome") != expected_outcome:
             raise ValueError("unexpected physical transport outcome")
         if end.get("outcome") != expected_outcome:
