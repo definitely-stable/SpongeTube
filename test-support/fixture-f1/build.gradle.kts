@@ -4,7 +4,8 @@ plugins {
 
 // Test-only support module: the single F1 FetchUnit catalog shared by M1-C
 // seeds and M1-E PlaybackBridge scenarios. It must only be consumed from
-// test/androidTest source sets, never from product code.
+// test/androidTest or the isolated app debug-only M4 lab source set;
+// it must never be consumed by app main/release product code.
 android {
     namespace = "io.github.definitelystable.spongetube.testsupport.fixture.f1"
     compileSdk = 36

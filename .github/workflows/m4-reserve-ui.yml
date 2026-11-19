@@ -1,0 +1,164 @@
+name: M4-A1c Debug Reserve UI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/m4-reserve-ui.yml"
+      - "app/**"
+      - "core/engine/**"
+      - "core/storage/**"
+      - "test-support/fixture-f1/**"
+      - "test-support/playback-f1/**"
+      - "test-fixtures/media/**"
+      - "tools/media-lab/**"
+      - "scripts/ci/prepare-emulator.sh"
+      - "scripts/ci/verify-m4-a1c-ui-evidence.sh"
+      - "scripts/measurement/m4_ui_verifier.py"
+      - "scripts/measurement/tests/test_m4_ui_verifier.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/m4-reserve-ui.yml"
+      - "app/**"
+      - "core/engine/**"
+      - "core/storage/**"
+      - "test-support/fixture-f1/**"
+      - "test-support/playback-f1/**"
+      - "test-fixtures/media/**"
+      - "tools/media-lab/**"
+      - "scripts/ci/prepare-emulator.sh"
+      - "scripts/ci/verify-m4-a1c-ui-evidence.sh"
+      - "scripts/measurement/m4_ui_verifier.py"
+      - "scripts/measurement/tests/test_m4_ui_verifier.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4-a1c-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug-reserve-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind source revision
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir -p build/m4-a1c
+          printf '%s\n' "$SOURCE_SHA" > build/m4-a1c/source-sha.txt
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
+      - name: Build debug UI and run host falsification tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover \
+            -s scripts/measurement/tests \
+            -p 'test_m4_ui_verifier.py' -v
+          ./gradlew --dependency-verification=strict --configuration-cache \
+            :app:testDebugUnitTest \
+            :app:assembleDebugAndroidTest \
+            :tools:media-lab:installDist
+
+      - name: Prepare API 36 emulator
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-emulator.sh \
+            36 m4-a1c-api36 build/m4-a1c/device
+
+      - name: Exercise opt-in UI and independently verify retained F1
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="build/m4-a1c"
+          mkdir -p "$root/server"
+          trace="$PWD/$root/server/requests.jsonl"
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          "$LAB_BIN" serve \
+            "--fixture-root=$PWD/test-fixtures/media" \
+            "--trace=$trace" \
+            --session-id=m4-a1c-f1-debug \
+            --profile=N0 \
+            --data-port=18081 \
+            --control-port=18082 \
+            > "$root/server/media-lab.out" \
+            2> "$root/server/media-lab.err" &
+          lab_pid=$!
+          cleanup() { kill "$lab_pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18082/__lab/config \
+              > "$root/server/scenario.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$root/server/media-lab.err"
+              exit 1
+            fi
+            sleep 1
+          done
+          jq -e '.profileId == "N0" and .sessionId == "m4-a1c-f1-debug"' \
+            "$root/server/scenario.json"
+          adb reverse tcp:18080 tcp:18081
+
+          ./gradlew --dependency-verification=strict \
+            :app:connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.M4ReserveLabAndroidTest
+
+          for attempt in {1..60}; do
+            count="$(python3 -c 'import json,sys; print(sum(1 for line in open(sys.argv[1]) if line.strip() and json.loads(line).get("plane") == "data"))' "$trace" 2>/dev/null || echo 0)"
+            [[ "$count" -ge 4 ]] && break
+            sleep 0.25
+          done
+
+          bash scripts/ci/verify-m4-a1c-ui-evidence.sh \
+            "$root/acceptance" "$trace"
+          cleanup
+          trap - EXIT
+
+      - name: Upload debug UI and independent evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m4-a1c-debug-reserve-ui-evidence
+          path: |
+            build/m4-a1c/
+            app/build/outputs/androidTest-results/
+            app/build/outputs/connected_android_test_additional_output/
+            app/build/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: |
+          adb emu kill || true

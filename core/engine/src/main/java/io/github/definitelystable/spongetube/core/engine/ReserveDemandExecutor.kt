@@ -8,7 +8,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** One caller-owned M4-A1a pass, never a background queue or download job. */
-internal enum class ReserveExecutionStop {
+enum class ReserveExecutionStop {
     TARGET_REACHED,
     PLAN_DEPLETED,
     FETCH_FAILED,
@@ -19,7 +19,7 @@ internal enum class ReserveExecutionStop {
  * Execution evidence is limited to immutable work identity and coverage.
  * Failure details belong to RecoveryCoordinator; this layer never retries.
  */
-internal data class ReserveExecutionReport(
+data class ReserveExecutionReport(
     val stop: ReserveExecutionStop,
     val initialReserveUs: Long,
     val finalReserveUs: Long,
