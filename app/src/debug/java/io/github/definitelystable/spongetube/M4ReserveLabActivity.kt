@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -36,7 +35,7 @@ import io.github.definitelystable.spongetube.testsupport.fixture.f1.F1FixtureCat
 import io.github.definitelystable.spongetube.testsupport.playback.f1.F1PlaybackPlanFactory
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Channel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,7 +76,7 @@ class M4ReserveLabActivity : ComponentActivity() {
             M4ReserveLabScreen(
                 state = labState,
                 onEnable = ::enableLab,
-                onFill = { commands?.trySend(LabCommand.FILL) },
+                onFill = ::fillOnce,
                 onRefresh = { commands?.trySend(LabCommand.REFRESH) },
                 onDisable = ::disableLab,
             )
@@ -87,7 +86,7 @@ class M4ReserveLabActivity : ComponentActivity() {
     private fun enableLab() {
         if (labState.phase != LabPhase.DISABLED) return
         val id = ++activationId
-        val channel = Channel<LabCommand>(Channel.RENDEZVOUS)
+        val channel = Channel<LabCommand>(Channel.CONFLATED)
         commands = channel
         labState = M4ReserveLabState(phase = LabPhase.CONNECTING)
 
@@ -204,6 +203,18 @@ class M4ReserveLabActivity : ComponentActivity() {
         }
     }
 
+    private fun fillOnce() {
+        if (labState.phase !in setOf(
+                LabPhase.READY, LabPhase.TARGET_REACHED,
+                LabPhase.PLAN_DEPLETED, LabPhase.FETCH_FAILED,
+                LabPhase.DEPENDENCY_NOT_READY,
+            )
+        ) return
+        if (commands?.trySend(LabCommand.FILL)?.isSuccess == true) {
+            labState = labState.copy(phase = LabPhase.FILLING)
+        }
+    }
+
     private fun disableLab() {
         if (labState.phase == LabPhase.DISABLED ||
             labState.phase == LabPhase.STOPPING
@@ -211,7 +222,7 @@ class M4ReserveLabActivity : ComponentActivity() {
         labState = labState.copy(phase = LabPhase.STOPPING)
         commands?.close()
         val job = sessionJob
-        if (job?.isActive == true) {
+        if (job != null && !job.isCompleted) {
             job.cancel()
         } else {
             commands = null
@@ -349,21 +360,21 @@ private fun M4ReserveLabScreen(
                     LabPhase.CONNECTING, LabPhase.STOPPING ->
                         Text("Local session lifecycle in progress")
                     else -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(
-                                onClick = onFill,
-                                enabled = state.phase != LabPhase.FILLING &&
-                                    state.phase != LabPhase.ERROR,
-                            ) {
-                                Text("Fill reserve once")
-                            }
-                            FilledTonalButton(
-                                onClick = onRefresh,
-                                enabled = state.phase != LabPhase.FILLING &&
-                                    state.phase != LabPhase.ERROR,
-                            ) {
-                                Text("Refresh coverage")
-                            }
+                        FilledTonalButton(
+                            onClick = onFill,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.phase != LabPhase.FILLING &&
+                                state.phase != LabPhase.ERROR,
+                        ) {
+                            Text("Fill reserve once")
+                        }
+                        FilledTonalButton(
+                            onClick = onRefresh,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.phase != LabPhase.FILLING &&
+                                state.phase != LabPhase.ERROR,
+                        ) {
+                            Text("Refresh coverage")
                         }
                         Button(onClick = onDisable, modifier = Modifier.fillMaxWidth()) {
                             Text("Disable lab")
