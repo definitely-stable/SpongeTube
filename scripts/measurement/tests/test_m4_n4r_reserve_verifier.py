@@ -7,11 +7,12 @@ import json
 import pathlib
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "measurement"))
 
-from m4_n4r_reserve_verifier import verify_gate, verify_origin
+from m4_n4r_reserve_verifier import verify_fetch, verify_gate, verify_origin
 from m4_reserve_verifier import expected_f1_units
 
 
@@ -68,6 +69,85 @@ class N4RReserveVerifierTest(unittest.TestCase):
                  serverMonotonicNs=240, event="REQUEST_RELEASED",
                  gateGeneration=1, commandId="m4-n4r-restore", requestId=11),
         ]
+
+    def fetch_events(self):
+        # Pure semantic fixture. Schema checks are exercised independently
+        # by validate_fetch_events on real Android artifacts in CI.
+        rows = []
+        expected = [self.units[0]] * 3 + self.units[1:]
+        for index, unit in enumerate(expected):
+            fetch_id = f"fetch-{index + 1}"
+            outcome = (
+                "RETRYABLE_TRANSPORT_FAILURE" if index < 2 else "SUCCESS"
+            )
+            def add(kind, **fields):
+                rows.append({
+                    "eventSequence": len(rows),
+                    "event": kind,
+                    "fetchKey": unit.fetch_key,
+                    "fetchId": fetch_id,
+                    **fields,
+                })
+            add("OWNER_REGISTERED")
+            if index == 0:
+                add("PRIORITY_RAISED", effectivePriority="PLAYBACK")
+            add("ATTEMPT_STARTED", attempt=1,
+                attemptCorrelationId=f"{fetch_id}:attempt-1")
+            add(
+                "ATTEMPT_FAILED" if index < 2 else "ATTEMPT_COMPLETED",
+                attempt=1, attemptCorrelationId=f"{fetch_id}:attempt-1",
+                transportCorrelationId=str(index + 10),
+                outcome=outcome,
+                uniqueRangeBytes=0 if index < 2 else unit.length,
+                networkBytes=0 if index < 2 else unit.length,
+            )
+            add(
+                "OWNER_FAILED" if index < 2 else "OWNER_COMPLETED",
+                outcome=outcome,
+            )
+        return rows
+
+    def verify_fetch_semantics(self, rows):
+        # Don't duplicate fetch-events-v3 schema boilerplate in these
+        # mutation tests; production verify_fetch always validates it.
+        with patch(
+            "m4_n4r_reserve_verifier.validate_fetch_events"
+        ):
+            verify_fetch(rows, verify_origin(self.trace(), self.units), self.units)
+
+    def test_broker_failure_uses_legacy_outcome_not_typed_observation(self):
+        self.verify_fetch_semantics(self.fetch_events())
+
+    def test_broker_mislabeled_read_timeout_is_rejected(self):
+        rows = self.fetch_events()
+        next(r for r in rows if r["event"] == "ATTEMPT_FAILED")[
+            "outcome"
+        ] = "READ_TIMEOUT"
+        with self.assertRaisesRegex(ValueError, "unexpected physical transport outcome"):
+            self.verify_fetch_semantics(rows)
+
+    def test_broker_internal_retry_is_rejected(self):
+        rows = self.fetch_events()
+        next(r for r in rows if r["event"] == "ATTEMPT_STARTED")[
+            "attempt"
+        ] = 2
+        with self.assertRaisesRegex(ValueError, "internal retry"):
+            self.verify_fetch_semantics(rows)
+
+    def test_broker_duplicate_owner_is_rejected(self):
+        rows = self.fetch_events()
+        rows[5]["fetchId"] = "fetch-1"
+        # Index 5 is the second OWNER_REGISTERED in this fixture.
+        with self.assertRaisesRegex(ValueError, "owner identity reused"):
+            self.verify_fetch_semantics(rows)
+
+    def test_broker_wrong_origin_correlation_is_rejected(self):
+        rows = self.fetch_events()
+        next(r for r in rows if r["event"] == "ATTEMPT_FAILED")[
+            "transportCorrelationId"
+        ] = "999"
+        with self.assertRaisesRegex(ValueError, "does not match physical owner"):
+            self.verify_fetch_semantics(rows)
 
     def test_canonical_f1_horizon(self):
         self.assertEqual(9_941_333, self.end_us)
