@@ -1,6 +1,7 @@
 package io.github.definitelystable.spongetube
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -184,19 +185,37 @@ class M4ReserveLabActivity : ComponentActivity() {
             } finally {
                 channel.close()
                 if (commands === channel) commands = null
-                // NonCancellable enforces the same recovery -> broker ->
-                // storage close ordering even after a background/disable
-                // cancellation; no worker survives this screen.
+                // NonCancellable retains shutdown ordering after the UI
+                // cancels its caller-owned pass. Publish Disabled only after
+                // recovery/broker and storage have both closed.
+                Log.i("M4ReserveLab", "session cleanup begins phase=${labState.phase}")
+                var shutdownFailure: Throwable? = null
                 withContext(NonCancellable + Dispatchers.IO) {
                     try {
                         bridge?.shutdown()
+                    } catch (error: Throwable) {
+                        shutdownFailure = error
                     } finally {
-                        store?.close()
+                        try {
+                            store?.close()
+                        } catch (error: Throwable) {
+                            shutdownFailure = shutdownFailure ?: error
+                        }
                     }
                 }
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    Log.i("M4ReserveLab", "session cleanup complete phase=${labState.phase}")
                     if (activationId == id && labState.phase == LabPhase.STOPPING) {
-                        labState = M4ReserveLabState()
+                        val error = shutdownFailure
+                        labState = if (error == null) {
+                            M4ReserveLabState()
+                        } else {
+                            M4ReserveLabState(
+                                phase = LabPhase.ERROR,
+                                error = "Session shutdown failed: " +
+                                    error.javaClass.simpleName,
+                            )
+                        }
                     }
                 }
             }
@@ -219,6 +238,7 @@ class M4ReserveLabActivity : ComponentActivity() {
         if (labState.phase == LabPhase.DISABLED ||
             labState.phase == LabPhase.STOPPING
         ) return
+        Log.i("M4ReserveLab", "disable requested from phase=${labState.phase}")
         labState = labState.copy(phase = LabPhase.STOPPING)
         commands?.close()
         val job = sessionJob
@@ -335,6 +355,19 @@ private fun M4ReserveLabScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
 
+                if (state.phase != LabPhase.DISABLED &&
+                    state.phase != LabPhase.STOPPING
+                ) {
+                    // Always above the scroll-dependent fields so the
+                    // foreground owner can reliably stop network work.
+                    Button(
+                        onClick = onDisable,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Disable lab")
+                    }
+                }
+
                 Text("Status: ${state.phase.title}")
                 Text(
                     state.reserveLabel,
@@ -377,9 +410,6 @@ private fun M4ReserveLabScreen(
                                 state.phase != LabPhase.ERROR,
                         ) {
                             Text("Refresh coverage")
-                        }
-                        Button(onClick = onDisable, modifier = Modifier.fillMaxWidth()) {
-                            Text("Disable lab")
                         }
                     }
                 }
