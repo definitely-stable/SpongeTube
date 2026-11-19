@@ -192,14 +192,20 @@ class M4ReserveLabActivity : ComponentActivity() {
                 var shutdownFailure: Throwable? = null
                 withContext(NonCancellable + Dispatchers.IO) {
                     try {
+                        Log.i("M4ReserveLab", "closing recovery and broker")
                         bridge?.shutdown()
+                        Log.i("M4ReserveLab", "recovery and broker closed")
                     } catch (error: Throwable) {
                         shutdownFailure = error
+                        Log.e("M4ReserveLab", "runtime shutdown failed", error)
                     } finally {
                         try {
+                            Log.i("M4ReserveLab", "closing extent store")
                             store?.close()
+                            Log.i("M4ReserveLab", "extent store closed")
                         } catch (error: Throwable) {
                             shutdownFailure = shutdownFailure ?: error
+                            Log.e("M4ReserveLab", "extent store close failed", error)
                         }
                     }
                 }
@@ -238,12 +244,21 @@ class M4ReserveLabActivity : ComponentActivity() {
         if (labState.phase == LabPhase.DISABLED ||
             labState.phase == LabPhase.STOPPING
         ) return
-        Log.i("M4ReserveLab", "disable requested from phase=${labState.phase}")
+        val previousPhase = labState.phase
+        Log.i("M4ReserveLab", "disable requested from phase=$previousPhase")
         labState = labState.copy(phase = LabPhase.STOPPING)
         commands?.close()
         val job = sessionJob
         if (job != null && !job.isCompleted) {
-            job.cancel()
+            // A closed channel wakes an idle session's command loop and
+            // lets it perform orderly shutdown without cancellation.
+            // Only an active or initializing pass needs immediate
+            // cancellation to prevent background ownership.
+            if (previousPhase == LabPhase.FILLING ||
+                previousPhase == LabPhase.CONNECTING
+            ) {
+                job.cancel()
+            }
         } else {
             commands = null
             labState = M4ReserveLabState()
