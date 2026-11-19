@@ -153,7 +153,8 @@ class PlaybackBridgeRuntime internal constructor(
      * launched and no work outlives the calling coroutine. Route admission,
      * retry budgeting and single-flight ownership stay inside RecoveryCore.
      */
-    internal suspend fun fillReserveOnce(
+    @SpongeBridgeApi
+    suspend fun fillReserveOnce(
         requirements: PlaybackRequirementSet,
         playheadUs: Long,
         targetReserveUs: Long,
