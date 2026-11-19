@@ -340,10 +340,12 @@ private fun M4ReserveLabScreen(
                     state.reserveLabel,
                     style = MaterialTheme.typography.titleMedium,
                 )
-                LinearProgressIndicator(
-                    progress = { state.progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (state.durableReserveUs != null) {
+                    LinearProgressIndicator(
+                        progress = { state.progress },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Text(state.targetLabel)
                 Text("Playhead: 0 s · required video + audio")
                 Text(
