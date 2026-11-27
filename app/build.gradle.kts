@@ -8,6 +8,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "io.github.definitelystable.spongetube"
         minSdk = 23
         targetSdk = 36
@@ -34,6 +35,11 @@ android {
     }
 
     sourceSets {
+        // F1 is bundled ONLY in the debug lab APK. M0 release/benchmark
+        // source and byte measurement remain untouched.
+        getByName("debug").assets.srcDir(
+            rootProject.file("test-fixtures/media"),
+        )
         getByName("benchmark").assets.srcDir(
             rootProject.file("test-fixtures/media"),
         )
@@ -56,6 +62,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(project(":test-support:playback-f1"))
+    debugImplementation(libs.kotlinx.coroutines.core)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.kotlinx.coroutines.core)
 
     add("benchmarkImplementation", libs.androidx.profileinstaller)
     add("benchmarkImplementation", project(":playback:bridge"))
