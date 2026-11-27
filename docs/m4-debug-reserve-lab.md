@@ -33,6 +33,21 @@ is cancelled, followed by runtime recovery/broker shutdown and then
 `ExtentStore.close()`. The stored published immutable extents are retained
 and verified on the next opt-in session.
 
+## Lifecycle hardening
+
+Commands are serialized with a single-slot non-conflating channel and a
+busy phase published before admission. Refresh and fill cannot replace
+one another. A process-local mutex serializes debug lab store ownership
+across Activity instances until non-cancellable teardown completes.
+
+The separate N4R lifecycle test observes a real blocked HTTP body, sends
+the foreground Activity home, waits for its disabled state while it is
+still alive, reopens the store with zero committed extents and opens a
+fresh opt-in Activity with the gate still closed. An independent host
+check requires exactly one physical media request and its correlated
+gate block before restoration. This is additional correctness evidence,
+not VPN or performance acceptance.
+
 ## GitHub-hosted acceptance
 
 `.github/workflows/m4-reserve-ui.yml` checks out the **exact PR head**

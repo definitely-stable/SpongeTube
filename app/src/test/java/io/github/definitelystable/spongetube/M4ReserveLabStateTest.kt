@@ -50,6 +50,15 @@ class M4ReserveLabStateTest {
     }
 
     @Test
+    fun busyAndTerminalLifecyclePhasesRejectAdditionalCommands() {
+        assertEquals(
+            setOf(LabPhase.READY, LabPhase.TARGET_REACHED, LabPhase.PLAN_DEPLETED,
+                LabPhase.FETCH_FAILED, LabPhase.DEPENDENCY_NOT_READY),
+            LabPhase.entries.filter { it.acceptsCommands }.toSet(),
+        )
+    }
+
+    @Test
     fun stopReasonsNeverMapToGenericSuccess() {
         assertEquals(
             LabPhase.TARGET_REACHED,

@@ -15,6 +15,7 @@ on:
       - "scripts/ci/prepare-emulator.sh"
       - "scripts/ci/verify-m4-a1c-ui-evidence.sh"
       - "scripts/measurement/m4_ui_verifier.py"
+      - "scripts/measurement/m4_ui_lifecycle_verifier.py"
       - "scripts/measurement/tests/test_m4_ui_verifier.py"
   push:
     branches: [main]
@@ -30,6 +31,7 @@ on:
       - "scripts/ci/prepare-emulator.sh"
       - "scripts/ci/verify-m4-a1c-ui-evidence.sh"
       - "scripts/measurement/m4_ui_verifier.py"
+      - "scripts/measurement/m4_ui_lifecycle_verifier.py"
       - "scripts/measurement/tests/test_m4_ui_verifier.py"
   workflow_dispatch:
 
@@ -144,6 +146,50 @@ jobs:
           cleanup
           trap - EXIT
 
+      - name: Verify foreground cancellation with isolated N4R body gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="build/m4-a1c/lifecycle"
+          mkdir -p "$root"
+          trace="$PWD/$root/requests.jsonl"
+          LAB_BIN="$(find tools/media-lab/build/install -type f -name media-lab -perm -111 | head -1)"
+          test -n "$LAB_BIN"
+          "$LAB_BIN" serve \
+            "--fixture-root=$PWD/test-fixtures/media" \
+            "--trace=$trace" \
+            --session-id=m4-a1c-f1-debug --profile=N4R \
+            --data-port=18081 --control-port=18082 \
+            > "$root/media-lab.out" 2> "$root/media-lab.err" &
+          lab_pid=$!
+          cleanup() {
+            kill "$lab_pid" 2>/dev/null || true
+            adb reverse --remove tcp:18082 >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18082/__lab/config > "$root/scenario.json"; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then cat "$root/media-lab.err"; exit 1; fi
+            sleep 1
+          done
+          jq -e '.profileId == "N4R" and .sessionId == "m4-a1c-f1-debug"' "$root/scenario.json"
+          adb reverse tcp:18080 tcp:18081
+          adb reverse tcp:18082 tcp:18082
+          ./gradlew --dependency-verification=strict \
+            :app:connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.class=io.github.definitelystable.spongetube.M4ReserveLabLifecycleAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.spongetube.m4ui.controlBaseUrl=http://127.0.0.1:18082
+          # The server logs the interrupted request after releasing its body gate.
+          for attempt in {1..100}; do
+            if [[ -s "$trace" ]] && jq -es 'any(.[]; .plane == "data")' "$trace" >/dev/null; then break; fi
+            sleep 0.2
+          done
+          python3 scripts/measurement/m4_ui_lifecycle_verifier.py "$trace" "$root/requests.gate.jsonl"
+          cleanup
+          trap - EXIT
+
       - name: Upload debug UI and independent evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -154,6 +200,7 @@ jobs:
             app/build/outputs/androidTest-results/
             app/build/outputs/connected_android_test_additional_output/
             app/build/reports/
+            build/reports/dependency-verification/
           if-no-files-found: warn
           retention-days: 14
 

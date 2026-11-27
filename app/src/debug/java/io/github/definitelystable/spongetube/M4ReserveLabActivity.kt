@@ -45,10 +45,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * Opt-in DEBUG-ONLY F1 laboratory. This activity is absent from release and
@@ -68,7 +71,11 @@ class M4ReserveLabActivity : ComponentActivity() {
     private var sessionJob: Job? = null
     private var commands: Channel<LabCommand>? = null
     private var activationId = 0L
+    private var refreshReturnPhase: LabPhase? = null
     private var labState by mutableStateOf(M4ReserveLabState())
+
+    // Read only on the main thread by the debug lifecycle instrumentation test.
+    internal val sessionPhaseForTest: LabPhase get() = labState.phase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,7 +85,7 @@ class M4ReserveLabActivity : ComponentActivity() {
                 state = labState,
                 onEnable = ::enableLab,
                 onFill = ::fillOnce,
-                onRefresh = { commands?.trySend(LabCommand.REFRESH) },
+                onRefresh = ::refreshOnce,
                 onDisable = ::disableLab,
             )
         }
@@ -87,14 +94,20 @@ class M4ReserveLabActivity : ComponentActivity() {
     private fun enableLab() {
         if (labState.phase != LabPhase.DISABLED) return
         val id = ++activationId
-        val channel = Channel<LabCommand>(Channel.CONFLATED)
+        val channel = Channel<LabCommand>(capacity = 1)
         commands = channel
         labState = M4ReserveLabState(phase = LabPhase.CONNECTING)
 
         sessionJob = scope.launch {
             var store: ExtentStore? = null
             var bridge: PlaybackBridgeRuntime? = null
+            var ownsSession = false
             try {
+                // Keep the store lease exclusive across Activity recreation,
+                // including the old instance's non-cancellable teardown.
+                sessionMutex.lock()
+                ownsSession = true
+                currentCoroutineContext().ensureActive()
                 // SHA-256-verified packaged F1 is a debug-only asset. No
                 // provider/user-supplied URL or release build is involved.
                 val plan = withContext(Dispatchers.IO) {
@@ -117,21 +130,28 @@ class M4ReserveLabActivity : ComponentActivity() {
                 suspend fun refreshCoverage() {
                     active.coverageIndex.refresh()
                     val snapshot = active.coverageIndex.snapshot(requirements, PLAYHEAD_US)
-                    if (activationId == id) {
+                    currentCoroutineContext().ensureActive()
+                    if (activationId == id && labState.phase != LabPhase.STOPPING) {
                         labState = labState.copy(durableReserveUs = snapshot.durableReserveUs)
                     }
                 }
 
                 refreshCoverage()
-                if (activationId == id) {
+                if (activationId == id && labState.phase != LabPhase.STOPPING) {
                     labState = labState.copy(phase = LabPhase.READY)
                 }
 
                 for (command in channel) {
+                    currentCoroutineContext().ensureActive()
+                    if (activationId != id || labState.phase == LabPhase.STOPPING) break
                     when (command) {
-                        LabCommand.REFRESH -> refreshCoverage()
+                        LabCommand.REFRESH -> {
+                            val previous = checkNotNull(refreshReturnPhase)
+                            refreshCoverage()
+                            refreshReturnPhase = null
+                            labState = labState.copy(phase = previous)
+                        }
                         LabCommand.FILL -> {
-                            if (activationId != id) break
                             labState = labState.copy(
                                 phase = LabPhase.FILLING,
                                 requestedUnits = null,
@@ -175,7 +195,7 @@ class M4ReserveLabActivity : ComponentActivity() {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
-                if (activationId == id) {
+                if (activationId == id && labState.phase != LabPhase.STOPPING) {
                     labState = labState.copy(
                         phase = LabPhase.ERROR,
                         error = error.javaClass.simpleName +
@@ -183,60 +203,72 @@ class M4ReserveLabActivity : ComponentActivity() {
                     )
                 }
             } finally {
-                channel.close()
+                channel.cancel()
                 if (commands === channel) commands = null
+                refreshReturnPhase = null
                 // NonCancellable retains shutdown ordering after the UI
                 // cancels its caller-owned pass. Publish Disabled only after
                 // recovery/broker and storage have both closed.
                 Log.i("M4ReserveLab", "session cleanup begins phase=${labState.phase}")
-                var shutdownFailure: Throwable? = null
-                withContext(NonCancellable + Dispatchers.IO) {
-                    try {
-                        Log.i("M4ReserveLab", "closing recovery and broker")
-                        bridge?.shutdown()
-                        Log.i("M4ReserveLab", "recovery and broker closed")
-                    } catch (error: Throwable) {
-                        shutdownFailure = error
-                        Log.e("M4ReserveLab", "runtime shutdown failed", error)
-                    } finally {
+                try {
+                    var shutdownFailure: Throwable? = null
+                    withContext(NonCancellable + Dispatchers.IO) {
                         try {
-                            Log.i("M4ReserveLab", "closing extent store")
-                            store?.close()
-                            Log.i("M4ReserveLab", "extent store closed")
+                            Log.i("M4ReserveLab", "closing recovery and broker")
+                            bridge?.shutdown()
+                            Log.i("M4ReserveLab", "recovery and broker closed")
                         } catch (error: Throwable) {
-                            shutdownFailure = shutdownFailure ?: error
-                            Log.e("M4ReserveLab", "extent store close failed", error)
+                            shutdownFailure = error
+                            Log.e("M4ReserveLab", "runtime shutdown failed", error)
+                        } finally {
+                            try {
+                                Log.i("M4ReserveLab", "closing extent store")
+                                store?.close()
+                                Log.i("M4ReserveLab", "extent store closed")
+                            } catch (error: Throwable) {
+                                shutdownFailure = shutdownFailure ?: error
+                                Log.e("M4ReserveLab", "extent store close failed", error)
+                            }
                         }
                     }
-                }
-                withContext(NonCancellable + Dispatchers.Main.immediate) {
-                    Log.i("M4ReserveLab", "session cleanup complete phase=${labState.phase}")
-                    if (activationId == id && labState.phase == LabPhase.STOPPING) {
-                        val error = shutdownFailure
-                        labState = if (error == null) {
-                            M4ReserveLabState()
-                        } else {
-                            M4ReserveLabState(
-                                phase = LabPhase.ERROR,
-                                error = "Session shutdown failed: " +
-                                    error.javaClass.simpleName,
-                            )
+                    withContext(NonCancellable + Dispatchers.Main.immediate) {
+                        Log.i("M4ReserveLab", "session cleanup complete phase=${labState.phase}")
+                        if (activationId == id && labState.phase == LabPhase.STOPPING) {
+                            val error = shutdownFailure
+                            labState = if (error == null) {
+                                M4ReserveLabState()
+                            } else {
+                                M4ReserveLabState(
+                                    phase = LabPhase.ERROR,
+                                    error = "Session shutdown failed: " +
+                                        error.javaClass.simpleName,
+                                )
+                            }
                         }
                     }
+                } finally {
+                    if (ownsSession) sessionMutex.unlock()
                 }
             }
         }
     }
 
-    private fun fillOnce() {
-        if (labState.phase !in setOf(
-                LabPhase.READY, LabPhase.TARGET_REACHED,
-                LabPhase.PLAN_DEPLETED, LabPhase.FETCH_FAILED,
-                LabPhase.DEPENDENCY_NOT_READY,
-            )
-        ) return
-        if (commands?.trySend(LabCommand.FILL)?.isSuccess == true) {
-            labState = labState.copy(phase = LabPhase.FILLING)
+    private fun fillOnce() = submit(LabCommand.FILL)
+
+    private fun refreshOnce() = submit(LabCommand.REFRESH)
+
+    private fun submit(command: LabCommand) {
+        val previous = labState.phase
+        if (!previous.acceptsCommands) return
+        val channel = commands ?: return
+        // Main.immediate can resume the receiver inline. Publish busy
+        // before sending, and never replace a pending command.
+        if (command == LabCommand.REFRESH) refreshReturnPhase = previous
+        val busy = if (command == LabCommand.FILL) LabPhase.FILLING else LabPhase.REFRESHING
+        labState = labState.copy(phase = busy)
+        if (channel.trySend(command).isFailure) {
+            refreshReturnPhase = null
+            labState = labState.copy(phase = previous)
         }
     }
 
@@ -247,14 +279,13 @@ class M4ReserveLabActivity : ComponentActivity() {
         val previousPhase = labState.phase
         Log.i("M4ReserveLab", "disable requested from phase=$previousPhase")
         labState = labState.copy(phase = LabPhase.STOPPING)
-        commands?.close()
+        commands?.cancel()
         val job = sessionJob
         if (job != null && !job.isCompleted) {
-            // A closed channel wakes an idle session's command loop and
-            // lets it perform orderly shutdown without cancellation.
-            // Only an active or initializing pass needs immediate
-            // cancellation to prevent background ownership.
+            // Cancelling the channel discards queued commands and wakes an
+            // idle receiver. Cancel active or initializing work directly.
             if (previousPhase == LabPhase.FILLING ||
+                previousPhase == LabPhase.REFRESHING ||
                 previousPhase == LabPhase.CONNECTING
             ) {
                 job.cancel()
@@ -278,6 +309,7 @@ class M4ReserveLabActivity : ComponentActivity() {
     }
 
     private companion object {
+        val sessionMutex = Mutex()
         const val ORIGIN_URL = "http://localhost:18080"
         const val SESSION_ID = "m4-a1c-f1-debug"
         const val PLAYHEAD_US = 0L
@@ -293,6 +325,7 @@ internal enum class LabPhase(val title: String) {
     CONNECTING("Initializing local F1 store"),
     READY("Ready"),
     FILLING("Filling (caller-owned pass)"),
+    REFRESHING("Refreshing coverage"),
     TARGET_REACHED("Target reached"),
     PLAN_DEPLETED("Plan depleted"),
     FETCH_FAILED("Fetch failed"),
@@ -300,6 +333,12 @@ internal enum class LabPhase(val title: String) {
     ERROR("Error"),
     STOPPING("Stopping"),
     ;
+
+    val acceptsCommands: Boolean
+        get() = when (this) {
+            READY, TARGET_REACHED, PLAN_DEPLETED, FETCH_FAILED, DEPENDENCY_NOT_READY -> true
+            else -> false
+        }
 
     companion object {
         fun fromStop(stop: ReserveExecutionStop): LabPhase = when (stop) {
@@ -413,16 +452,14 @@ private fun M4ReserveLabScreen(
                         FilledTonalButton(
                             onClick = onFill,
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = state.phase != LabPhase.FILLING &&
-                                state.phase != LabPhase.ERROR,
+                            enabled = state.phase.acceptsCommands,
                         ) {
                             Text("Fill reserve once")
                         }
                         FilledTonalButton(
                             onClick = onRefresh,
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = state.phase != LabPhase.FILLING &&
-                                state.phase != LabPhase.ERROR,
+                            enabled = state.phase.acceptsCommands,
                         ) {
                             Text("Refresh coverage")
                         }
