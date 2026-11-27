@@ -11,6 +11,11 @@ def verify(origin, gate):
     if len(rows) != 1:
         raise ValueError("expected exactly one physical media request before onStop")
     row = rows[0]
+    seq = [e.get("serverEventSequence") for e in gate]
+    if any(type(n) is not int for n in seq) or seq != sorted(set(seq)):
+        raise ValueError("gate event sequence is not strictly increasing")
+    if any(type(e.get("schemaVersion")) is not int or e["schemaVersion"] != 1 for e in gate):
+        raise ValueError("invalid gate schema version")
     if row.get("sessionId") != "m4-a1c-f1-debug" or row.get("profileId") != "N4R":
         raise ValueError("unexpected lifecycle origin identity")
 
@@ -31,7 +36,9 @@ def verify(origin, gate):
     if not (close["serverEventSequence"] < blocked["serverEventSequence"]
             < restore["serverEventSequence"]):
         raise ValueError("incorrect lifecycle gate event order")
-    if close.get("gateGeneration") != restore.get("gateGeneration"):
+    if (type(close.get("gateGeneration")) is not int or
+            close["gateGeneration"] != restore.get("gateGeneration") or
+            close["gateGeneration"] != blocked.get("gateGeneration")):
         raise ValueError("gate generation mismatch")
     first_write = row.get("firstBodyWriteAtMonotonicNs")
     if first_write is not None and first_write < restore["serverMonotonicNs"]:

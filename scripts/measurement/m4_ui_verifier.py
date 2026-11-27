@@ -33,7 +33,7 @@ def verify_ui_summary(summary: Mapping[str, Any], expected_end_us: int) -> None:
     if set(summary) != set(expected):
         raise ValueError("M4 UI summary fields do not match the contract")
     for field, value in expected.items():
-        if summary[field] != value:
+        if type(summary[field]) is not type(value) or summary[field] != value:
             raise ValueError(f"M4 UI {field} disagrees with independent expectation")
 
 

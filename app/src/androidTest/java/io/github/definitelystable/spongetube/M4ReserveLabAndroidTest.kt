@@ -65,28 +65,34 @@ class M4ReserveLabAndroidTest {
         click("Enable experimental F1 reserve lab")
         expect("Status: Ready")
         expect("Durable playable reserve: 0 µs (0.000 s)")
-        expect("Target: 8.000 s")
+        val targetUs = observedText("Target: 8.000 s").removePrefix("Target: ")
+            .removeSuffix(" s").toBigDecimal().movePointRight(6).longValueExact()
         click("Fill reserve once")
         expect("Status: Target reached", 90_000)
-        expect("Durable playable reserve: 9941333 µs (9.941 s)")
-        expect("Fetch keys admitted in last pass: 4")
+        val firstReserveUs = observedText("Durable playable reserve: 9941333 µs (9.941 s)")
+            .removePrefix("Durable playable reserve: ").substringBefore(" µs").toLong()
+        val firstKeys = observedText("Fetch keys admitted in last pass: 4")
+            .substringAfterLast(" ").toInt()
         assertFalse(device.hasObject(By.textContains("Error:")))
 
         // A second explicit demand must not create network requests or
         // claim any new fetch; the independent host trace enforces that too.
         click("Fill reserve once")
         expect("Status: Target reached", 60_000)
-        expect("Fetch keys admitted in last pass: 0")
+        val secondKeys = observedText("Fetch keys admitted in last pass: 0")
+            .substringAfterLast(" ").toInt()
 
         click("Disable lab")
         expect("Status: Disabled", 20_000)
-        expect("Durable playable reserve: not measured")
+        val disabledUnmeasured = observedText("Durable playable reserve: not measured")
+            .endsWith("not measured")
 
         // A fresh runtime/store must re-observe the persisted A/V reserve
         // without automatically downloading anything.
         click("Enable experimental F1 reserve lab")
         expect("Status: Ready")
-        expect("Durable playable reserve: 9941333 µs (9.941 s)")
+        val reopenedReserveUs = observedText("Durable playable reserve: 9941333 µs (9.941 s)")
+            .removePrefix("Durable playable reserve: ").substringBefore(" µs").toLong()
         click("Disable lab")
         expect("Status: Disabled", 20_000)
 
@@ -116,6 +122,8 @@ class M4ReserveLabAndroidTest {
                 coverage = snapshot,
                 playerBufferedAheadUs = null,
             ).toArtifactMap(),
+            targetUs, firstReserveUs, firstKeys, secondKeys, disabledUnmeasured,
+            reopenedReserveUs == firstReserveUs,
         )
     }
 
@@ -157,7 +165,20 @@ class M4ReserveLabAndroidTest {
         )
     }
 
-    private fun writeEvidence(runtime: Map<String, Any?>) {
+    private fun observedText(expected: String): String {
+        val node = checkNotNull(device.wait(Until.findObject(By.text(expected)), 20_000))
+        return checkNotNull(node.text).also { assertEquals(expected, it) }
+    }
+
+    private fun writeEvidence(
+        runtime: Map<String, Any?>,
+        targetUs: Long,
+        firstReserveUs: Long,
+        firstKeys: Int,
+        secondKeys: Int,
+        disabledUnmeasured: Boolean,
+        reopenSameReserve: Boolean,
+    ) {
         val sink = PlatformTestStorageRegistry.getInstance()
         fun save(path: String, body: String) {
             sink.openOutputFile("m4-a1c-evidence/$path")
@@ -176,12 +197,12 @@ class M4ReserveLabAndroidTest {
             .put("schemaVersion", 1)
             .put("sessionId", SESSION)
             .put("source", "CoverageIndex")
-            .put("targetReserveUs", 8_000_000L)
-            .put("durableReserveUs", 9_941_333L)
-            .put("firstPassFetchKeys", 4)
-            .put("secondPassFetchKeys", 0)
-            .put("afterDisableUnmeasured", true)
-            .put("reopenWithoutNetwork", true)
+            .put("targetReserveUs", targetUs)
+            .put("durableReserveUs", firstReserveUs)
+            .put("firstPassFetchKeys", firstKeys)
+            .put("secondPassFetchKeys", secondKeys)
+            .put("afterDisableUnmeasured", disabledUnmeasured)
+            .put("reopenWithoutNetwork", reopenSameReserve)
             .put("baselineSeparate", true)
             .toString(2))
     }

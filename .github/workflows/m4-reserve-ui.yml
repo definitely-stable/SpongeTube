@@ -16,6 +16,7 @@ on:
       - "scripts/ci/verify-m4-a1c-ui-evidence.sh"
       - "scripts/measurement/m4_ui_verifier.py"
       - "scripts/measurement/m4_ui_lifecycle_verifier.py"
+      - "scripts/measurement/tests/test_m4_ui_lifecycle_verifier.py"
       - "scripts/measurement/tests/test_m4_ui_verifier.py"
   push:
     branches: [main]
@@ -32,6 +33,7 @@ on:
       - "scripts/ci/verify-m4-a1c-ui-evidence.sh"
       - "scripts/measurement/m4_ui_verifier.py"
       - "scripts/measurement/m4_ui_lifecycle_verifier.py"
+      - "scripts/measurement/tests/test_m4_ui_lifecycle_verifier.py"
       - "scripts/measurement/tests/test_m4_ui_verifier.py"
   workflow_dispatch:
 
@@ -82,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover \
             -s scripts/measurement/tests \
-            -p 'test_m4_ui_verifier.py' -v
+            -p 'test_m4_ui*verifier.py' -v
           ./gradlew --dependency-verification=strict --configuration-cache \
             :app:testDebugUnitTest \
             :app:assembleDebugAndroidTest \
@@ -113,7 +115,7 @@ jobs:
             > "$root/server/media-lab.out" \
             2> "$root/server/media-lab.err" &
           lab_pid=$!
-          cleanup() { kill "$lab_pid" 2>/dev/null || true; }
+          cleanup() { kill "$lab_pid" 2>/dev/null || true; wait "$lab_pid" 2>/dev/null || true; }
           trap cleanup EXIT
 
           for attempt in {1..30}; do
@@ -164,6 +166,7 @@ jobs:
           lab_pid=$!
           cleanup() {
             kill "$lab_pid" 2>/dev/null || true
+            wait "$lab_pid" 2>/dev/null || true
             adb reverse --remove tcp:18082 >/dev/null 2>&1 || true
           }
           trap cleanup EXIT

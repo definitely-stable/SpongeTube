@@ -107,6 +107,15 @@ class M4UiVerifierTests(unittest.TestCase):
         self.assertEqual(9_941_333, result["independentDurableReserveUs"])
         self.assertEqual(4, result["originRequestCount"])
 
+    def test_rejects_bool_integer_coercion(self):
+        for field, value in (("schemaVersion", True), ("secondPassFetchKeys", False),
+                             ("afterDisableUnmeasured", 1)):
+            with self.subTest(field=field):
+                summary = self.summary()
+                summary[field] = value
+                with self.assertRaisesRegex(ValueError, field):
+                    verify_ui_summary(summary, self.end)
+
     def test_rejects_fabricated_ui_reserve(self):
         summary = self.summary()
         summary["durableReserveUs"] += 1
